@@ -39,7 +39,7 @@ from history import History
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -1148,8 +1148,8 @@ def stake_plan(budget, mode, selections, cfg, sims=20000, seed=None):
 # --------------------------------------------------------------------------
 
 def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.25, by_prob=False):
-    """Sélections jouables chez `book`, max 2 par match, triées par intérêt (p x cote)."""
-    lo = float(cfg["min_odds"])
+    """Sélections jouables chez `book`, triées par intérêt. Les gros favoris (cote 1,02+) sont acceptés."""
+    lo = 1.02
     items = []
     for s in selections:
         types = cfg.get("_types")
@@ -1325,12 +1325,18 @@ def _objective_plan(stake, target, selections, cfg):
             add("one", "1 ticket · le plus de chances au total",
                 f"La meilleure probabilité globale pour une cote ≥ {need1:.2f}".replace(".", ","), [t], btitle)
         # 1 ticket : que des favoris (chaque sélection très probable), quitte à mettre plus de matchs
-        fav = _book_items(selections, cfg, book, pool_size=min(16, pool), min_p=0.62, by_prob=True)
-        tf = bt(fav, need1, max_legs=lmax, min_leg_p=0.62)
+        # 1 favori par match : on cherche le seuil de sécurité le plus haut qui permet d'atteindre la cote
+        tf, thr = None, None
+        for th in (0.80, 0.75, 0.70, 0.65, 0.60, 0.55):
+            fav = _book_items(selections, cfg, book, min_p=th)
+            tf = bt(fav, need1, max_legs=lmax, min_leg_p=th)
+            if tf:
+                thr = th
+                break
         if tf:
             tf["stake"] = stake
-            add("fav", "1 ticket · que des favoris",
-                "Chaque sélection a au moins 62 % de chances (plus de matchs, mais aucun outsider)", [tf], btitle)
+            add("fav", "1 favori par match",
+                f"Uniquement des favoris : chaque sélection a au moins {thr * 100:.0f} % de chances", [tf], btitle)
         if t:
             # moins de matchs (si le plus sûr en a 3+)
             if len(t["legs"]) >= 3:
@@ -1364,7 +1370,8 @@ def _objective_plan(stake, target, selections, cfg):
                 f"Matchs différents · un seul ticket gagnant suffit (cote ≥ {need:.2f} chacun)".replace(".", ","),
                 tickets, btitle)
 
-    options.sort(key=lambda o: o["p_hit"], reverse=True)
+    # le ticket « favoris » passe en premier quand il existe (c'est le plus objectif), puis par chances
+    options.sort(key=lambda o: (o["kind"] != "fav", -o["p_hit"]))
     seen, uniq = set(), []
     for o in options:
         key = tuple(sorted(l["uid"] for t in o["tickets"] for l in t["legs"]))

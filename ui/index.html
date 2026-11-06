@@ -226,6 +226,14 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
 .pbar{display:flex;height:26px;border-radius:8px;overflow:hidden;font-size:11px;font-weight:700}
 .pbar span{display:grid;place-items:center;color:#0a0c11}
 
+.oin{width:84px;background:var(--bg2);border:1px solid #2c3546;border-radius:7px;padding:3px 7px;font-size:12px;color:var(--fg);outline:0;margin-left:8px}
+.oin:focus{border-color:var(--green)}
+.mybox{display:flex;gap:10px;align-items:center;margin:14px 0 4px;padding:12px 14px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
+.mybox input{width:110px;font-size:18px;font-weight:700;padding:8px 10px}
+.verdict{margin-top:8px;padding:10px 12px;border-radius:10px;font-size:13px;line-height:1.5}
+.verdict.ok{background:rgba(34,197,94,.12);color:#bbf7d0}
+.verdict.ko{background:rgba(239,68,68,.1);color:#fecaca}
+
 /* ---------- settings ---------- */
 .set{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .set .card{padding:20px}
@@ -555,6 +563,10 @@ document.addEventListener("click", e => {
   const b = [...data.picks, ...data.probable, ...(lastPlan?lastPlan.items:[])].find(x => x.uid === uid);
   if (b) openBet(b);
 });
+function verdictHtml(b){
+  const ok = b.ev >= 0.01;
+  return `<div class="verdict ${ok?"ok":"ko"}">${ok?"✔ <b>À jouer</b>":"✖ <b>Cote trop basse</b>"} : avec la cote ${fr(b.odds)} et ${pc(b.p)} de chances réelles, ton gain attendu est de <b>${b.ev>=0?"+":""}${fr(b.ev*10)} € pour 10 € misés</b> sur la durée.${ok?"":` Il faudrait au moins <b>${fr(b.fair*1.02)}</b>.`}</div>`;
+}
 async function openBet(b){
   const st=b.stats;
   const verdict = st ? `<div class="sec">Analyse ${confTag(b)}</div><div class="vd">${st.pros.map(x=>`<div class="p">✔ ${esc(x)}</div>`).join("")}${st.cons.map(x=>`<div class="c">✖ ${esc(x)}</div>`).join("")}${!st.pros.length&&!st.cons.length?'<div class="p" style="color:var(--muted);background:var(--card)">Pas de signal fort pour ou contre ce pari.</div>':""}</div>` : "";
@@ -563,15 +575,24 @@ async function openBet(b){
     <h3>${esc(b.selection)}</h3>
     <div style="color:var(--muted)">${esc(b.match)} · ${esc(b.sport)}${st&&st.round?" · "+esc(st.round):""} · ${esc(b.date)}</div>
     <div class="stats" style="grid-template-columns:1fr 1fr 1fr;margin:16px 0 4px">
-      <div class="card stat"><div class="l">Cote ${esc(b.book)}</div><div class="v" style="color:var(--green2)">${fr(b.odds)}</div></div>
+      <div class="card stat"><div class="l">${b.estimated?"Cote Betclic estimée":(b.user_odds?"Ta cote Betclic":"Cote "+esc(b.book))}</div><div class="v" style="color:var(--green2)">${b.estimated?"≈":""}${fr(b.odds)}</div></div>
       <div class="card stat"><div class="l">Proba finale</div><div class="v">${pc(b.p)}</div><div class="h">marché ${pc(b.p_market)}${st&&st.p_model!=null?" · modèle "+pc(st.p_model):""}</div></div>
       <div class="card stat"><div class="l">Cote juste</div><div class="v">${fr(b.fair)}</div></div>
     </div>
+    <div class="mybox"><div style="flex:1"><b>Cote affichée sur Betclic</b><div style="font-size:12px;color:var(--muted)">Tape-la pour un verdict exact${b.estimated?` · minimum à exiger : <b style="color:var(--fg)">${fr(b.min_odds)}</b>`:""}</div></div>
+      <input class="in" id="my-odds" inputmode="decimal" placeholder="ex : 1,85" value="${b.user_odds?fr(b.odds):""}"><button class="btn primary" id="my-go">Vérifier</button></div>
+    <div id="my-verdict">${b.user_odds?verdictHtml(b):""}</div>
     ${verdict}
     <div id="dmatch">${b.stats||b.has_info?'<div class="skel" style="height:90px"></div>':'<div class="card note" style="margin-top:12px">💡 Ajoute ta clé <b>football-data.org</b> (gratuite) dans Paramètres pour voir la forme, les séries, le classement et les confrontations directes de ce match.</div>'}</div>
-    <div class="sec">Cotes de tous les bookmakers (${b.n_books})</div>
-    ${b.prices.map(x=>`<div class="pr ${x.playable?'me':''}"><span>${esc(x.book)}${x.playable?' ← tu peux parier ici':''}</span><b>${fr(x.odds)}</b></div>`).join("")}`;
+    ${b.estimated||b.user_odds?"":`<div class="sec">Cotes de tous les bookmakers (${b.n_books})</div>`}
+    ${(b.estimated||b.user_odds?[]:b.prices).map(x=>`<div class="pr ${x.playable?'me':''}"><span>${esc(x.book)}${x.playable?' ← tu peux parier ici':''}</span><b>${fr(x.odds)}</b></div>`).join("")}`;
   $("#drawer").classList.add("on"); $("#ov").classList.add("on");
+  const check = async () => {
+    const r = await api.set_odds(b.uid, $("#my-odds").value);
+    if (r && r.ok) { $("#my-verdict").innerHTML = r.user_odds ? verdictHtml(r) : ""; Object.assign(b, r); rev=-1; poll(); }
+  };
+  $("#my-go").onclick = check;
+  $("#my-odds").onkeydown = e => { if (e.key==="Enter") check(); };
   if (!b.event_id) return;
   const m = await api.get_match(b.event_id);
   if (!m) { if (b.stats) $("#dmatch").innerHTML=""; return; }
@@ -629,19 +650,33 @@ async function makePlan(){
       <div class="card ticket bet" data-uid="${esc(it.uid)}">
         <div class="num">${i+1}</div>
         <div class="x"><b>${esc(it.selection)}</b><div class="m">${esc(it.match)} · ${esc(it.sport)} · ${esc(it.date)}</div>
-          <div class="meta"><span class="tag n">Simple · ${esc(it.book)}</span><span class="tag n">${pc(it.p)} de chances</span>${tag(it)}</div></div>
+          <div class="meta"><input class="oin" style="margin:0" data-uid="${esc(it.uid)}" placeholder="cote Betclic"><span class="tag n">Simple · ${esc(it.book)}</span><span class="tag n">${pc(it.p)} de chances</span>${tag(it)}</div></div>
         <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div></div>
       </div>` : `
       <div class="card ticket">
         <div class="num">${i+1}</div>
         <div class="x"><b>Combiné ×${it.legs.length}</b>
-          <div class="legs">${it.legs.map(l=>`<div>• ${esc(l.selection)} <span style="color:var(--dim)">— ${esc(l.match)}, ${esc(l.date)}</span> @ ${l.estimated?"≈":""}${fr(l.odds)}${l.estimated?` <span style="color:var(--amber)">(prends si ≥ ${fr(l.min_odds)})</span>`:""}</div>`).join("")}</div>
+          <div class="legs">${it.legs.map(l=>`<div>• ${esc(l.selection)} <span style="color:var(--dim)">— ${esc(l.match)}, ${esc(l.date)}</span> @ ${l.estimated?"≈":""}${fr(l.odds)}${l.estimated?` <span style="color:var(--amber)">(prends si ≥ ${fr(l.min_odds)})</span>`:""}<input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic"></div>`).join("")}</div>
           <div class="meta"><span class="tag n">Combiné · ${esc(it.book)}</span><span class="tag n">${pc(it.p)} de chances</span>${it.value?`<span class="tag v">VALUE ${sg(it.ev)}</span>`:`<span class="tag n">Sans value ${sg(it.ev)}</span>`}</div></div>
         <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div></div>
       </div>`).join("")}</div>
     <div class="card note">${p.n_value ? "Les tickets <b style='color:var(--green2)'>VALUE</b> sont rentables en moyenne sur la durée." : "Aucune value aujourd'hui chez Betclic : ce plan prend les meilleurs paris disponibles, mais il reste légèrement perdant en moyenne (marge du bookmaker)."}
       Même un bon plan perd souvent sur une seule journée. Vérifie que la cote n'a pas bougé avant de valider sur Betclic, et ne mise que ce que tu peux perdre.</div>`;
 }
+
+/* ----- cote Betclic tapée dans un ticket ----- */
+document.addEventListener("click", e => { if (e.target.closest(".oin")) e.stopPropagation(); }, true);
+document.addEventListener("keydown", async e => {
+  const i = e.target.closest(".oin"); if (!i || e.key !== "Enter") return;
+  e.preventDefault();
+  const r = await api.set_odds(i.dataset.uid, i.value);
+  if (r && r.ok) {
+    toast(r.user_odds ? (r.ev >= 0.01 ? `✔ ${fr(r.odds)} : bonne cote` : `✖ ${fr(r.odds)} : cote trop basse`) : "Cote retirée");
+    rev = -1; await poll();
+    if ($("#v-goal").style.display !== "none" && $("#goal .opt")) makeGoal();
+    else if ($("#plan .ticket")) makePlan();
+  }
+});
 
 /* ----- types de paris ----- */
 document.addEventListener("click", e => {
@@ -689,7 +724,7 @@ async function makeGoal(){
           <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances d'atteindre l'objectif</small></div></div>
         ${o.tickets.map((t,j)=>`<div class="tk">
           <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise ${eur(t.stake)}</span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><span>·</span><span>${pc(t.p,1)} de chances</span><div class="sp"></div>${t.value?`<span class="tag v">VALUE ${sg(t.ev)}</span>`:`<span class="tag n">Sans value ${sg(t.ev)}</span>`}</div>
-          ${t.legs.map(l=>`<div class="ln"><span><b>${esc(l.selection)}</b> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">cote estimée, prends si ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b></div>`).join("")}
+          ${t.legs.map(l=>`<div class="ln"><span><b>${esc(l.selection)}</b> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">cote estimée, prends si ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b><input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic" title="Tape la cote vue sur Betclic"></div>`).join("")}
           <div class="ft"><span>Si ce ticket passe, tu touches</span><b>${eur(t.ret)} (+${eur(t.ret - r.stake)})</b></div>
         </div>`).join("")}
       </div>`).join("")}</div>

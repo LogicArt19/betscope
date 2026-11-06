@@ -37,7 +37,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -1127,6 +1127,7 @@ def ser_bet(b, cfg):
         "ev": round(b["ev"], 4), "n_books": b["n_books"], "suspect": b["suspect"],
         "value": is_value(b, cfg), "event_id": b["event_id"], "conf": b.get("conf"),
         "mine": would_bet(b, cfg), "cat": b.get("cat"), "estimated": bool(b.get("estimated")),
+        "user_odds": bool(b.get("user_odds")),
         "min_odds": b.get("min_odds"),
         "p_market": round(b.get("p_market", b["p"]), 4), "stats": b.get("stats"),
         "prices": [{"book": t, "odds": o, "playable": k in b["playable"]}
@@ -1138,7 +1139,7 @@ def ser_combo(c):
     return {
         "uid": c["uid"], "odds": round(c["odds"], 2), "p": round(c["p"], 4), "ev": round(c["ev"], 4),
         "book": c["book"], "value": c["value"], "mine": c.get("would_bet", False),
-        "legs": [{"selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
+        "legs": [{"uid": l["uid"], "selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
                   "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
                   "min_odds": l.get("min_odds")}
                  for l, lo in zip(c["legs"], c["leg_odds"])],
@@ -1155,7 +1156,7 @@ def ser_objective(res, cfg):
                 "stake": t["stake"], "odds": round(t["odds"], 2), "p": round(t["p"], 4), "ev": round(t["ev"], 4),
                 "ret": round(t["stake"] * t["odds"], 2),
                 "value": t["ev"] >= float(cfg["min_ev"]),
-                "legs": [{"selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
+                "legs": [{"uid": l["uid"], "selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
                           "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
                           "min_odds": l.get("min_odds"), "market": l["market"]}
                          for l, lo in zip(t["legs"], t["leg_odds"])],
@@ -1311,6 +1312,12 @@ class Api:
         self._next_stats = time.time() + 5
         self._next_web = time.time() + 8
         self._days = []
+        self._overrides = {}  # cotes Betclic tapées par l'utilisateur {uid: cote}
+        try:
+            with open(os.path.join(config_dir(), "my_odds.json"), encoding="utf-8") as f:
+                self._overrides = json.load(f)
+        except (OSError, ValueError):
+            pass
         cache = load_cache()
         if cache and cache.get("events") and self._cfg["api_key"] and not self._cfg["demo"]:
             self._events, self._quota = cache["events"], cache.get("quota")
@@ -1381,6 +1388,56 @@ class Api:
             self._fetching = False
             self._reanalyze()
 
+    def _apply_overrides(self, cfg):
+        """Remplace la cote estimée par la vraie cote Betclic tapée par l'utilisateur."""
+        if not self._overrides:
+            return
+        for s in self._sel:
+            o = self._overrides.get(s["uid"])
+            if not o:
+                continue
+            s["odds"] = float(o)
+            s["user_odds"] = True
+            s["estimated"] = False
+            s["playable"] = {s["book_key"]: (float(o), s["book"])}
+            s["all_prices"] = dict(s["all_prices"], **{s["book_key"]: (float(o), s["book"])})
+            s["ev"] = s["p"] * s["odds"] - 1
+            s["kelly"] = s["ev"] / (s["odds"] - 1) if s["odds"] > 1 else 0
+            s["suspect"] = s.get("p_market", s["p"]) * s["odds"] - 1 > float(cfg["max_ev"])
+
+    def _save_overrides(self):
+        try:
+            with open(os.path.join(config_dir(), "my_odds.json"), "w", encoding="utf-8") as f:
+                json.dump(self._overrides, f)
+        except OSError:
+            pass
+
+    def set_odds(self, uid, odds):
+        """L'utilisateur tape la cote vue sur Betclic -> verdict immédiat."""
+        try:
+            o = float(str(odds).replace(",", ".").strip())
+        except ValueError:
+            o = 0
+        with self._lock:
+            if o <= 1:
+                self._overrides.pop(uid, None)
+            else:
+                self._overrides[uid] = o
+            # nettoyage des cotes des matchs passés
+            live = {s["uid"] for s in self._sel}
+            if len(self._overrides) > 300:
+                self._overrides = {k: v for k, v in self._overrides.items() if k in live}
+            self._save_overrides()
+        self._reanalyze()
+        with self._lock:
+            b = next((x for x in self._sel if x["uid"] == uid), None)
+            if not b:
+                return {"ok": False}
+            out = ser_bet(b, self._cfg)
+        out["ok"] = True
+        out["user_odds"] = o > 1
+        return out
+
     def _stats_key(self):
         return self._cfg.get("fd_key", "").strip() or self._cfg.get("football_key", "").strip()
 
@@ -1416,6 +1473,7 @@ class Api:
                     self._warning = ("Betclic n'a pas encore publié de cotes pour ces matchs : cotes d'autres "
                                      "bookmakers affichées à titre indicatif.")
                 self._sel = analyze(events, cfg, info=self._info)
+                self._apply_overrides(cfg)
                 self._picks = top_picks(self._sel, cfg)
                 self._prob = most_probable(self._sel, cfg)
                 vpool = [s for s in self._sel if is_value(s, cfg)]

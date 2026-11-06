@@ -36,7 +36,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.6.3"
+APP_VERSION = "1.6.4"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -317,6 +317,12 @@ def install_update_and_restart(new_exe):
     exe = sys.executable
     bat = os.path.join(tempfile.gettempdir(), "betscope_update.bat")
     script = f"""@echo off
+set PYINSTALLER_RESET_ENVIRONMENT=1
+set _MEIPASS2=
+set _PYI_APPLICATION_HOME_DIR=
+set _PYI_ARCHIVE_FILE=
+set _PYI_PARENT_PROCESS_LEVEL=
+set _PYI_SPLASH_IPC=
 set /a n=0
 :retry
 timeout /t 2 /nobreak >nul
@@ -336,7 +342,11 @@ del "%~f0"
     with open(bat, "w", encoding="mbcs" if os.name == "nt" else "utf-8") as f:
         f.write(script)
     flags = 0x08000000 | 0x00000008  # CREATE_NO_WINDOW | DETACHED_PROCESS
-    subprocess.Popen(["cmd", "/c", bat], creationflags=flags, close_fds=True)
+    # environnement propre : sinon le nouveau .exe croit être un sous-processus de l'ancien
+    # et cherche ses fichiers dans un dossier temporaire déjà supprimé (« Failed to load Python DLL »)
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("_MEI", "_PYI"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    subprocess.Popen(["cmd", "/c", bat], creationflags=flags, close_fds=True, env=env)
 
 
 # --------------------------------------------------------------------------

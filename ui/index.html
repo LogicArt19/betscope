@@ -783,26 +783,20 @@ async function makeGoal(){
   }
   const strictOpts = r.options.filter(o=>!o.relaxed);
   const best = strictOpts[0] || r.options[0];
-  const strictNote = r.strict ? (strictOpts.length
-      ? `<div class="banner upd" style="margin:0 0 12px">🧭 Mode objectivité : seulement des sélections qui respectent tes critères (${r.n_ok} trouvées sur tous les matchs).</div>`
-      : `<div class="banner warn" style="margin:0 0 12px">🧭 Impossible d'atteindre +${eur(r.target)} en restant objectif : seules ${r.n_ok||0} sélections respectent tes critères, et le gain maximum objectif en ce moment est d'environ <b>+${eur(r.strict_max_gain||0)}</b>. ${r.why&&Object.keys(r.why).length?`<br><small>Sélections écartées : ${Object.entries(r.why).map(([k,v])=>`${v} ${esc(k)}`).join(" · ")}. Si « données manquantes » domine, ajoute la clé football-data.org ou décoche « Exiger des données ».</small>`:""} Ci-dessous, les options hors critères, à tes risques.</div>`) : "";
-  $("#goal").innerHTML = strictNote + `
-    <div class="sumst" style="grid-template-columns:repeat(3,1fr)">
-      <div class="card stat"><div class="l">Cote nécessaire</div><div class="v">${fr(r.need_odds)}</div><div class="h">pour ${eur(r.stake)} → +${eur(r.target)}</div></div>
-      <div class="card stat"><div class="l">Meilleure chance d'y arriver</div><div class="v" style="color:var(--green2)">${pc(best.p_hit, best.p_hit<0.1?1:0)}</div><div class="h">${esc(best.title)}</div></div>
-      <div class="card stat"><div class="l">En clair</div><div class="v" style="font-size:20px;padding-top:4px">≈ 1 fois sur ${Math.max(1, Math.round(1/best.p_hit))}</div><div class="h">le reste du temps, la mise est perdue</div></div>
-    </div>
-    <div class="list">${r.options.map((o,i)=>`
-      <div class="card opt ${i===0?"best":""}">
-        <div class="hd"><div class="rank">${i+1}</div><div><b>${esc(o.title)}${o.relaxed?' <span class="tag w" style="margin-left:6px">⚠ HORS CRITÈRES</span>':(i===0?' <span class="tag v" style="margin-left:6px">MEILLEURE OPTION</span>':'')}</b><small>${esc(o.desc)} · ${esc(o.book)}</small></div><div class="sp"></div>
-          <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances d'atteindre l'objectif</small></div></div>
+  const others = r.options.filter(o=>o!==best);
+  const warn = best.relaxed ? `<div class="banner warn" style="margin:0 0 12px">⚠ Avec tes critères d'objectivité, le maximum atteignable aujourd'hui est d'environ +${eur(r.strict_max_gain||0)}. Ce ticket les dépasse un peu pour atteindre +${eur(r.target)}.</div>` : "";
+  const optCard = (o, main) => `
+      <div class="card opt ${main?"best":""}">
+        <div class="hd"><div><b>${main?"🎯 Le ticket à jouer":esc(o.title)}</b><small>${main?`${esc(o.title)} · `:""}${esc(o.book)}</small></div><div class="sp"></div>
+          <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances · ≈ 1 fois sur ${Math.max(1, Math.round(1/o.p_hit))}</small></div></div>
         ${o.tickets.map((t,j)=>`<div class="tk">
-          <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise ${eur(t.stake)}</span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><span>·</span><span>${pc(t.p,1)} de chances</span><div class="sp"></div>${t.value?`<span class="tag v">VALUE ${sg(t.ev)}</span>`:`<span class="tag n">Sans value ${sg(t.ev)}</span>`}</div>
-          ${t.legs.map(l=>`<div class="ln" data-leg="${esc(l.uid)}" title="Clique pour voir l'analyse"><span><b>${esc(l.selection)}</b> <span class="conf ${l.p>=0.62?"hi":l.p<0.45?"lo":""}">${pc(l.p)}</span> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">cote estimée, prends si ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b><input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic" title="Tape la cote vue sur Betclic"></div>`).join("")}
-          <div class="ft"><span>Si ce ticket passe, tu touches</span><b>${eur(t.ret)} (+${eur(t.ret - r.stake)})</b></div>
+          <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise <b style="font-size:13px">${eur(t.stake)}</b></span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><div class="sp"></div></div>
+          ${t.legs.map(l=>`<div class="ln" data-leg="${esc(l.uid)}" title="Clique pour voir l'analyse"><span><b>${esc(l.selection)}</b> <span class="conf ${l.p>=0.62?"hi":l.p<0.45?"lo":""}">${pc(l.p)}</span> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">prends si Betclic ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b><input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic" title="Tape la cote vue sur Betclic"></div>`).join("")}
+          <div class="ft"><span>Si ça passe, tu touches</span><b>${eur(t.ret)} (+${eur(t.ret - r.stake)})</b></div>
         </div>`).join("")}
-      </div>`).join("")}</div>
-    <div class="card note">👆 Clique sur une sélection pour voir son analyse complète (forme, absents, sources…).<br>Les cotes marquées ≈ sont estimées : sur Betclic, prends la sélection seulement si la cote affichée est au moins égale au minimum indiqué.<br>Plus l'objectif est gros par rapport à la mise, plus la cote nécessaire est haute et moins il y a de chances que ça passe. Les options sont classées de la plus probable à la moins probable. Vérifie les cotes sur Betclic avant de valider.</div>`;
+      </div>`;
+  $("#goal").innerHTML = warn + optCard(best, true) +
+    (others.length ? `<details style="margin-top:12px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Voir les ${others.length} autres façons d'y arriver (moins bonnes)</summary><div class="list" style="margin-top:10px">${others.map(o=>optCard(o,false)).join("")}</div></details>` : "");
 }
 
 /* ----- paramètres ----- */

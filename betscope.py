@@ -21,6 +21,9 @@ import itertools
 import json
 import os
 import queue
+import subprocess
+import sys
+import tempfile
 import random
 import threading
 import time
@@ -30,8 +33,9 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.1.0"
 API_BASE = "https://api.the-odds-api.com/v4"
+GITHUB_REPO = "LogicArt19/betscope"
 
 # --------------------------------------------------------------------------
 # Configuration
@@ -206,6 +210,74 @@ def fetch_odds(cfg):
         except Exception as e:  # réseau coupé, timeout...
             errors.append(f"{sport} : {e}")
     return events, quota, errors
+
+
+# --------------------------------------------------------------------------
+# Mises à jour automatiques (via les Releases GitHub)
+# --------------------------------------------------------------------------
+
+def _vtuple(v):
+    out = []
+    for part in v.lstrip("vV").split("."):
+        digits = "".join(ch for ch in part if ch.isdigit())
+        out.append(int(digits) if digits else 0)
+    return tuple(out)
+
+
+def check_update():
+    """Renvoie (version, url_du_exe) si une version plus récente existe, sinon None."""
+    data, _ = http_get_json(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", timeout=15)
+    tag = data.get("tag_name", "")
+    if not tag or _vtuple(tag) <= _vtuple(APP_VERSION):
+        return None
+    for asset in data.get("assets", []):
+        if asset.get("name", "").lower().endswith(".exe"):
+            return tag.lstrip("vV"), asset["browser_download_url"]
+    return None
+
+
+def download_update(url, progress=None):
+    dest = os.path.join(tempfile.gettempdir(), "BetScope_update.exe")
+    req = urllib.request.Request(url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+    with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        done = 0
+        while True:
+            chunk = r.read(256 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+            done += len(chunk)
+            if progress and total:
+                progress(done / total)
+    if os.path.getsize(dest) < 1_000_000:
+        raise RuntimeError("fichier téléchargé incomplet")
+    return dest
+
+
+def install_update_and_restart(new_exe):
+    """Remplace le .exe actuel par le nouveau puis relance l'appli (Windows)."""
+    exe = sys.executable
+    bat = os.path.join(tempfile.gettempdir(), "betscope_update.bat")
+    script = f"""@echo off
+set /a n=0
+:retry
+timeout /t 2 /nobreak >nul
+copy /y "{new_exe}" "{exe}" >nul 2>nul
+if errorlevel 1 (
+  set /a n+=1
+  if %n% lss 30 goto retry
+  start "" "{exe}"
+  exit /b 1
+)
+del "{new_exe}" >nul 2>nul
+start "" "{exe}"
+del "%~f0"
+"""
+    with open(bat, "w", encoding="mbcs" if os.name == "nt" else "utf-8") as f:
+        f.write(script)
+    flags = 0x08000000 | 0x00000008  # CREATE_NO_WINDOW | DETACHED_PROCESS
+    subprocess.Popen(["cmd", "/c", bat], creationflags=flags, close_fds=True)
 
 
 # --------------------------------------------------------------------------
@@ -686,7 +758,7 @@ def run_gui():
             self.fetching, self.last_analysis = False, 0.0
             self.q = queue.Queue()
 
-            root.title(f"{APP_NAME} – Analyseur de paris sportifs")
+            root.title(f"{APP_NAME} {APP_VERSION} – Analyseur de paris foot")
             root.geometry("1280x760")
             root.minsize(980, 600)
             root.configure(bg=BG)
@@ -699,6 +771,8 @@ def run_gui():
                 self.last_fetch = cache.get("ts", 0)
                 self.next_refresh = self.last_fetch + float(self.cfg["refresh_minutes"]) * 60
                 self.reanalyze()
+            self.update_busy = False
+            self.next_update_check = time.time() + 3  # vérifie 3 s après le lancement
             self.tick()
 
         # ---------- style ----------
@@ -746,6 +820,7 @@ def run_gui():
             self.mode_badge.pack(side="left", padx=12)
             ttk.Button(top, text="⟳  Actualiser maintenant", style="Accent.TButton",
                        command=self.refresh).pack(side="right")
+            ttk.Button(top, text="Mises à jour", command=self.check_updates).pack(side="right", padx=(0, 8))
             self.countdown = ttk.Label(top, text="", style="Muted.TLabel")
             self.countdown.pack(side="right", padx=12)
 
@@ -1055,9 +1130,26 @@ def run_gui():
                     msg = self.q.get_nowait()
                     if msg[0] == "data":
                         self.on_data(*msg[1:])
+                    elif msg[0] == "update":
+                        self.on_update_found(*msg[1:])
+                    elif msg[0] == "update_none":
+                        self.update_busy = False
+                        if msg[1]:
+                            messagebox.showinfo(APP_NAME, msg[2])
+                    elif msg[0] == "dl_progress":
+                        self.status.config(text=f"Téléchargement de la mise à jour… {msg[1] * 100:.0f} %")
+                    elif msg[0] == "dl_done":
+                        self.finish_update(msg[1])
+                    elif msg[0] == "dl_error":
+                        self.update_busy = False
+                        messagebox.showerror(APP_NAME, f"La mise à jour a échoué : {msg[1]}\n"
+                                                       "Réessaie plus tard.")
             except queue.Empty:
                 pass
             now = time.time()
+            if now >= self.next_update_check:
+                self.next_update_check = now + 6 * 3600  # puis toutes les 6 h
+                self.check_updates(manual=False)
             if not self.fetching and now >= self.next_refresh:
                 self.refresh()
             if now - self.last_analysis > 60 and self.events:
@@ -1068,6 +1160,57 @@ def run_gui():
             self.countdown.config(text="Mise à jour en cours…" if self.fetching
                                   else f"Prochaine mise à jour dans {h:d}h{m:02d}m{s:02d}s")
             self.root.after(1000, self.tick)
+
+        # ---------- mises à jour ----------
+        def check_updates(self, manual=True):
+            if self.update_busy:
+                return
+            self.update_busy = True
+
+            def worker():
+                try:
+                    res = check_update()
+                    if res:
+                        self.q.put(("update", res[0], res[1], manual))
+                    else:
+                        self.q.put(("update_none", manual, f"Tu as déjà la dernière version ({APP_VERSION})."))
+                except Exception as e:
+                    self.q.put(("update_none", manual, f"Impossible de vérifier les mises à jour : {e}"))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def on_update_found(self, version, url, manual):
+            if not getattr(sys, "frozen", False):
+                self.update_busy = False
+                if manual:
+                    messagebox.showinfo(APP_NAME, f"Version {version} disponible (mise à jour auto "
+                                                  f"seulement depuis le .exe).")
+                return
+            if not messagebox.askyesno(APP_NAME, f"Une nouvelle version de BetScope est disponible !\n\n"
+                                                 f"Ta version : {APP_VERSION}\nNouvelle version : {version}\n\n"
+                                                 f"Mettre à jour maintenant ? (l'appli va redémarrer)"):
+                self.update_busy = False
+                return
+            self.status.config(text="Téléchargement de la mise à jour…")
+
+            def worker():
+                try:
+                    path = download_update(url, lambda p: self.q.put(("dl_progress", p)))
+                    self.q.put(("dl_done", path))
+                except Exception as e:
+                    self.q.put(("dl_error", str(e)))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def finish_update(self, path):
+            try:
+                install_update_and_restart(path)
+            except Exception as e:
+                self.update_busy = False
+                messagebox.showerror(APP_NAME, f"Installation impossible : {e}")
+                return
+            self.root.destroy()
+            os._exit(0)
 
         # ---------- actions ----------
         def compute_plan(self):

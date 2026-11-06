@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>BetScope</title>
+<style>
+:root{
+  --bg:#0a0c11; --bg2:#0f1218; --card:#141821; --card2:#1a1f2b; --line:#232a38;
+  --fg:#e8ecf3; --muted:#8a93a6; --dim:#5d6578;
+  --green:#22c55e; --green2:#34d399; --teal:#0e7490; --amber:#f59e0b; --red:#ef4444; --blue:#60a5fa;
+  --radius:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,sans-serif;
+  font-size:14px;overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+input,select{font:inherit;color:var(--fg)}
+.app{display:grid;grid-template-columns:232px 1fr;grid-template-rows:100vh;height:100vh;overflow:hidden}
+
+/* ---------- sidebar ---------- */
+.side{height:100vh;overflow:auto;background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:20px 14px}
+.brand{display:flex;align-items:center;gap:12px;padding:4px 8px 24px}
+.brand svg{width:40px;height:40px;filter:drop-shadow(0 6px 16px rgba(52,211,153,.25))}
+.brand b{font-size:19px;letter-spacing:-.3px;display:block}
+.brand small{color:var(--muted);font-size:11.5px}
+.nav{display:flex;flex-direction:column;gap:4px}
+.nav button{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:11px;color:var(--muted);
+  font-weight:500;text-align:left;transition:.15s}
+.nav button svg{width:19px;height:19px;flex:none}
+.nav button:hover{background:var(--card);color:var(--fg)}
+.nav button.on{background:linear-gradient(90deg,rgba(34,197,94,.16),rgba(34,197,94,.04));color:var(--fg);
+  box-shadow:inset 3px 0 0 var(--green)}
+.nav .count{margin-left:auto;background:var(--green);color:#052e16;font-size:11px;font-weight:700;
+  border-radius:20px;padding:1px 8px}
+.side .foot{margin-top:auto;font-size:11px;color:var(--dim);line-height:1.5;padding:12px 8px 0;border-top:1px solid var(--line)}
+.side .foot a{color:var(--muted)}
+
+/* ---------- main ---------- */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;height:100vh}
+.top{display:flex;align-items:center;gap:14px;padding:18px 28px;border-bottom:1px solid var(--line)}
+.top h1{font-size:21px;font-weight:650;letter-spacing:-.3px}
+.pill{font-size:11px;font-weight:700;letter-spacing:.6px;padding:5px 10px;border-radius:30px;display:flex;align-items:center;gap:7px}
+.pill.live{background:rgba(34,197,94,.14);color:var(--green2)}
+.pill.live i{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(34,197,94,.7);animation:pulse 1.6s infinite}
+.pill.demo{background:rgba(245,158,11,.15);color:var(--amber)}
+@keyframes pulse{70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.top .sp{flex:1}
+.top .meta{color:var(--muted);font-size:12.5px;text-align:right;line-height:1.45}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:11px;background:var(--card2);
+  border:1px solid var(--line);font-weight:600;transition:.15s}
+.btn:hover{border-color:#334155;background:#202634}
+.btn.primary{background:linear-gradient(135deg,#22c55e,#16a34a);border:0;color:#04220f}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn svg{width:16px;height:16px}
+.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.banner{margin:14px 28px 0;padding:12px 16px;border-radius:12px;display:flex;align-items:center;gap:12px;font-size:13px}
+.banner.upd{background:linear-gradient(90deg,rgba(96,165,250,.18),rgba(96,165,250,.05));border:1px solid rgba(96,165,250,.35)}
+.banner.warn{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:#fcd34d}
+.banner.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5}
+.banner .sp{flex:1}
+.bar{height:6px;background:var(--line);border-radius:6px;overflow:hidden;width:160px}
+.bar i{display:block;height:100%;background:var(--blue)}
+
+.content{flex:1;min-height:0;overflow:auto;padding:22px 28px 34px}
+.content::-webkit-scrollbar{width:10px}.content::-webkit-scrollbar-thumb{background:#262d3b;border-radius:10px;border:3px solid var(--bg)}
+.page{display:none;animation:fade .25s ease}
+.page.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}}
+h2{font-size:15px;font-weight:650;margin:26px 0 12px;display:flex;align-items:center;gap:10px}
+h2:first-child{margin-top:0}
+h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
+.sub{color:var(--muted);font-size:13px;margin:-6px 0 14px}
+
+/* ---------- cards ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.stat{padding:16px 18px}
+.stat .l{color:var(--muted);font-size:12px;font-weight:500}
+.stat .v{font-size:26px;font-weight:700;margin-top:6px;letter-spacing:-.5px}
+.stat .h{color:var(--dim);font-size:11.5px;margin-top:2px}
+
+.hero{display:grid;grid-template-columns:1.35fr 1fr;gap:14px}
+.potd{padding:22px 24px;position:relative;overflow:hidden;
+  background:radial-gradient(120% 140% at 100% 0%,rgba(52,211,153,.18),transparent 55%),var(--card)}
+.potd .k{font-size:11px;font-weight:700;letter-spacing:1px;color:var(--green2)}
+.potd .sel{font-size:26px;font-weight:700;margin:10px 0 4px;letter-spacing:-.5px}
+.potd .m{color:var(--muted)}
+.potd .row{display:flex;gap:26px;margin-top:20px;align-items:flex-end}
+.potd .row div span{display:block;color:var(--muted);font-size:11.5px;margin-bottom:3px}
+.potd .row div b{font-size:20px}
+.potd .big{font-size:34px!important;color:var(--green2)}
+.quick{padding:20px 22px;display:flex;flex-direction:column;gap:14px}
+.quick .k{font-weight:650}
+.money{display:flex;align-items:center;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:0 14px}
+.money input{background:none;border:0;outline:0;font-size:26px;font-weight:700;width:100%;padding:10px 0}
+.money span{font-size:22px;color:var(--muted);font-weight:600}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:7px 13px;border-radius:30px;background:var(--bg2);border:1px solid var(--line);color:var(--muted);font-size:12.5px;font-weight:600}
+.chip.on{border-color:var(--green);color:var(--fg);background:rgba(34,197,94,.1)}
+
+/* ---------- bet rows ---------- */
+.list{display:flex;flex-direction:column;gap:8px}
+.bet{display:grid;grid-template-columns:118px minmax(0,1.5fr) minmax(0,1.2fr) 150px 92px 118px;align-items:center;
+  gap:14px;padding:13px 18px;cursor:pointer;transition:.15s}
+.bet:hover{border-color:#2f3a4d;background:#171c26;transform:translateX(2px)}
+.bet .d{color:var(--muted);font-size:12.5px}
+.bet .mt b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bet .mt small{color:var(--dim);font-size:11.5px}
+.bet .s{font-weight:600}
+.bet .s small{display:block;color:var(--dim);font-weight:400;font-size:11.5px}
+.prob{font-size:12px;color:var(--muted)}
+.prob .t{height:6px;background:var(--line);border-radius:6px;margin-top:5px;overflow:hidden}
+.prob .t i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--teal),var(--green2))}
+.odds{font-size:18px;font-weight:700;text-align:center;background:var(--bg2);border:1px solid var(--line);
+  border-radius:10px;padding:6px 0}
+.odds small{display:block;font-size:10.5px;color:var(--dim);font-weight:500}
+.tag{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:8px;text-align:center;white-space:nowrap}
+.tag.v{background:rgba(34,197,94,.14);color:var(--green2)}
+.tag.n{background:#1d2330;color:var(--muted)}
+.tag.w{background:rgba(245,158,11,.14);color:var(--amber)}
+.head{display:grid;grid-template-columns:118px minmax(0,1.5fr) minmax(0,1.2fr) 150px 92px 118px;gap:14px;
+  padding:0 18px 4px;color:var(--dim);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px}
+
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.search{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:0 12px;width:260px}
+.search input{background:none;border:0;outline:0;padding:9px 0;width:100%}
+.search svg{width:16px;height:16px;color:var(--dim)}
+
+/* ---------- combos ---------- */
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:14px}
+.combo{padding:18px 20px;display:flex;flex-direction:column;gap:12px}
+.combo .hd{display:flex;align-items:center;gap:10px}
+.combo .hd b{font-size:15px}
+.combo .hd .sp{flex:1}
+.leg{display:flex;gap:12px;align-items:center;padding:10px 12px;background:var(--bg2);border-radius:11px}
+.leg .n{width:24px;height:24px;border-radius:7px;background:var(--card2);display:grid;place-items:center;font-size:12px;font-weight:700;color:var(--muted);flex:none}
+.leg .x{flex:1;min-width:0}
+.leg .x b{display:block}
+.leg .x small{color:var(--dim);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.leg .o{font-weight:700}
+.combo .ft{display:flex;gap:22px;padding-top:4px}
+.combo .ft div span{display:block;color:var(--muted);font-size:11.5px}
+.combo .ft div b{font-size:18px}
+.combo .ft .tot b{color:var(--green2);font-size:22px}
+
+/* ---------- budget ---------- */
+.bud{display:grid;grid-template-columns:330px 1fr;gap:18px;align-items:start}
+.bud .form{padding:20px;display:flex;flex-direction:column;gap:16px;position:sticky;top:0}
+.mode{display:flex;flex-direction:column;gap:8px}
+.mode button{text-align:left;padding:12px 14px;border-radius:12px;background:var(--bg2);border:1px solid var(--line)}
+.mode button b{display:block;font-size:14px}
+.mode button small{color:var(--muted);font-size:12px}
+.mode button.on{border-color:var(--green);background:rgba(34,197,94,.08)}
+.ticket{padding:16px 18px;display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center}
+.ticket .num{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:16px;
+  background:linear-gradient(135deg,rgba(52,211,153,.2),rgba(14,116,144,.2));color:var(--green2)}
+.ticket .x b{font-size:15px}
+.ticket .x .m{color:var(--muted);font-size:12.5px;margin-top:2px}
+.ticket .x .legs{margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:#c8cfdb}
+.ticket .x .meta{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+.ticket .r{text-align:right}
+.ticket .r .stake{font-size:22px;font-weight:800}
+.ticket .r small{display:block;color:var(--muted);font-size:12px}
+.ticket .r .g{color:var(--green2);font-weight:600;font-size:12.5px;margin-top:4px}
+.sumst{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.note{color:var(--muted);font-size:12.5px;line-height:1.55;padding:14px 16px;margin-top:12px}
+.empty{padding:46px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--fg);font-size:16px;margin-bottom:6px}
+
+/* ---------- settings ---------- */
+.set{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.set .card{padding:20px}
+.set h3{font-size:14px;margin-bottom:14px}
+.f{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.f label{font-size:12.5px;font-weight:600;color:#c8cfdb}
+.f small{color:var(--dim);font-size:11.5px;line-height:1.4}
+.in{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:0;width:100%}
+.in:focus{border-color:var(--green)}
+.nums{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.leagues{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.chk{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:9px;background:var(--bg2);border:1px solid var(--line);cursor:pointer;font-size:13px}
+.chk input{accent-color:var(--green);width:16px;height:16px}
+.est{padding:12px 14px;border-radius:11px;font-size:12.5px;margin:4px 0 14px}
+.est.ok{background:rgba(34,197,94,.1);color:var(--green2)}
+.est.ko{background:rgba(245,158,11,.1);color:var(--amber)}
+
+/* ---------- drawer ---------- */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:50;backdrop-filter:blur(3px)}
+.ov.on{display:block}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:440px;background:var(--bg2);border-left:1px solid var(--line);
+  z-index:60;transform:translateX(100%);transition:.25s ease;padding:24px;overflow:auto}
+.drawer.on{transform:none}
+.drawer .x{position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:10px;background:var(--card)}
+.drawer h3{font-size:20px;margin:6px 0 4px;padding-right:40px}
+.pr{display:flex;justify-content:space-between;padding:9px 12px;border-radius:9px;font-size:13px}
+.pr:nth-child(odd){background:var(--card)}
+.pr.me{color:var(--green2);font-weight:700}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);background:#1f2633;border:1px solid var(--line);
+  padding:11px 18px;border-radius:12px;transition:.25s;z-index:70;font-weight:600}
+.toast.on{transform:translateX(-50%)}
+.skel{height:64px;border-radius:14px;background:linear-gradient(90deg,var(--card) 0%,#1a1f2a 50%,var(--card) 100%);
+  background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg viewBox="0 0 256 256"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#0e7490"/></linearGradient></defs><rect x="8" y="8" width="240" height="240" rx="56" fill="url(#lg)"/><circle cx="128" cy="128" r="72" fill="none" stroke="#fff" stroke-width="16"/><g stroke="#fff" stroke-width="14" stroke-linecap="round"><line x1="128" y1="34" x2="128" y2="70"/><line x1="128" y1="186" x2="128" y2="222"/><line x1="34" y1="128" x2="70" y2="128"/><line x1="186" y1="128" x2="222" y2="128"/></g><polygon points="128,100 154.6,119.3 144.5,150.7 111.5,150.7 101.4,119.3" fill="#fff"/></svg>
+      <div><b>BetScope</b><small>Analyseur foot · <span id="ver"></span></small></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-p="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Accueil</button>
+      <button data-p="picks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 8.5l7 1-5 4.9 1.2 7L12 18l-6.2 3.4L7 14.4 2 9.5l7-1z"/></svg>Meilleurs paris<span class="count" id="cnt-v" hidden></span></button>
+      <button data-p="combos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg>Combinés</button>
+      <button data-p="budget"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2.5"/><path d="M2 10h20M6 15h4"/></svg>Mon budget</button>
+      <button data-p="prob"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.5 0 9-3.6 9-9V5l-9-3-9 3v8c0 5.4 3.5 9 9 9z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>Plus probables</button>
+      <button data-p="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Paramètres</button>
+    </nav>
+    <div class="foot">18+ · Jouer comporte des risques : endettement, dépendance… Appelez le <b>09 74 75 13 13</b> (appel non surtaxé).</div>
+  </aside>
+
+  <main class="main">
+    <div class="top">
+      <h1 id="title">Accueil</h1>
+      <span class="pill live" id="pill"><i></i>EN DIRECT</span>
+      <div class="sp"></div>
+      <div class="meta" id="meta">Chargement…</div>
+      <button class="btn" id="btn-upd" title="Rechercher des mises à jour"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg></button>
+      <button class="btn primary" id="btn-ref"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>Actualiser</button>
+    </div>
+    <div id="banners"></div>
+
+    <div class="content" id="content">
+      <!-- ACCUEIL -->
+      <section class="page on" id="p-home">
+        <div class="stats">
+          <div class="card stat"><div class="l">Matchs analysés</div><div class="v" id="s-an">–</div><div class="h" id="s-an-h">&nbsp;</div></div>
+          <div class="card stat"><div class="l">Paris avec value</div><div class="v" id="s-v" style="color:var(--green2)">–</div><div class="h">cotes Betclic au-dessus du juste prix</div></div>
+          <div class="card stat"><div class="l">Prochaine mise à jour</div><div class="v" id="s-nx">–</div><div class="h" id="s-last">&nbsp;</div></div>
+          <div class="card stat"><div class="l">Crédits API restants</div><div class="v" id="s-q">–</div><div class="h">offre gratuite : 500 / mois</div></div>
+        </div>
+        <h2>Pari du jour</h2>
+        <div class="hero">
+          <div class="card potd" id="potd"><div class="skel"></div></div>
+          <div class="card quick">
+            <div class="k">Combien tu veux miser ?</div>
+            <div class="money"><input id="q-amount" value="10" inputmode="decimal"><span>€</span></div>
+            <div class="chips" id="q-modes">
+              <button class="chip" data-m="prudent">Prudent</button>
+              <button class="chip on" data-m="equilibre">Équilibré</button>
+              <button class="chip" data-m="agressif">Agressif</button>
+            </div>
+            <button class="btn primary" id="q-go" style="justify-content:center;padding:13px">Trouver le meilleur plan →</button>
+          </div>
+        </div>
+        <h2>Top paris <button class="link" data-goto="picks">Tout voir →</button></h2>
+        <div class="list" id="home-picks"></div>
+        <h2>Meilleurs combinés <button class="link" data-goto="combos">Tout voir →</button></h2>
+        <div class="grid2" id="home-combos"></div>
+      </section>
+
+      <!-- MEILLEURS PARIS -->
+      <section class="page" id="p-picks">
+        <p class="sub">Les paris où la cote Betclic est la plus intéressante par rapport à la vraie probabilité du match. Les paris <span class="tag v">VALUE</span> sont rentables sur la durée. Clique sur un pari pour voir le détail.</p>
+        <div class="toolbar">
+          <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="f-q" placeholder="Équipe, championnat…"></div>
+          <div class="chips" id="f-type">
+            <button class="chip on" data-t="all">Tous</button>
+            <button class="chip" data-t="value">Value seulement</button>
+            <button class="chip" data-t="h2h">Résultat</button>
+            <button class="chip" data-t="tot">Buts</button>
+          </div>
+          <div class="chips" id="f-sort" style="margin-left:auto">
+            <button class="chip on" data-s="ev">Meilleure value</button>
+            <button class="chip" data-s="p">Plus probable</button>
+            <button class="chip" data-s="ts">Date</button>
+            <button class="chip" data-s="odds">Grosse cote</button>
+          </div>
+        </div>
+        <div class="head"><span>Date</span><span>Match</span><span>Pari</span><span>Probabilité</span><span style="text-align:center">Cote</span><span style="text-align:center">Value</span></div>
+        <div class="list" id="picks"></div>
+      </section>
+
+      <!-- COMBINES -->
+      <section class="page" id="p-combos">
+        <p class="sub">Combinés sur des matchs différents, toutes les sélections chez Betclic. Les combinés <span class="tag v">VALUE</span> sont faits uniquement de paris rentables.</p>
+        <div class="grid2" id="combos"></div>
+      </section>
+
+      <!-- BUDGET -->
+      <section class="page" id="p-budget">
+        <div class="bud">
+          <div class="card form">
+            <div class="k" style="font-weight:650">Je veux miser</div>
+            <div class="money"><input id="b-amount" value="10" inputmode="decimal"><span>€</span></div>
+            <div class="mode" id="b-modes">
+              <button data-m="prudent"><b>🛡️ Prudent</b><small>4 paris simples, que des favoris (≥ 55 %)</small></button>
+              <button data-m="equilibre" class="on"><b>⚖️ Équilibré</b><small>3 simples + 1 combiné de 2 matchs</small></button>
+              <button data-m="agressif"><b>🔥 Agressif</b><small>Gros combinés, gains plus gros, plus risqué</small></button>
+            </div>
+            <button class="btn primary" id="b-go" style="justify-content:center;padding:13px">Trouver le meilleur plan</button>
+          </div>
+          <div id="plan"><div class="card empty"><b>Ton plan de mise s'affichera ici</b>Entre un montant, choisis un style, puis clique sur « Trouver le meilleur plan ».</div></div>
+        </div>
+      </section>
+
+      <!-- PLUS PROBABLES -->
+      <section class="page" id="p-prob">
+        <p class="sub">Les issues les plus probables selon le marché. Attention : un pari qui passe souvent n'est pas forcément rentable si la cote est trop basse (value négative).</p>
+        <div class="head"><span>Date</span><span>Match</span><span>Pari</span><span>Probabilité</span><span style="text-align:center">Cote</span><span style="text-align:center">Value</span></div>
+        <div class="list" id="prob"></div>
+      </section>
+
+      <!-- PARAMETRES -->
+      <section class="page" id="p-settings">
+        <div class="set">
+          <div class="card">
+            <h3>Connexion aux cotes</h3>
+            <div class="f"><label>Clé API The Odds API</label><input class="in" id="c-api_key" type="password" autocomplete="off"><small>Gratuite sur the-odds-api.com. Sans clé, l'appli tourne en mode démo avec des matchs fictifs.</small></div>
+            <div class="f"><label>Mise à jour automatique toutes les (minutes)</label><input class="in" id="c-refresh_minutes"></div>
+            <div class="est" id="c-est"></div>
+            <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>Par défaut betclic_fr. Tu peux en ajouter : winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr (séparés par des virgules).</small></div>
+            <div class="f"><label>Bookmakers utilisés pour calculer la vraie probabilité</label><input class="in" id="c-source_books"><small>10 max = 1 crédit par marché. Garde pinnacle dedans, c'est le plus précis.</small></div>
+            <div class="f"><label>Marchés</label><input class="in" id="c-markets"><small>h2h = 1N2 (victoire / nul), totals = plus/moins de buts.</small></div>
+            <label class="chk" style="margin-top:4px"><input type="checkbox" id="c-demo">Forcer le mode démo (données fictives)</label>
+          </div>
+          <div class="card">
+            <h3>Championnats suivis</h3>
+            <div class="leagues" id="c-leagues"></div>
+            <h3 style="margin-top:22px">Réglages de l'analyse</h3>
+            <div class="nums">
+              <div class="f"><label>Value mini</label><input class="in" id="c-min_ev"><small>0,02 = 2 %</small></div>
+              <div class="f"><label>Value max avant alerte</label><input class="in" id="c-max_ev"></div>
+              <div class="f"><label>Cote mini</label><input class="in" id="c-min_odds"></div>
+              <div class="f"><label>Cote maxi</label><input class="in" id="c-max_odds"></div>
+              <div class="f"><label>Matchs dans les (heures)</label><input class="in" id="c-horizon_hours"></div>
+              <div class="f"><label>Mise mini (€)</label><input class="in" id="c-min_stake"></div>
+              <div class="f"><label>Sélections max / combiné</label><input class="in" id="c-max_legs"></div>
+              <div class="f"><label>Nb bookmakers mini</label><input class="in" id="c-min_books"></div>
+            </div>
+            <button class="btn primary" id="c-save" style="margin-top:6px">Enregistrer</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="ov" id="ov"></div>
+<aside class="drawer" id="drawer"><button class="x" id="dx">✕</button><div id="dbody"></div></aside>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fr = (x, d=2) => Number(x).toFixed(d).replace(".", ",");
+const eur = x => (x < 0 ? "−" : "") + fr(Math.abs(x)) + " €";
+const pc = (x, d=0) => fr(x * 100, d) + " %";
+const sg = x => (x >= 0 ? "+" : "−") + fr(Math.abs(x) * 100, 1) + " %";
+let api = null, status = {}, data = {picks: [], probable: [], combos: []}, rev = -1, cfg = null;
+let nextAt = 0, page = "home";
+const TITLES = {home:"Accueil", picks:"Meilleurs paris", combos:"Combinés", budget:"Mon budget", prob:"Plus probables", settings:"Paramètres"};
+
+function toast(t){ const e=$("#toast"); e.textContent=t; e.classList.add("on"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove("on"),2600); }
+function go(p){ page=p; $$("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.p===p)); $$(".page").forEach(s=>s.classList.toggle("on",s.id==="p-"+p)); $("#title").textContent=TITLES[p]; $("#content").scrollTop=0; if(p==="settings") loadCfg(); }
+$$("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.p));
+document.addEventListener("click",e=>{ const g=e.target.closest("[data-goto]"); if(g) go(g.dataset.goto); });
+
+function tag(b){
+  if (b.suspect) return `<span class="tag w">⚠ ${sg(b.ev)}</span>`;
+  if (b.value) return `<span class="tag v">VALUE ${sg(b.ev)}</span>`;
+  return `<span class="tag n">Sans value ${sg(b.ev)}</span>`;
+}
+function betRow(b){
+  return `<div class="card bet" data-uid="${esc(b.uid)}">
+    <div class="d">${esc(b.date)}</div>
+    <div class="mt"><b>${esc(b.match)}</b><small>${esc(b.sport)}</small></div>
+    <div class="s">${esc(b.selection)}<small>${esc(b.market)} · ${esc(b.book)}</small></div>
+    <div class="prob">${pc(b.p)} de chances<div class="t"><i style="width:${Math.round(b.p*100)}%"></i></div></div>
+    <div class="odds">${fr(b.odds)}<small>juste ${fr(b.fair)}</small></div>
+    ${tag(b)}</div>`;
+}
+function comboCard(c){
+  return `<div class="card combo">
+    <div class="hd"><b>Combiné ×${c.legs.length}</b><span class="tag n">${esc(c.book)}</span><div class="sp"></div>${c.value?`<span class="tag v">VALUE ${sg(c.ev)}</span>`:`<span class="tag n">Sans value ${sg(c.ev)}</span>`}</div>
+    ${c.legs.map((l,i)=>`<div class="leg"><div class="n">${i+1}</div><div class="x"><b>${esc(l.selection)}</b><small>${esc(l.match)} · ${esc(l.date)}</small></div><div class="o">${fr(l.odds)}</div></div>`).join("")}
+    <div class="ft"><div class="tot"><span>Cote totale</span><b>${fr(c.odds)}</b></div><div><span>Chances que tout passe</span><b>${pc(c.p)}</b></div><div><span>Pour 10 €</span><b>${eur(10*c.odds)}</b></div></div>
+  </div>`;
+}
+const emptyBox = (t, s) => `<div class="card empty"><b>${t}</b>${s}</div>`;
+
+function noData(){
+  if (status.fetching) return emptyBox("Récupération des cotes…", "Quelques secondes.");
+  if (status.errors && status.errors.length) return emptyBox("Impossible de récupérer les cotes", esc(status.errors[0]));
+  if (status.n_upcoming === 0 && status.n_events === 0) return emptyBox("Aucun match à venir", "Coche d'autres championnats dans Paramètres, ou élargis « Matchs dans les (heures) ».");
+  return emptyBox("Rien à afficher pour l'instant", "Essaie d'élargir les réglages (cote maxi, nombre de bookmakers mini) dans Paramètres.");
+}
+
+function renderHome(){
+  const p = data.picks[0];
+  $("#potd").innerHTML = p ? `
+    <div class="k">${p.value ? "★ MEILLEURE VALUE DU MOMENT" : "★ MEILLEUR PARI DISPONIBLE"}</div>
+    <div class="sel">${esc(p.selection)}</div>
+    <div class="m">${esc(p.match)} · ${esc(p.sport)} · ${esc(p.date)}</div>
+    <div class="row">
+      <div><span>Cote ${esc(p.book)}</span><b class="big">${fr(p.odds)}</b></div>
+      <div><span>Vraie probabilité</span><b>${pc(p.p)}</b></div>
+      <div><span>Cote juste</span><b>${fr(p.fair)}</b></div>
+      <div><span>Value</span><b style="color:${p.value?'var(--green2)':'var(--muted)'}">${sg(p.ev)}</b></div>
+    </div>` : noData();
+  $("#potd").onclick = p ? () => openBet(p) : null; $("#potd").style.cursor = p ? "pointer" : "";
+  $("#home-picks").innerHTML = data.picks.slice(1, 6).map(betRow).join("") || (p ? "" : "");
+  $("#home-combos").innerHTML = data.combos.slice(0, 2).map(comboCard).join("") || emptyBox("Pas de combiné pour l'instant", "Il faut au moins 2 matchs différents avec des cotes.");
+}
+let fType="all", fSort="ev";
+$$("#f-type .chip").forEach(c=>c.onclick=()=>{fType=c.dataset.t; $$("#f-type .chip").forEach(x=>x.classList.toggle("on",x===c)); renderPicks();});
+$$("#f-sort .chip").forEach(c=>c.onclick=()=>{fSort=c.dataset.s; $$("#f-sort .chip").forEach(x=>x.classList.toggle("on",x===c)); renderPicks();});
+$("#f-q").oninput = () => renderPicks();
+function renderPicks(){
+  const q = $("#f-q").value.trim().toLowerCase();
+  let L = data.picks.filter(b =>
+    (fType==="all" || (fType==="value" && b.value) || (fType==="h2h" && b.market==="Résultat") || (fType==="tot" && b.market==="Total")) &&
+    (!q || (b.match+" "+b.sport+" "+b.selection).toLowerCase().includes(q)));
+  L = L.slice().sort((a,b)=> fSort==="ts" ? a.ts-b.ts : b[fSort]-a[fSort]);
+  $("#picks").innerHTML = L.map(betRow).join("") || (data.picks.length ? emptyBox("Aucun pari avec ces filtres", "") : noData());
+  $("#prob").innerHTML = data.probable.map(betRow).join("") || noData();
+  $("#combos").innerHTML = data.combos.map(comboCard).join("") || noData();
+}
+document.addEventListener("click", e => {
+  const r = e.target.closest(".bet"); if (!r) return;
+  const uid = r.dataset.uid;
+  const b = [...data.picks, ...data.probable, ...(lastPlan?lastPlan.items:[])].find(x => x.uid === uid);
+  if (b) openBet(b);
+});
+function openBet(b){
+  $("#dbody").innerHTML = `
+    <div class="tag ${b.value?'v':'n'}" style="display:inline-block">${b.value?'VALUE '+sg(b.ev):'Sans value '+sg(b.ev)}</div>
+    <h3>${esc(b.selection)}</h3>
+    <div style="color:var(--muted)">${esc(b.match)} · ${esc(b.sport)} · ${esc(b.date)}</div>
+    <div class="stats" style="grid-template-columns:1fr 1fr;margin:18px 0">
+      <div class="card stat"><div class="l">Cote ${esc(b.book)}</div><div class="v" style="color:var(--green2)">${fr(b.odds)}</div></div>
+      <div class="card stat"><div class="l">Cote juste</div><div class="v">${fr(b.fair)}</div><div class="h">vraie proba ${pc(b.p,1)}</div></div>
+    </div>
+    <p style="color:var(--muted);font-size:13px;line-height:1.55;margin-bottom:16px">${b.value
+      ? `La cote ${esc(b.book)} (${fr(b.odds)}) est plus haute que la cote juste (${fr(b.fair)}) : sur 100 paris comme celui-là, tu gagnerais en moyenne ${fr(b.ev*100,1)} € pour 100 € misés.`
+      : `La cote ${esc(b.book)} est un peu sous la cote juste : c'est la marge du bookmaker. Sur la durée ce type de pari perd en moyenne ${fr(-b.ev*100,1)} € pour 100 € misés.`}
+      ${b.suspect?'<br><b style="color:var(--amber)">⚠ Écart anormal : vérifie la cote sur le site avant de parier.</b>':''}</p>
+    <div style="font-weight:650;margin-bottom:8px">Cotes de tous les bookmakers (${b.n_books})</div>
+    ${b.prices.map(x=>`<div class="pr ${x.playable?'me':''}"><span>${esc(x.book)}${x.playable?' ← tu peux parier ici':''}</span><b>${fr(x.odds)}</b></div>`).join("")}`;
+  $("#drawer").classList.add("on"); $("#ov").classList.add("on");
+}
+$("#ov").onclick = $("#dx").onclick = () => { $("#drawer").classList.remove("on"); $("#ov").classList.remove("on"); };
+
+/* ----- budget ----- */
+let mode="equilibre", lastPlan=null;
+function setMode(m){ mode=m; $$("#b-modes button").forEach(b=>b.classList.toggle("on",b.dataset.m===m)); $$("#q-modes .chip").forEach(b=>b.classList.toggle("on",b.dataset.m===m)); }
+$$("#b-modes button").forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+$$("#q-modes .chip").forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+$("#q-go").onclick = () => { $("#b-amount").value=$("#q-amount").value; go("budget"); makePlan(); };
+$("#b-go").onclick = makePlan;
+$("#b-amount").onkeydown = e => { if (e.key==="Enter") makePlan(); };
+$("#q-amount").onkeydown = e => { if (e.key==="Enter") $("#q-go").click(); };
+async function makePlan(){
+  if (!api) return;
+  $("#plan").innerHTML = '<div class="skel" style="height:120px"></div>';
+  const p = await api.compute_plan($("#b-amount").value, mode);
+  lastPlan = p;
+  if (p.error) { $("#plan").innerHTML = emptyBox(esc(p.error), "Entre un montant, par exemple 10."); return; }
+  if (!p.items || !p.items.length) { $("#plan").innerHTML = noData(); return; }
+  const pos = p.expected >= 0;
+  $("#plan").innerHTML = `
+    <div class="sumst">
+      <div class="card stat"><div class="l">Total misé</div><div class="v">${eur(p.staked)}</div><div class="h">${p.items.length} ticket${p.items.length>1?"s":""} chez Betclic</div></div>
+      <div class="card stat"><div class="l">Gain max (tout passe)</div><div class="v" style="color:var(--green2)">+${eur(p.max_win)}</div></div>
+      <div class="card stat"><div class="l">Chance de finir gagnant</div><div class="v">${pc(p.p_profit)}</div><div class="h">tout perdre : ${pc(p.p_lose_all)}</div></div>
+      <div class="card stat"><div class="l">Gain moyen espéré</div><div class="v" style="color:${pos?'var(--green2)':'var(--muted)'}">${pos?'+':''}${eur(p.expected)}</div><div class="h">${p.n_value}/${p.items.length} ticket(s) avec value</div></div>
+    </div>
+    <div class="list">${p.items.map((it,i)=> it.type==="single" ? `
+      <div class="card ticket bet" data-uid="${esc(it.uid)}">
+        <div class="num">${i+1}</div>
+        <div class="x"><b>${esc(it.selection)}</b><div class="m">${esc(it.match)} · ${esc(it.sport)} · ${esc(it.date)}</div>
+          <div class="meta"><span class="tag n">Simple · ${esc(it.book)}</span><span class="tag n">${pc(it.p)} de chances</span>${tag(it)}</div></div>
+        <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div></div>
+      </div>` : `
+      <div class="card ticket">
+        <div class="num">${i+1}</div>
+        <div class="x"><b>Combiné ×${it.legs.length}</b>
+          <div class="legs">${it.legs.map(l=>`<div>• ${esc(l.selection)} <span style="color:var(--dim)">— ${esc(l.match)}, ${esc(l.date)}</span> @ ${fr(l.odds)}</div>`).join("")}</div>
+          <div class="meta"><span class="tag n">Combiné · ${esc(it.book)}</span><span class="tag n">${pc(it.p)} de chances</span>${it.value?`<span class="tag v">VALUE ${sg(it.ev)}</span>`:`<span class="tag n">Sans value ${sg(it.ev)}</span>`}</div></div>
+        <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div></div>
+      </div>`).join("")}</div>
+    <div class="card note">${p.n_value ? "Les tickets <b style='color:var(--green2)'>VALUE</b> sont rentables en moyenne sur la durée." : "Aucune value aujourd'hui chez Betclic : ce plan prend les meilleurs paris disponibles, mais il reste légèrement perdant en moyenne (marge du bookmaker)."}
+      Même un bon plan perd souvent sur une seule journée. Vérifie que la cote n'a pas bougé avant de valider sur Betclic, et ne mise que ce que tu peux perdre.</div>`;
+}
+
+/* ----- paramètres ----- */
+const NUMS=["refresh_minutes","min_ev","max_ev","min_odds","max_odds","horizon_hours","min_stake","max_legs","min_books"];
+const TXT=["api_key","bookmakers","source_books","markets"];
+async function loadCfg(){
+  if (!api) return;
+  cfg = await api.get_config();
+  TXT.concat(NUMS).forEach(k => { const el=$("#c-"+k); if (el) el.value = NUMS.includes(k) ? String(cfg[k]).replace(".", ",") : cfg[k]; });
+  $("#c-demo").checked = !!cfg.demo;
+  $("#c-leagues").innerHTML = cfg._sports.map(s=>`<label class="chk"><input type="checkbox" value="${s.key}" ${cfg.sports.includes(s.key)?"checked":""}>${esc(s.label)}</label>`).join("");
+  $$("#c-leagues input").forEach(i=>i.onchange=est);
+  est();
+}
+function readCfg(){
+  const o = {};
+  TXT.concat(NUMS).forEach(k => o[k] = $("#c-"+k).value);
+  o.demo = $("#c-demo").checked;
+  o.sports = $$("#c-leagues input:checked").map(i=>i.value);
+  return o;
+}
+async function est(){
+  if (!api) return;
+  const r = await api.estimate(readCfg());
+  const ok = r.month <= 500;
+  $("#c-est").className = "est " + (ok?"ok":"ko");
+  $("#c-est").textContent = `${r.per} crédits par mise à jour ≈ ${r.month} crédits / mois. ` + (ok ? "✓ OK avec l'offre gratuite." : "⚠ Trop pour l'offre gratuite (500) : augmente l'intervalle ou décoche des championnats.");
+}
+["refresh_minutes","markets","source_books"].forEach(k=>$("#c-"+k).addEventListener("input",est));
+$("#c-save").onclick = async () => { const r = await api.save_config(readCfg()); toast(r.ok ? "✓ Paramètres enregistrés" : r.error); };
+
+/* ----- mise à jour, statut ----- */
+$("#btn-ref").onclick = async () => { await api.refresh(); toast("Actualisation des cotes…"); poll(); };
+$("#btn-upd").onclick = async () => { toast("Recherche de mises à jour…"); const r = await api.check_updates(); if (!r.update) toast(`✓ Tu as la dernière version (${r.version})`); poll(); };
+document.addEventListener("click", async e => { if (e.target.closest("#do-upd")) { await api.install_update(); poll(); } });
+
+function fmtLeft(s){ const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return h ? `${h}h${String(m).padStart(2,"0")}` : `${m}:${String(x).padStart(2,"0")}`; }
+function renderStatus(){
+  $("#ver").textContent = "v" + status.version;
+  const pill = $("#pill");
+  pill.className = "pill " + (status.demo ? "demo" : "live");
+  pill.innerHTML = status.demo ? "MODE DÉMO · matchs fictifs" : "<i></i>EN DIRECT";
+  $("#btn-ref").classList.toggle("spin", !!status.fetching);
+  $("#s-an").textContent = status.n_analyzed ?? "–";
+  $("#s-an-h").textContent = `${status.n_upcoming ?? 0} matchs à venir reçus`;
+  $("#s-v").textContent = status.n_value ?? "–";
+  $("#s-q").textContent = status.demo ? "—" : (status.quota ?? "–");
+  $("#s-last").textContent = status.last_fetch ? "dernière : " + status.last_fetch : " ";
+  const c = $("#cnt-v"); c.hidden = !status.n_value; c.textContent = status.n_value;
+  let b = "";
+  if (status.update) {
+    const dl = status.update_state === "downloading";
+    const err = (status.update_state||"").startsWith("error:") ? status.update_state.slice(6) : "";
+    b += `<div class="banner upd"><span>🚀 <b>Nouvelle version ${esc(status.update.version)} disponible</b> (tu as la ${esc(status.version)})${err?` — échec : ${esc(err)}`:""}</span><div class="sp"></div>${dl ? `<span>Téléchargement…</span><div class="bar"><i style="width:${Math.round(status.dl_progress*100)}%"></i></div>` : `<button class="btn primary" id="do-upd">Mettre à jour</button>`}</div>`;
+  }
+  if (status.demo && !status.has_key) b += `<div class="banner warn">ℹ️ Mode démo : ajoute ta clé API dans <b style="cursor:pointer;text-decoration:underline" data-goto="settings">Paramètres</b> pour avoir les vrais matchs.</div>`;
+  if (status.warning) b += `<div class="banner warn">ℹ️ ${esc(status.warning)}</div>`;
+  if (status.errors && status.errors.length) b += `<div class="banner err">⚠ ${status.errors.map(esc).join(" · ")}</div>`;
+  if ($("#banners").innerHTML !== b) $("#banners").innerHTML = b;
+}
+function tickClock(){
+  const left = Math.max(0, Math.round((nextAt - Date.now())/1000));
+  const t = status.fetching ? "en cours…" : fmtLeft(left);
+  $("#s-nx").textContent = t;
+  $("#meta").innerHTML = status.fetching ? "Mise à jour des cotes…" : `Prochaine mise à jour dans <b>${t}</b>` + (status.last_fetch ? `<br>Cotes du ${esc(status.last_fetch)}` : "");
+}
+async function poll(){
+  try {
+    status = await api.get_status();
+    nextAt = Date.now() + status.next_in * 1000;
+    renderStatus();
+    if (status.rev !== rev) { rev = status.rev; data = await api.get_data(); renderHome(); renderPicks(); }
+  } catch (e) { console.error(e); }
+}
+function start(a){ api = a; poll(); setInterval(poll, 1500); setInterval(tickClock, 500); }
+window.addEventListener("pywebviewready", () => start(window.pywebview.api));
+if (window.pywebview && window.pywebview.api) start(window.pywebview.api);
+if (window.__MOCK_API__) start(window.__MOCK_API__);
+</script>
+</body>
+</html>

@@ -33,7 +33,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -455,25 +455,57 @@ def analyze(events, cfg, now=None):
     return out
 
 
-def value_bets(selections, cfg):
-    lo, hi, min_ev = float(cfg["min_odds"]), float(cfg["max_odds"]), float(cfg["min_ev"])
-    vb = [s for s in selections if lo <= s["odds"] <= hi and s["ev"] >= min_ev]
+
+
+# --------------------------------------------------------------------------
+# Sélection des paris, combinés, plan de mise
+# --------------------------------------------------------------------------
+
+MODES = {
+    # nb simples, nb combinés, part du budget en combinés, proba mini, sélections max par combiné,
+    # proba mini d'un combiné
+    "prudent":   dict(n_singles=4, n_combos=0, combo_share=0.0, min_p=0.55, legs=2, combo_p=0.30),
+    "equilibre": dict(n_singles=3, n_combos=1, combo_share=0.30, min_p=0.40, legs=2, combo_p=0.22),
+    "agressif":  dict(n_singles=1, n_combos=2, combo_share=0.70, min_p=0.30, legs=3, combo_p=0.08),
+}
+WORST_EV = -0.09  # au-delà, la cote est vraiment mauvaise : jamais proposée
+
+
+def is_value(b, cfg):
+    return b["ev"] >= float(cfg["min_ev"]) and not b["suspect"]
+
+
+def candidates(selections, cfg, min_p=0.0):
+    lo, hi = float(cfg["min_odds"]), float(cfg["max_odds"])
+    return [s for s in selections
+            if lo <= s["odds"] <= hi and not s["suspect"] and s["p"] >= min_p and s["ev"] >= WORST_EV]
+
+
+def rank_key(b, cfg):
+    """Value d'abord (triée par Kelly), puis les autres par espérance."""
+    return (1 if is_value(b, cfg) else 0, b["kelly"] if is_value(b, cfg) else b["ev"])
+
+
+def top_picks(selections, cfg, limit=40, min_p=0.33):
+    """Value bets + meilleurs paris disponibles pour compléter."""
+    vb = [s for s in selections if is_value(s, cfg)
+          and float(cfg["min_odds"]) <= s["odds"] <= float(cfg["max_odds"])]
     vb.sort(key=lambda s: s["ev"], reverse=True)
-    return vb
+    seen = {s["uid"] for s in vb}
+    rest = [s for s in candidates(selections, cfg, min_p) if s["uid"] not in seen]
+    rest.sort(key=lambda s: s["ev"], reverse=True)
+    return (vb + rest)[:max(limit, len(vb))]
 
 
 def most_probable(selections, cfg, limit=60):
-    lo, hi = float(cfg["min_odds"]), float(cfg["max_odds"])
-    pr = [s for s in selections if lo <= s["odds"] <= hi and not s["suspect"]]
+    pr = candidates(selections, cfg)
     pr.sort(key=lambda s: s["p"], reverse=True)
     return pr[:limit]
 
 
-def build_combos(vbets, cfg, pool_size=16, limit=40):
-    """Combinés de 2..max_legs sélections, matchs différents, MÊME bookmaker."""
-    pool = [b for b in vbets if not b["suspect"]][:pool_size]
-    max_legs = int(cfg["max_legs"])
-    min_prob = float(cfg["min_combo_prob"])
+def build_combos(pool, cfg, max_legs=3, min_prob=0.15, limit=40, pool_size=14):
+    """Combinés de 2..max_legs sélections, matchs différents, au MÊME bookmaker."""
+    pool = sorted(pool, key=lambda b: rank_key(b, cfg), reverse=True)[:pool_size]
     combos = []
     for k in range(2, max_legs + 1):
         for legs in itertools.combinations(pool, k):
@@ -498,18 +530,16 @@ def build_combos(vbets, cfg, pool_size=16, limit=40):
                 continue
             odds, bkey, btitle = best
             ev_ = p * odds - 1
-            if ev_ <= 0:
-                continue
             combos.append({
                 "uid": "+".join(l["uid"] for l in legs),
                 "legs": legs,
                 "leg_odds": [l["playable"][bkey][0] for l in legs],
                 "p": p, "odds": odds, "ev": ev_,
-                "kelly": ev_ / (odds - 1),
+                "kelly": ev_ / (odds - 1) if odds > 1 else 0,
                 "book": btitle, "book_key": bkey,
+                "value": ev_ >= float(cfg["min_ev"]),
             })
-    combos.sort(key=lambda c: c["kelly"], reverse=True)
-    # évite d'afficher un combiné déjà contenu dans un meilleur
+    combos.sort(key=lambda c: (c["value"], c["ev"]), reverse=True)
     out, used = [], []
     for c in combos:
         key = frozenset(l["uid"] for l in c["legs"])
@@ -522,102 +552,105 @@ def build_combos(vbets, cfg, pool_size=16, limit=40):
     return out
 
 
+def _weight(p, ev):
+    return p * (1 + 10 * max(ev, 0))
+
+
 def _allocate(items, amount_cents, min_cents):
-    """Répartit amount_cents proportionnellement au Kelly, avec mise minimale."""
-    items = [i for i in items if i["kelly"] > 0]
+    """Répartit amount_cents selon le poids de chaque pari, avec une mise minimale."""
+    items = list(items)
     while items:
-        total_k = sum(i["kelly"] for i in items)
-        raw = [amount_cents * i["kelly"] / total_k for i in items]
+        total = sum(i["_w"] for i in items)
+        raw = [amount_cents * i["_w"] / total for i in items]
         if min(raw) >= min_cents or len(items) == 1:
             break
-        items = [i for i, r in zip(items, raw) if r != min(raw)]
+        items.pop(raw.index(min(raw)))
     if not items:
         return []
-    total_k = sum(i["kelly"] for i in items)
-    stakes = [int(amount_cents * i["kelly"] / total_k // 10 * 10) for i in items]
+    total = sum(i["_w"] for i in items)
+    stakes = [int(amount_cents * i["_w"] / total // 10 * 10) for i in items]
     stakes[0] += amount_cents - sum(stakes)
     return list(zip(items, stakes))
 
 
-def stake_plan(budget, mode, vbets, combos, cfg, sims=20000, seed=None):
-    """Construit le meilleur plan de mise pour un budget donné."""
+def stake_plan(budget, mode, selections, cfg, sims=20000, seed=None):
+    """Meilleur plan possible pour un budget : TOUJOURS une proposition si des matchs existent."""
+    rules = MODES.get(mode, MODES["equilibre"])
     budget_c = int(round(budget * 100))
-    min_c = int(round(float(cfg["min_stake"]) * 100))
+    min_c = max(10, int(round(float(cfg["min_stake"]) * 100)))
+    pool = candidates(selections, cfg, rules["min_p"])
+    pool.sort(key=lambda b: rank_key(b, cfg), reverse=True)
+
     singles, seen = [], set()
-    for b in vbets:
-        if b["suspect"] or b["event_id"] in seen:
-            continue
-        if mode == "prudent" and b["p"] < 0.40:
+    for b in pool:
+        if len(singles) >= rules["n_singles"]:
+            break
+        if b["event_id"] in seen:
             continue
         seen.add(b["event_id"])
-        singles.append(b)
-    if mode == "prudent":
-        s_pick, c_pick, c_share = singles[:6], [], 0.0
-    elif mode == "equilibre":
-        s_pick, c_pick, c_share = singles[:5], combos[:1], 0.25
-    else:
-        s_pick, c_pick, c_share = singles[:3], combos[:2], 0.60
-    if not c_pick:
-        c_share = 0.0
-    if not s_pick:
-        c_share = 1.0 if c_pick else 0.0
+        singles.append(dict(b, _w=_weight(b["p"], b["ev"])))
 
-    c_amount = int(budget_c * c_share)
-    s_amount = budget_c - c_amount
-    s_alloc = _allocate(s_pick, s_amount, min_c) if s_amount else []
-    c_alloc = _allocate(c_pick, c_amount, min_c) if c_amount else []
+    combos = []
+    if rules["n_combos"]:
+        cpool = candidates(selections, cfg, max(0.30, rules["min_p"] - 0.05))
+        fresh = [s for s in cpool if s["event_id"] not in seen]
+        found = build_combos(fresh, cfg, rules["legs"], rules["combo_p"], limit=rules["n_combos"])
+        if not found:
+            found = build_combos(cpool, cfg, rules["legs"], rules["combo_p"], limit=rules["n_combos"])
+        for c in found:
+            combos.append(dict(c, _w=_weight(c["p"], c["ev"])))
 
-    plan = {"budget": budget, "mode": mode, "singles": [], "combos": []}
-    for b, c in s_alloc:
-        plan["singles"].append({"bet": b, "stake": c / 100})
-    for cb, c in c_alloc:
-        plan["combos"].append({"combo": cb, "stake": c / 100})
-    if not plan["singles"] and not plan["combos"]:
+    share = rules["combo_share"] if combos else 0.0
+    if not singles and combos:
+        share = 1.0
+    c_amount = int(budget_c * share)
+    s_alloc = _allocate(singles, budget_c - c_amount, min_c) if budget_c - c_amount > 0 else []
+    c_alloc = _allocate(combos, c_amount, min_c) if c_amount > 0 else []
+    if not s_alloc and singles and c_amount and not c_alloc:
+        s_alloc = _allocate(singles, budget_c, min_c)
+
+    items = [{"type": "single", "bet": b, "stake": c / 100} for b, c in s_alloc] + \
+            [{"type": "combo", "combo": cb, "stake": c / 100} for cb, c in c_alloc]
+    plan = {"budget": budget, "mode": mode, "items": items}
+    if not items:
         return plan
 
-    # Espérance exacte
-    plan["expected"] = sum(x["stake"] * x["bet"]["ev"] for x in plan["singles"]) + \
-        sum(x["stake"] * x["combo"]["ev"] for x in plan["combos"])
-    plan["max_win"] = sum(x["stake"] * (x["bet"]["odds"] - 1) for x in plan["singles"]) + \
-        sum(x["stake"] * (x["combo"]["odds"] - 1) for x in plan["combos"])
+    def odds_p_ev(it):
+        x = it["bet"] if it["type"] == "single" else it["combo"]
+        return x["odds"], x["p"], x["ev"]
 
-    # Simulation Monte-Carlo (matchs indépendants)
+    plan["staked"] = sum(it["stake"] for it in items)
+    plan["expected"] = sum(it["stake"] * odds_p_ev(it)[2] for it in items)
+    plan["max_win"] = sum(it["stake"] * (odds_p_ev(it)[0] - 1) for it in items)
+    plan["n_value"] = sum(1 for it in items
+                          if (is_value(it["bet"], cfg) if it["type"] == "single" else it["combo"]["value"]))
+
     rnd = random.Random(seed)
     probs = {}
-    for x in plan["singles"]:
-        probs[x["bet"]["uid"]] = x["bet"]["p"]
-    for x in plan["combos"]:
-        for l in x["combo"]["legs"]:
+    for it in items:
+        legs = [it["bet"]] if it["type"] == "single" else it["combo"]["legs"]
+        for l in legs:
             probs[l["uid"]] = l["p"]
     uids = list(probs)
-    staked = sum(x["stake"] for x in plan["singles"]) + sum(x["stake"] for x in plan["combos"])
     pos = zero = 0
-    results = []
     for _ in range(sims):
         won = {u: rnd.random() < probs[u] for u in uids}
         ret = 0.0
-        for x in plan["singles"]:
-            if won[x["bet"]["uid"]]:
-                ret += x["stake"] * x["bet"]["odds"]
-        for x in plan["combos"]:
-            if all(won[l["uid"]] for l in x["combo"]["legs"]):
-                ret += x["stake"] * x["combo"]["odds"]
-        net = ret - staked
-        results.append(net)
-        if net > 0:
+        for it in items:
+            legs = [it["bet"]] if it["type"] == "single" else it["combo"]["legs"]
+            if all(won[l["uid"]] for l in legs):
+                ret += it["stake"] * odds_p_ev(it)[0]
+        if ret - plan["staked"] > 0.001:
             pos += 1
         if ret == 0:
             zero += 1
-    results.sort()
     plan["p_profit"] = pos / sims
     plan["p_lose_all"] = zero / sims
-    plan["median"] = results[sims // 2]
-    plan["staked"] = staked
     return plan
 
 
 # --------------------------------------------------------------------------
-# Formatage
+# Formatage / sérialisation pour l'interface
 # --------------------------------------------------------------------------
 
 JOURS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"]
@@ -625,645 +658,333 @@ JOURS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"]
 
 def fmt_date(dt):
     loc = dt.astimezone()
-    return f"{JOURS[loc.weekday()]} {loc:%d/%m %H:%M}"
+    today = datetime.now().astimezone().date()
+    if loc.date() == today:
+        return f"Aujourd'hui {loc:%H:%M}"
+    if loc.date() == today + timedelta(days=1):
+        return f"Demain {loc:%H:%M}"
+    return f"{JOURS[loc.weekday()].capitalize()} {loc:%d/%m %H:%M}"
 
 
-def eur(x):
-    return f"{x:,.2f} €".replace(",", " ").replace(".", ",")
+def ser_bet(b, cfg):
+    return {
+        "uid": b["uid"], "match": b["match"], "sport": b["sport"], "date": fmt_date(b["start"]),
+        "ts": b["start"].timestamp(), "selection": b["selection"], "market": b["market"],
+        "p": round(b["p"], 4), "fair": round(b["fair"], 2), "odds": b["odds"], "book": b["book"],
+        "ev": round(b["ev"], 4), "n_books": b["n_books"], "suspect": b["suspect"],
+        "value": is_value(b, cfg),
+        "prices": [{"book": t, "odds": o, "playable": k in b["playable"]}
+                   for k, (o, t) in sorted(b["all_prices"].items(), key=lambda kv: -kv[1][0])],
+    }
 
 
-def pct(x, sign=False):
-    s = f"{x * 100:+.1f} %" if sign else f"{x * 100:.0f} %"
-    return s.replace(".", ",")
+def ser_combo(c):
+    return {
+        "uid": c["uid"], "odds": round(c["odds"], 2), "p": round(c["p"], 4), "ev": round(c["ev"], 4),
+        "book": c["book"], "value": c["value"],
+        "legs": [{"selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
+                  "sport": l["sport"], "odds": lo, "p": round(l["p"], 4)}
+                 for l, lo in zip(c["legs"], c["leg_odds"])],
+    }
 
 
-def odd(x):
-    return f"{x:.2f}".replace(".", ",")
-
-
-def plan_text(plan, updated):
-    modes = {"prudent": "Prudent", "equilibre": "Équilibré", "agressif": "Agressif"}
-    L = []
-    L.append(f"PLAN POUR {eur(plan['budget'])}  ·  mode {modes.get(plan['mode'], plan['mode'])}")
-    L.append(f"Cotes mises à jour : {updated}")
-    L.append("")
-    if not plan["singles"] and not plan["combos"]:
-        L.append("Aucun pari rentable trouvé avec tes réglages pour le moment.")
-        L.append("Ne pas parier est aussi une décision gagnante : attends la prochaine mise à jour,")
-        L.append("ou élargis les compétitions / bookmakers dans Paramètres.")
-        return "\n".join(L)
-    n = 1
-    if plan["singles"]:
-        L.append("━━ PARIS SIMPLES ━━")
-        for x in plan["singles"]:
-            b = x["bet"]
-            L.append(f"{n}. Mise {eur(x['stake']):>9}  →  {b['selection']}")
-            L.append(f"     {b['match']}  ·  {b['sport']}  ·  {fmt_date(b['start'])}")
-            L.append(f"     Cote {odd(b['odds'])} chez {b['book']}  ·  proba réelle {pct(b['p'])}"
-                     f"  ·  value {pct(b['ev'], True)}  ·  gain si gagné {eur(x['stake'] * (b['odds'] - 1))}")
-            L.append("")
-            n += 1
-    if plan["combos"]:
-        L.append("━━ COMBINÉS ━━")
-        for x in plan["combos"]:
-            c = x["combo"]
-            L.append(f"{n}. Mise {eur(x['stake']):>9}  →  Combiné x{len(c['legs'])} chez {c['book']}"
-                     f"  ·  cote {odd(c['odds'])}")
-            for l, lo in zip(c["legs"], c["leg_odds"]):
-                L.append(f"     • {l['selection']}  ({l['match']}, {fmt_date(l['start'])})  @ {odd(lo)}")
-            L.append(f"     Proba réelle {pct(c['p'])}  ·  value {pct(c['ev'], True)}"
-                     f"  ·  gain si gagné {eur(x['stake'] * (c['odds'] - 1))}")
-            L.append("")
-            n += 1
-    L.append("━━ CE QUE DIT LA SIMULATION (20 000 scénarios) ━━")
-    L.append(f"Total misé                : {eur(plan['staked'])}")
-    L.append(f"Gain moyen espéré         : {'+' if plan['expected'] >= 0 else ''}{eur(plan['expected'])}")
-    L.append(f"Chance de finir gagnant   : {pct(plan['p_profit'])}")
-    L.append(f"Chance de tout perdre     : {pct(plan['p_lose_all'])}")
-    L.append(f"Gain max (tout passe)     : +{eur(plan['max_win'])}")
-    L.append("")
-    L.append("À retenir : un value bet n'est PAS un pari sûr. Il est rentable en moyenne,")
-    L.append("sur des dizaines/centaines de paris. Sur une seule journée, perdre est normal.")
-    L.append("Vérifie la cote sur le site avant de valider : elle peut avoir bougé.")
-    return "\n".join(L)
+def ser_plan(plan, cfg):
+    out = {k: plan.get(k) for k in ("budget", "mode", "staked", "expected", "max_win", "n_value",
+                                     "p_profit", "p_lose_all")}
+    out["items"] = []
+    for it in plan["items"]:
+        if it["type"] == "single":
+            d = ser_bet(it["bet"], cfg)
+            d.update(type="single", stake=it["stake"], gain=round(it["stake"] * (it["bet"]["odds"] - 1), 2))
+        else:
+            d = ser_combo(it["combo"])
+            d.update(type="combo", stake=it["stake"], gain=round(it["stake"] * (it["combo"]["odds"] - 1), 2))
+        out["items"].append(d)
+    return out
 
 
 # --------------------------------------------------------------------------
-# Interface graphique (Tkinter)
+# Pont Python <-> interface (pywebview)
 # --------------------------------------------------------------------------
 
-BG, PANEL, PANEL2 = "#111318", "#1a1d24", "#232731"
-FG, MUTED, ACCENT, WARN = "#e7e9ee", "#8b93a1", "#22c55e", "#f59e0b"
+def resource_path(rel):
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, rel)
 
 
-def run_gui():
-    import tkinter as tk
-    from tkinter import ttk, messagebox
+class Api:
+    """Méthodes appelées depuis l'interface (window.pywebview.api.*)."""
 
-    class Table(ttk.Frame):
-        """Treeview triable. columns = [(id, titre, largeur, affichage, tri, ancre)]"""
+    def __init__(self, start_loop=True):
+        self._lock = threading.RLock()
+        self._cfg = load_config()
+        self._events, self._is_demo, self._quota = [], False, None
+        self._errors, self._warning = [], ""
+        self._last_fetch, self._next_refresh, self._fetching = 0.0, time.time(), False
+        self._sel, self._picks, self._prob, self._combos = [], [], [], []
+        self._rev = 0
+        self._update = None          # {"version", "url"}
+        self._update_state = ""      # "", "downloading", "error:..."
+        self._dl_progress = 0.0
+        self._window = None
+        cache = load_cache()
+        if cache and cache.get("events") and self._cfg["api_key"] and not self._cfg["demo"]:
+            self._events, self._quota = cache["events"], cache.get("quota")
+            self._last_fetch = cache.get("ts", 0)
+            self._next_refresh = self._last_fetch + float(self._cfg["refresh_minutes"]) * 60
+            self._reanalyze()
+        if start_loop:
+            threading.Thread(target=self._loop, daemon=True).start()
 
-        def __init__(self, parent, columns, on_double=None):
-            super().__init__(parent)
-            self.columns = columns
-            self.tree = ttk.Treeview(self, columns=[c[0] for c in columns], show="headings")
-            for cid, title, w, _, _, anchor in columns:
-                self.tree.heading(cid, text=title, command=lambda c=cid: self.sort_by(c))
-                self.tree.column(cid, width=w, minwidth=40, anchor=anchor, stretch=(cid == columns[0][0]))
-            vsb = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
-            self.tree.configure(yscrollcommand=vsb.set)
-            self.tree.pack(side="left", fill="both", expand=True)
-            vsb.pack(side="right", fill="y")
-            self.tree.tag_configure("hot", foreground="#4ade80")
-            self.tree.tag_configure("good", foreground=FG)
-            self.tree.tag_configure("warn", foreground=WARN)
-            self.tree.tag_configure("neg", foreground=MUTED)
-            self.rows, self.shown, self.tagfunc = [], [], None
-            self.sort_col, self.sort_rev = None, True
-            if on_double:
-                self.tree.bind("<Double-1>", lambda e: self._double(on_double))
-
-        def set_rows(self, rows, tagfunc=None):
-            self.rows, self.tagfunc = rows, tagfunc
-            self.render()
-
-        def sort_by(self, cid):
-            self.sort_rev = not self.sort_rev if self.sort_col == cid else True
-            self.sort_col = cid
-            self.render()
-
-        def render(self):
-            self.tree.delete(*self.tree.get_children())
-            rows = self.rows
-            if self.sort_col:
-                col = next(c for c in self.columns if c[0] == self.sort_col)
-                rows = sorted(rows, key=col[4], reverse=self.sort_rev)
-            self.shown = rows
-            for i, r in enumerate(rows):
-                tags = (self.tagfunc(r),) if self.tagfunc else ()
-                self.tree.insert("", "end", iid=str(i), values=[c[3](r) for c in self.columns], tags=tags)
-
-        def _double(self, cb):
-            sel = self.tree.selection()
-            if sel:
-                cb(self.shown[int(sel[0])])
-
-    class App:
-        def __init__(self, root):
-            self.root = root
-            self.cfg = load_config()
-            self.events, self.selections, self.vbets, self.probable, self.combos = [], [], [], [], []
-            self.quota, self.errors, self.is_demo = None, [], False
-            self.last_fetch, self.next_refresh = 0.0, time.time()
-            self.fetching, self.last_analysis = False, 0.0
-            self.q = queue.Queue()
-
-            root.title(f"{APP_NAME} {APP_VERSION} – Analyseur de paris foot")
-            root.geometry("1280x760")
-            root.minsize(980, 600)
-            root.configure(bg=BG)
-            self._style()
-            self._build()
-
-            cache = load_cache()
-            if cache and cache.get("events") and self.cfg["api_key"] and not self.cfg["demo"]:
-                self.events, self.quota = cache["events"], cache.get("quota")
-                self.last_fetch = cache.get("ts", 0)
-                self.next_refresh = self.last_fetch + float(self.cfg["refresh_minutes"]) * 60
-                self.reanalyze()
-            self.update_busy = False
-            self.next_update_check = time.time() + 3  # vérifie 3 s après le lancement
-            self.tick()
-
-        # ---------- style ----------
-        def _style(self):
-            st = ttk.Style(self.root)
-            st.theme_use("clam")
-            st.configure(".", background=BG, foreground=FG, fieldbackground=PANEL, bordercolor=PANEL2,
-                         font=("Segoe UI", 10))
-            st.configure("TFrame", background=BG)
-            st.configure("Card.TFrame", background=PANEL)
-            st.configure("TLabel", background=BG, foreground=FG)
-            st.configure("Card.TLabel", background=PANEL, foreground=FG)
-            st.configure("Muted.TLabel", background=BG, foreground=MUTED, font=("Segoe UI", 9))
-            st.configure("Title.TLabel", background=BG, foreground=FG, font=("Segoe UI Semibold", 18))
-            st.configure("Badge.TLabel", background=WARN, foreground="#111", font=("Segoe UI Semibold", 9),
-                         padding=(8, 2))
-            st.configure("Live.TLabel", background=ACCENT, foreground="#06240f", font=("Segoe UI Semibold", 9),
-                         padding=(8, 2))
-            st.configure("TButton", background=PANEL2, foreground=FG, padding=(12, 6), borderwidth=0)
-            st.map("TButton", background=[("active", "#2f3542")])
-            st.configure("Accent.TButton", background=ACCENT, foreground="#06240f",
-                         font=("Segoe UI Semibold", 10))
-            st.map("Accent.TButton", background=[("active", "#16a34a")])
-            st.configure("TNotebook", background=BG, borderwidth=0)
-            st.configure("TNotebook.Tab", background=PANEL, foreground=MUTED, padding=(16, 7))
-            st.map("TNotebook.Tab", background=[("selected", PANEL2)], foreground=[("selected", FG)])
-            st.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=FG, rowheight=26,
-                         borderwidth=0)
-            st.configure("Treeview.Heading", background=PANEL2, foreground=FG, relief="flat",
-                         font=("Segoe UI Semibold", 9))
-            st.map("Treeview", background=[("selected", "#1f5135")])
-            st.configure("TEntry", fieldbackground=PANEL2, foreground=FG, insertcolor=FG)
-            st.configure("TCheckbutton", background=BG, foreground=FG)
-            st.map("TCheckbutton", background=[("active", BG)])
-            st.configure("TRadiobutton", background=BG, foreground=FG)
-            st.map("TRadiobutton", background=[("active", BG)])
-            st.configure("TSpinbox", fieldbackground=PANEL2, foreground=FG, arrowcolor=FG)
-
-        # ---------- construction ----------
-        def _build(self):
-            top = ttk.Frame(self.root, padding=(16, 12, 16, 4))
-            top.pack(fill="x")
-            ttk.Label(top, text="BetScope", style="Title.TLabel").pack(side="left")
-            self.mode_badge = ttk.Label(top, text="", style="Live.TLabel")
-            self.mode_badge.pack(side="left", padx=12)
-            ttk.Button(top, text="⟳  Actualiser maintenant", style="Accent.TButton",
-                       command=self.refresh).pack(side="right")
-            ttk.Button(top, text="Mises à jour", command=self.check_updates).pack(side="right", padx=(0, 8))
-            self.countdown = ttk.Label(top, text="", style="Muted.TLabel")
-            self.countdown.pack(side="right", padx=12)
-
-            self.nb = ttk.Notebook(self.root)
-            self.nb.pack(fill="both", expand=True, padx=16, pady=8)
-
-            # Onglet 1 : value bets
-            f1 = ttk.Frame(self.nb, padding=8)
-            self.nb.add(f1, text="  Meilleurs paris  ")
-            self.info1 = ttk.Label(f1, text="", style="Muted.TLabel")
-            self.info1.pack(anchor="w", pady=(0, 6))
-            cols = [
-                ("match", "Match", 230, lambda b: b["match"], lambda b: b["match"], "w"),
-                ("sport", "Compétition", 150, lambda b: b["sport"], lambda b: b["sport"], "w"),
-                ("date", "Date", 105, lambda b: fmt_date(b["start"]), lambda b: b["start"], "w"),
-                ("pari", "Pari", 180, lambda b: b["selection"], lambda b: b["selection"], "w"),
-                ("cote", "Cote", 60, lambda b: odd(b["odds"]), lambda b: b["odds"], "center"),
-                ("book", "Où parier", 120, lambda b: b["book"], lambda b: b["book"], "w"),
-                ("juste", "Cote juste", 75, lambda b: odd(b["fair"]), lambda b: b["fair"], "center"),
-                ("proba", "Proba", 60, lambda b: pct(b["p"]), lambda b: b["p"], "center"),
-                ("value", "Value", 70, lambda b: pct(b["ev"], True) + (" ⚠" if b["suspect"] else ""),
-                 lambda b: b["ev"], "center"),
-                ("nb", "Books", 55, lambda b: b["n_books"], lambda b: b["n_books"], "center"),
-            ]
-            self.t_value = Table(f1, cols, on_double=self.show_detail)
-            self.t_value.pack(fill="both", expand=True)
-
-            # Onglet 2 : plus probables
-            f2 = ttk.Frame(self.nb, padding=8)
-            self.nb.add(f2, text="  Plus probables  ")
-            ttk.Label(f2, text="Les issues les plus probables selon le marché. Une value négative = "
-                               "pari perdant sur la durée, même s'il passe souvent.",
-                      style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
-            self.t_prob = Table(f2, cols, on_double=self.show_detail)
-            self.t_prob.pack(fill="both", expand=True)
-
-            # Onglet 3 : combinés
-            f3 = ttk.Frame(self.nb, padding=8)
-            self.nb.add(f3, text="  Combinés  ")
-            ttk.Label(f3, text="Combinés de value bets sur des matchs différents, au même bookmaker "
-                               "(double-clic pour le détail).", style="Muted.TLabel").pack(anchor="w", pady=(0, 6))
-            ccols = [
-                ("legs", "Sélections", 520,
-                 lambda c: "  +  ".join(f"{l['selection']} ({l['match']})" for l in c["legs"]),
-                 lambda c: len(c["legs"]), "w"),
-                ("n", "Nb", 40, lambda c: len(c["legs"]), lambda c: len(c["legs"]), "center"),
-                ("cote", "Cote", 70, lambda c: odd(c["odds"]), lambda c: c["odds"], "center"),
-                ("book", "Où parier", 120, lambda c: c["book"], lambda c: c["book"], "w"),
-                ("proba", "Proba", 65, lambda c: pct(c["p"]), lambda c: c["p"], "center"),
-                ("value", "Value", 75, lambda c: pct(c["ev"], True), lambda c: c["ev"], "center"),
-            ]
-            self.t_combo = Table(f3, ccols, on_double=self.show_combo)
-            self.t_combo.pack(fill="both", expand=True)
-
-            # Onglet 4 : budget
-            f4 = ttk.Frame(self.nb, padding=12)
-            self.nb.add(f4, text="  Mon budget  ")
-            row = ttk.Frame(f4)
-            row.pack(fill="x")
-            ttk.Label(row, text="Je veux miser :", font=("Segoe UI Semibold", 12)).pack(side="left")
-            self.budget_var = tk.StringVar(value="10")
-            e = ttk.Entry(row, textvariable=self.budget_var, width=8, font=("Segoe UI", 12))
-            e.pack(side="left", padx=6)
-            ttk.Label(row, text="€", font=("Segoe UI", 12)).pack(side="left")
-            self.mode_var = tk.StringVar(value="equilibre")
-            for val, txt in (("prudent", "Prudent (simples, favoris)"),
-                             ("equilibre", "Équilibré (simples + 1 combiné)"),
-                             ("agressif", "Agressif (gros combinés)")):
-                ttk.Radiobutton(row, text=txt, value=val, variable=self.mode_var).pack(side="left", padx=10)
-            ttk.Button(row, text="Trouver le meilleur plan", style="Accent.TButton",
-                       command=self.compute_plan).pack(side="left", padx=10)
-            e.bind("<Return>", lambda _e: self.compute_plan())
-            self.plan_box = tk.Text(f4, bg=PANEL, fg=FG, insertbackground=FG, relief="flat",
-                                    font=("Consolas", 10), wrap="word", padx=12, pady=10)
-            self.plan_box.pack(fill="both", expand=True, pady=(12, 0))
-            self.plan_box.insert("1.0", "Entre un montant puis clique sur « Trouver le meilleur plan ».")
-
-            # Onglet 5 : paramètres
-            self._build_settings()
-
-            # Barre de statut
-            bottom = ttk.Frame(self.root, padding=(16, 2, 16, 8))
-            bottom.pack(fill="x")
-            self.status = ttk.Label(bottom, text="Démarrage…", style="Muted.TLabel")
-            self.status.pack(side="left")
-            ttk.Label(bottom, text="18+ · Jouer comporte des risques : endettement, dépendance… "
-                                   "Appelez le 09 74 75 13 13 (appel non surtaxé)",
-                      style="Muted.TLabel").pack(side="right")
-
-        def _build_settings(self):
-            f = ttk.Frame(self.nb, padding=12)
-            self.nb.add(f, text="  Paramètres  ")
-            self.v = {}
-            left = ttk.Frame(f)
-            left.pack(side="left", fill="both", expand=True)
-            right = ttk.Frame(f)
-            right.pack(side="left", fill="both", expand=True, padx=(24, 0))
-
-            def field(parent, key, label, width=40, hint=None):
-                ttk.Label(parent, text=label).pack(anchor="w", pady=(8, 2))
-                var = tk.StringVar(value=str(self.cfg[key]))
-                ttk.Entry(parent, textvariable=var, width=width).pack(anchor="w", fill="x")
-                if hint:
-                    ttk.Label(parent, text=hint, style="Muted.TLabel", wraplength=480,
-                              justify="left").pack(anchor="w")
-                self.v[key] = var
-
-            field(left, "api_key", "Clé API The Odds API (gratuite sur the-odds-api.com)")
-            ttk.Label(left, text="Sans clé, l'appli tourne en mode DÉMO avec des matchs fictifs.",
-                      style="Muted.TLabel").pack(anchor="w")
-            ttk.Label(left, text="Championnats de foot suivis", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(12, 2))
-            grid = ttk.Frame(left)
-            grid.pack(anchor="w", fill="x")
-            self.sport_vars = {}
-            for i, (k, label) in enumerate(SPORTS.items()):
-                var = tk.BooleanVar(value=k in self.cfg["sports"])
-                ttk.Checkbutton(grid, text=label, variable=var, command=self.update_estimate).grid(
-                    row=i // 2, column=i % 2, sticky="w", padx=(0, 18), pady=1)
-                self.sport_vars[k] = var
-            field(left, "extra_sports", "Autres compétitions (clés séparées par des virgules)",
-                  hint="Clés commençant par soccer_ (ex : soccer_france_coupe_de_france). Liste sur "
-                       "the-odds-api.com/sports-odds-data/sports-apis.html")
-            field(left, "bookmakers", "Où je parie (par défaut : betclic_fr)",
-                  hint="Clés : betclic_fr, winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr… "
-                       "Vide = tous. Les autres bookmakers servent quand même au calcul de la proba.")
-
-            field(right, "source_books", "Bookmakers analysés (10 max = 1 crédit par marché)",
-                  hint="Servent à calculer la vraie proba. Garde pinnacle dedans. "
-                       "Vide = on utilise les régions ci-dessous.")
-            field(right, "regions", "Régions (si la liste ci-dessus est vide)", hint="eu, fr, uk…")
-            field(right, "markets", "Marchés", hint="h2h = 1N2 (victoire / nul), totals = plus/moins de buts, "
-                                                     "spreads = handicap.")
-            field(right, "refresh_minutes", "Mise à jour automatique toutes les (minutes)")
-            nums = ttk.Frame(right)
-            nums.pack(anchor="w", fill="x", pady=(8, 0))
-            small = [("min_ev", "Value mini (0,02 = 2 %)"), ("max_ev", "Value max avant ⚠"),
-                     ("min_odds", "Cote mini"), ("max_odds", "Cote maxi"),
-                     ("min_books", "Nb bookmakers mini"), ("horizon_hours", "Matchs dans les (heures)"),
-                     ("max_legs", "Sélections max / combiné"), ("min_combo_prob", "Proba mini combiné"),
-                     ("min_stake", "Mise mini (€)"), ("kelly_fraction", "Fraction de Kelly")]
-            for i, (k, label) in enumerate(small):
-                ttk.Label(nums, text=label).grid(row=i // 2, column=(i % 2) * 2, sticky="w", pady=3, padx=(0, 6))
-                var = tk.StringVar(value=str(self.cfg[k]))
-                ttk.Entry(nums, textvariable=var, width=8).grid(row=i // 2, column=(i % 2) * 2 + 1,
-                                                                sticky="w", padx=(0, 18))
-                self.v[k] = var
-            self.demo_var = tk.BooleanVar(value=self.cfg["demo"])
-            ttk.Checkbutton(right, text="Forcer le mode démo (données fictives)",
-                            variable=self.demo_var).pack(anchor="w", pady=(10, 0))
-            self.estimate = ttk.Label(right, text="", style="Muted.TLabel", wraplength=480, justify="left")
-            self.estimate.pack(anchor="w", pady=(10, 0))
-            ttk.Button(right, text="Enregistrer", style="Accent.TButton",
-                       command=self.save_settings).pack(anchor="w", pady=12)
-            for var in self.v.values():
-                var.trace_add("write", lambda *_: self.update_estimate())
-            self.update_estimate()
-
-        def _read_settings(self):
-            cfg = dict(self.cfg)
-            for k, var in self.v.items():
-                val = var.get().strip()
-                if isinstance(DEFAULT_CONFIG[k], (int, float)) and not isinstance(DEFAULT_CONFIG[k], bool):
-                    val = float(val.replace(",", "."))
-                    if isinstance(DEFAULT_CONFIG[k], int):
-                        val = int(val)
-                cfg[k] = val
-            cfg["sports"] = [k for k, var in self.sport_vars.items() if var.get()]
-            cfg["demo"] = bool(self.demo_var.get())
-            return cfg
-
-        def update_estimate(self):
-            try:
-                cfg = self._read_settings()
-            except (ValueError, KeyError):
-                self.estimate.config(text="Valeur invalide dans un champ.")
-                return
-            per = credits_per_refresh(cfg)
-            month = credits_per_month(cfg)
-            warn = "  ⚠ dépasse l'offre gratuite (500/mois) : augmente l'intervalle ou réduis les " \
-                   "compétitions/marchés." if month > 500 else "  ✓ OK pour l'offre gratuite (500/mois)."
-            self.estimate.config(text=f"Coût : {per} crédits par mise à jour ≈ {month} crédits/mois.{warn}")
-
-        def save_settings(self):
-            try:
-                cfg = self._read_settings()
-            except ValueError:
-                messagebox.showerror(APP_NAME, "Un champ numérique est invalide.")
-                return
-            changed_source = (cfg["api_key"], cfg["source_books"], cfg["regions"], cfg["markets"], sports_list(cfg), cfg["demo"]) != \
-                (self.cfg["api_key"], self.cfg["source_books"], self.cfg["regions"], self.cfg["markets"], sports_list(self.cfg),
-                 self.cfg["demo"])
-            self.cfg = cfg
-            save_config(cfg)
-            if changed_source:
-                self.refresh()
-            else:
-                self.next_refresh = self.last_fetch + float(cfg["refresh_minutes"]) * 60
-                self.reanalyze()
-            self.status.config(text="Paramètres enregistrés.")
-
-        # ---------- données ----------
-        def refresh(self):
-            if self.fetching:
-                return
-            self.fetching = True
-            demo = self.cfg["demo"] or not self.cfg["api_key"].strip()
-            self.status.config(text="Récupération des cotes…")
-
-            def worker():
-                try:
-                    if demo:
-                        time.sleep(0.4)
-                        self.q.put(("data", demo_events(), None, [], True))
-                    else:
-                        ev, quota, errs = fetch_odds(self.cfg)
-                        self.q.put(("data", ev, quota, errs, False))
-                except Exception as e:
-                    self.q.put(("data", None, None, [str(e)], demo))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        def on_data(self, events, quota, errors, demo):
-            self.fetching = False
-            self.errors = errors
+    # ---- boucle de fond ----
+    def _loop(self):
+        last_an, next_upd = time.time(), time.time() + 4
+        while True:
             now = time.time()
-            if events is not None and (events or not errors):
-                self.events, self.is_demo = events, demo
-                self.last_fetch = now
-                if quota:
-                    self.quota = quota
-                if not demo:
-                    save_cache(events, self.quota)
-            interval = 10 if demo else float(self.cfg["refresh_minutes"])
-            self.next_refresh = now + interval * 60
-            self.reanalyze()
-
-        def reanalyze(self):
-            self.last_analysis = time.time()
-            try:
+            if not self._fetching and now >= self._next_refresh:
+                self._do_refresh()
+            if now - last_an > 60:
+                last_an = now
                 self._reanalyze()
-            except Exception as e:  # ne jamais laisser l'écran vide sans explication
-                import traceback
-                traceback.print_exc()
-                self.status.config(text=f"⚠ Erreur d'analyse : {e!r}  ·  envoie une capture au développeur")
+            if now >= next_upd:
+                next_upd = now + 6 * 3600
+                self._check_update()
+            time.sleep(1)
 
-        def _reanalyze(self):
-            self.warning = ""
-            present = {bk.get("key") for ev in self.events for bk in ev.get("bookmakers", [])}
-            mine = {b.strip().lower() for b in self.cfg.get("bookmakers", "").split(",") if b.strip()}
-            cfg = self.cfg
-            if mine and not (mine & present) and present:
-                cfg = dict(self.cfg, bookmakers="")
-                self.warning = ("Betclic n'a pas encore publié de cotes pour ces matchs : les cotes affichées viennent "
-                                "d'autres bookmakers, à titre indicatif seulement.")
-            self.selections = analyze(self.events, cfg)
-            self.vbets = value_bets(self.selections, self.cfg)
-            self.probable = most_probable(self.selections, self.cfg)
-            self.combos = build_combos(self.vbets, self.cfg)
+    def _do_refresh(self):
+        with self._lock:
+            if self._fetching:
+                return
+            self._fetching = True
+            self._rev += 1
+            cfg = dict(self._cfg)
+        demo = cfg["demo"] or not cfg["api_key"].strip()
+        try:
+            if demo:
+                time.sleep(0.5)
+                events, quota, errors = demo_events(), None, []
+            else:
+                events, quota, errors = fetch_odds(cfg)
+        except Exception as e:
+            events, quota, errors = None, None, [str(e)]
+        with self._lock:
+            now = time.time()
+            self._errors = errors
+            if events is not None and (events or not errors):
+                self._events, self._is_demo, self._last_fetch = events, demo, now
+                if quota:
+                    self._quota = quota
+                if not demo:
+                    save_cache(events, self._quota)
+            self._next_refresh = now + (15 if demo else float(cfg["refresh_minutes"])) * 60
+            self._fetching = False
+            self._reanalyze()
 
-            def tag(b):
-                if b["suspect"]:
-                    return "warn"
-                if b["ev"] >= 0.05:
-                    return "hot"
-                return "good" if b["ev"] >= 0 else "neg"
+    def _reanalyze(self):
+        with self._lock:
+            try:
+                cfg = self._cfg
+                present = {bk.get("key") for ev in self._events for bk in ev.get("bookmakers", [])}
+                mine = {b.strip().lower() for b in cfg.get("bookmakers", "").split(",") if b.strip()}
+                self._warning = ""
+                if mine and present and not (mine & present):
+                    cfg = dict(cfg, bookmakers="")
+                    self._warning = ("Betclic n'a pas encore publié de cotes pour ces matchs : cotes d'autres "
+                                     "bookmakers affichées à titre indicatif.")
+                self._sel = analyze(self._events, cfg)
+                self._picks = top_picks(self._sel, cfg)
+                self._prob = most_probable(self._sel, cfg)
+                vpool = [s for s in self._sel if is_value(s, cfg)]
+                value_combos = build_combos(vpool, cfg, int(cfg["max_legs"]), float(cfg["min_combo_prob"]))
+                other = build_combos(candidates(self._sel, cfg, 0.40), cfg, int(cfg["max_legs"]),
+                                     float(cfg["min_combo_prob"]))
+                seen = {c["uid"] for c in value_combos}
+                self._combos = (value_combos + [c for c in other if c["uid"] not in seen])[:40]
+            except Exception as e:
+                self._errors = [f"Erreur d'analyse : {e!r}"]
+            self._rev += 1
 
-            self.t_value.set_rows(self.vbets, tag)
-            self.t_prob.set_rows(self.probable, tag)
-            self.t_combo.set_rows(self.combos, lambda c: "hot" if c["ev"] >= 0.08 else "good")
-            n_events = len({s["event_id"] for s in self.selections})
-            now_utc = datetime.now(timezone.utc)
+    def _check_update(self):
+        try:
+            res = check_update()
+        except Exception:
+            return None
+        with self._lock:
+            self._update = {"version": res[0], "url": res[1]} if res else None
+            self._rev += 1
+        return self._update
+
+    # ---- appelées par l'interface ----
+    def get_status(self):
+        with self._lock:
             upcoming = 0
-            for ev in self.events:
+            now_utc = datetime.now(timezone.utc)
+            for ev in self._events:
                 try:
                     if parse_time(ev["commence_time"]) > now_utc:
                         upcoming += 1
                 except (KeyError, ValueError):
                     pass
-            if self.selections and not self.vbets:
-                self.info1.config(text=f"Aucun value bet en ce moment sur {n_events} matchs : les cotes sont "
-                                       f"justes partout. Regarde « Plus probables », ou baisse « Value mini » "
-                                       f"dans Paramètres. Ne pas parier est aussi un bon choix.")
-            else:
-                self.info1.config(text=f"{len(self.vbets)} value bets sur {n_events} matchs analysés  ·  "
-                                       f"Vert = value ≥ 5 %  ·  ⚠ = écart anormal, souvent une cote "
-                                       f"pas encore corrigée, vérifie avant  ·  Double-clic = détail des cotes")
-            if self.is_demo:
-                self.mode_badge.config(text="MODE DÉMO · données fictives", style="Badge.TLabel")
-            else:
-                self.mode_badge.config(text="EN DIRECT", style="Live.TLabel")
-            upd = datetime.fromtimestamp(self.last_fetch).strftime("%d/%m %H:%M") if self.last_fetch else "—"
-            parts = [f"Dernière mise à jour : {upd}",
-                     f"{len(self.events)} matchs reçus ({upcoming} à venir), {n_events} analysés"]
-            if self.warning:
-                parts.append("ℹ " + self.warning)
-            if not self.events and not self.errors and not self.is_demo and self.last_fetch:
-                parts.append("ℹ Aucun match à venir dans tes compétitions : coches-en d'autres dans Paramètres")
-            if self.quota and self.quota.get("remaining") is not None:
-                parts.append(f"Crédits API restants : {self.quota['remaining']}")
-            if self.errors:
-                parts.append("⚠ " + " | ".join(self.errors[:2]))
-            self.status.config(text="   ·   ".join(parts))
+            return {
+                "rev": self._rev, "version": APP_VERSION, "demo": self._is_demo,
+                "fetching": self._fetching,
+                "last_fetch": datetime.fromtimestamp(self._last_fetch).strftime("%d/%m à %H:%M")
+                if self._last_fetch else None,
+                "next_in": max(0, int(self._next_refresh - time.time())),
+                "quota": (self._quota or {}).get("remaining"),
+                "errors": self._errors[:3], "warning": self._warning,
+                "n_events": len(self._events), "n_upcoming": upcoming,
+                "n_analyzed": len({s["event_id"] for s in self._sel}),
+                "n_value": sum(1 for s in self._picks if is_value(s, self._cfg)),
+                "has_key": bool(self._cfg["api_key"].strip()),
+                "update": self._update, "update_state": self._update_state,
+                "dl_progress": self._dl_progress, "frozen": bool(getattr(sys, "frozen", False)),
+            }
 
-        def tick(self):
+    def get_data(self):
+        with self._lock:
+            cfg = self._cfg
+            return {
+                "picks": [ser_bet(b, cfg) for b in self._picks],
+                "probable": [ser_bet(b, cfg) for b in self._prob],
+                "combos": [ser_combo(c) for c in self._combos],
+            }
+
+    def refresh(self):
+        if not self._fetching:
+            threading.Thread(target=self._do_refresh, daemon=True).start()
+        return True
+
+    def compute_plan(self, budget, mode):
+        try:
+            budget = float(str(budget).replace(",", ".").replace("€", "").strip())
+        except ValueError:
+            return {"error": "Montant invalide"}
+        if budget <= 0:
+            return {"error": "Montant invalide"}
+        with self._lock:
+            sel, cfg = list(self._sel), dict(self._cfg)
+        if self._warning:
+            cfg["bookmakers"] = ""
+        return ser_plan(stake_plan(budget, mode, sel, cfg), cfg)
+
+    def get_config(self):
+        with self._lock:
+            cfg = dict(self._cfg)
+        cfg["_sports"] = [{"key": k, "label": v} for k, v in SPORTS.items()]
+        cfg["_credits_month"] = credits_per_month(self._cfg)
+        return cfg
+
+    def estimate(self, cfg):
+        try:
+            c = dict(self._cfg)
+            c.update({k: v for k, v in cfg.items() if k in DEFAULT_CONFIG})
+            return {"per": credits_per_refresh(c), "month": credits_per_month(c)}
+        except Exception:
+            return {"per": 0, "month": 0}
+
+    def save_config(self, new):
+        cfg = dict(self._cfg)
+        for k, default in DEFAULT_CONFIG.items():
+            if k not in new:
+                continue
+            v = new[k]
             try:
-                while True:
-                    msg = self.q.get_nowait()
-                    if msg[0] == "data":
-                        self.on_data(*msg[1:])
-                    elif msg[0] == "update":
-                        self.on_update_found(*msg[1:])
-                    elif msg[0] == "update_none":
-                        self.update_busy = False
-                        if msg[1]:
-                            messagebox.showinfo(APP_NAME, msg[2])
-                    elif msg[0] == "dl_progress":
-                        self.status.config(text=f"Téléchargement de la mise à jour… {msg[1] * 100:.0f} %")
-                    elif msg[0] == "dl_done":
-                        self.finish_update(msg[1])
-                    elif msg[0] == "dl_error":
-                        self.update_busy = False
-                        messagebox.showerror(APP_NAME, f"La mise à jour a échoué : {msg[1]}\n"
-                                                       "Réessaie plus tard.")
-            except queue.Empty:
-                pass
-            now = time.time()
-            if now >= self.next_update_check:
-                self.next_update_check = now + 6 * 3600  # puis toutes les 6 h
-                self.check_updates(manual=False)
-            if not self.fetching and now >= self.next_refresh:
-                self.refresh()
-            if now - self.last_analysis > 60 and self.events:
-                self.reanalyze()  # retire les matchs qui ont commencé (gratuit)
-            left = max(0, int(self.next_refresh - now))
-            h, rem = divmod(left, 3600)
-            m, s = divmod(rem, 60)
-            self.countdown.config(text="Mise à jour en cours…" if self.fetching
-                                  else f"Prochaine mise à jour dans {h:d}h{m:02d}m{s:02d}s")
-            self.root.after(1000, self.tick)
-
-        # ---------- mises à jour ----------
-        def check_updates(self, manual=True):
-            if self.update_busy:
-                return
-            self.update_busy = True
-
-            def worker():
-                try:
-                    res = check_update()
-                    if res:
-                        self.q.put(("update", res[0], res[1], manual))
-                    else:
-                        self.q.put(("update_none", manual, f"Tu as déjà la dernière version ({APP_VERSION})."))
-                except Exception as e:
-                    self.q.put(("update_none", manual, f"Impossible de vérifier les mises à jour : {e}"))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        def on_update_found(self, version, url, manual):
-            if not getattr(sys, "frozen", False):
-                self.update_busy = False
-                if manual:
-                    messagebox.showinfo(APP_NAME, f"Version {version} disponible (mise à jour auto "
-                                                  f"seulement depuis le .exe).")
-                return
-            if not messagebox.askyesno(APP_NAME, f"Une nouvelle version de BetScope est disponible !\n\n"
-                                                 f"Ta version : {APP_VERSION}\nNouvelle version : {version}\n\n"
-                                                 f"Mettre à jour maintenant ? (l'appli va redémarrer)"):
-                self.update_busy = False
-                return
-            self.status.config(text="Téléchargement de la mise à jour…")
-
-            def worker():
-                try:
-                    path = download_update(url, lambda p: self.q.put(("dl_progress", p)))
-                    self.q.put(("dl_done", path))
-                except Exception as e:
-                    self.q.put(("dl_error", str(e)))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        def finish_update(self, path):
-            try:
-                install_update_and_restart(path)
-            except Exception as e:
-                self.update_busy = False
-                messagebox.showerror(APP_NAME, f"Installation impossible : {e}")
-                return
-            self.root.destroy()
-            os._exit(0)
-
-        # ---------- actions ----------
-        def compute_plan(self):
-            try:
-                budget = float(self.budget_var.get().replace(",", ".").replace("€", "").strip())
-                if budget <= 0:
-                    raise ValueError
+                if isinstance(default, bool):
+                    v = bool(v)
+                elif isinstance(default, int):
+                    v = int(float(str(v).replace(",", ".")))
+                elif isinstance(default, float):
+                    v = float(str(v).replace(",", "."))
+                elif isinstance(default, list):
+                    v = [x for x in v if isinstance(x, str)]
+                else:
+                    v = str(v).strip()
             except ValueError:
-                messagebox.showerror(APP_NAME, "Entre un montant valide, par exemple 10.")
-                return
-            plan = stake_plan(budget, self.mode_var.get(), self.vbets, self.combos, self.cfg)
-            upd = datetime.fromtimestamp(self.last_fetch).strftime("%d/%m/%Y %H:%M") if self.last_fetch else "—"
-            text = plan_text(plan, upd + ("  (DÉMO – données fictives)" if self.is_demo else ""))
-            self.plan_box.delete("1.0", "end")
-            self.plan_box.insert("1.0", text)
+                return {"ok": False, "error": f"Valeur invalide : {k}"}
+            cfg[k] = v
+        source_changed = any(cfg[k] != self._cfg[k] for k in
+                             ("api_key", "source_books", "regions", "markets", "sports", "extra_sports", "demo"))
+        with self._lock:
+            self._cfg = cfg
+            save_config(cfg)
+            if not source_changed:
+                self._next_refresh = self._last_fetch + float(cfg["refresh_minutes"]) * 60
+        if source_changed:
+            self.refresh()
+        else:
+            self._reanalyze()
+        return {"ok": True}
 
-        def _popup(self, title, lines):
-            w = tk.Toplevel(self.root)
-            w.title(title)
-            w.configure(bg=BG)
-            w.geometry("620x480")
-            t = tk.Text(w, bg=PANEL, fg=FG, relief="flat", font=("Consolas", 10), padx=12, pady=10)
-            t.pack(fill="both", expand=True, padx=10, pady=10)
-            t.insert("1.0", "\n".join(lines))
-            t.config(state="disabled")
+    def check_updates(self):
+        res = self._check_update()
+        return {"update": res, "version": APP_VERSION}
 
-        def show_detail(self, b):
-            lines = [b["match"], f"{b['sport']} · {fmt_date(b['start'])}", "",
-                     f"Pari : {b['selection']}  ({b['market']})",
-                     f"Probabilité estimée : {pct(b['p'])}  →  cote juste {odd(b['fair'])}",
-                     f"Meilleure cote jouable : {odd(b['odds'])} chez {b['book']}  ·  value {pct(b['ev'], True)}",
-                     "", "Cotes de tous les bookmakers :"]
-            for k, (price, title) in sorted(b["all_prices"].items(), key=lambda kv: -kv[1][0]):
-                mark = "  ← jouable" if k in b["playable"] else ""
-                lines.append(f"  {odd(price):>6}  {title}{mark}")
-            if b["suspect"]:
-                lines += ["", "⚠ Value anormalement haute : souvent une cote périmée ou une erreur.",
-                          "  Vérifie sur le site du bookmaker avant de parier."]
-            self._popup(b["match"], lines)
+    def install_update(self):
+        upd = self._update
+        if not upd or self._update_state == "downloading":
+            return False
+        if not getattr(sys, "frozen", False):
+            self._update_state = "error:mise à jour possible seulement depuis le .exe"
+            return False
 
-        def show_combo(self, c):
-            lines = [f"Combiné x{len(c['legs'])} chez {c['book']}", ""]
-            for l, lo in zip(c["legs"], c["leg_odds"]):
-                lines.append(f"• {l['selection']}  @ {odd(lo)}")
-                lines.append(f"    {l['match']} · {fmt_date(l['start'])} · proba {pct(l['p'])}")
-            lines += ["", f"Cote totale : {odd(c['odds'])}", f"Proba que tout passe : {pct(c['p'])}",
-                      f"Value : {pct(c['ev'], True)}"]
-            self._popup("Combiné", lines)
+        def worker():
+            try:
+                self._update_state = "downloading"
 
-    root = tk.Tk()
-    App(root)
-    root.mainloop()
+                def prog(p):
+                    self._dl_progress = p
+                    self._rev += 1
+                path = download_update(upd["url"], prog)
+                install_update_and_restart(path)
+                time.sleep(0.3)
+                try:
+                    if self._window:
+                        self._window.destroy()
+                finally:
+                    os._exit(0)
+            except Exception as e:
+                self._update_state = f"error:{e}"
+                self._rev += 1
+
+        threading.Thread(target=worker, daemon=True).start()
+        return True
+
+    def open_url(self, url):
+        import webbrowser
+        if str(url).startswith("https://"):
+            webbrowser.open(url)
+        return True
+
+
+def selftest():
+    """Vérifie que tout est bien embarqué dans le .exe (utilisé par GitHub Actions)."""
+    import webview  # noqa: F401
+    assert os.path.exists(resource_path(os.path.join("ui", "index.html"))), "ui/index.html manquant"
+    cfg = dict(DEFAULT_CONFIG)
+    sel = analyze(demo_events(1), cfg)
+    plan = stake_plan(10, "equilibre", sel, cfg, sims=500, seed=1)
+    assert plan["items"], "plan vide"
+    json.dumps(ser_plan(plan, cfg))
+    return 0
+
+
+def main():
+    if "--selftest" in sys.argv:
+        try:
+            sys.exit(selftest())
+        except Exception as e:
+            with open(os.path.join(tempfile.gettempdir(), "betscope_selftest.txt"), "w") as f:
+                f.write(repr(e))
+            sys.exit(1)
+    import webview
+    api = Api()
+    window = webview.create_window(
+        f"{APP_NAME} {APP_VERSION}", url=resource_path(os.path.join("ui", "index.html")), js_api=api,
+        width=1340, height=860, min_size=(1080, 700), background_color="#0a0c11", text_select=True)
+    api._window = window
+    webview.start(debug=False)
 
 
 if __name__ == "__main__":
-    run_gui()
+    main()

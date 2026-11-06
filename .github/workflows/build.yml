@@ -13,8 +13,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pyinstaller
-      - run: pyinstaller --noconfirm --onefile --windowed --name BetScope betscope.py
+      - run: pip install pyinstaller pywebview
+      - name: Build
+        shell: bash
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name BetScope
+          --icon assets/betscope.ico --add-data "ui;ui" --add-data "assets;assets"
+          betscope.py
+      - name: Test de démarrage du .exe
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\BetScope.exe -ArgumentList "--selftest" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content "$env:TEMP\betscope_selftest.txt" -ErrorAction SilentlyContinue; exit 1 }
+          Write-Host "Selftest OK"
       - name: Version
         id: v
         shell: bash
@@ -27,6 +38,6 @@ jobs:
         with:
           tag_name: ${{ steps.v.outputs.tag }}
           name: BetScope ${{ steps.v.outputs.tag }}
-          body: "Télécharge **BetScope.exe** ci-dessous et lance-le. Sans clé API, l'appli démarre en mode démo."
+          body: "Télécharge **BetScope.exe** ci-dessous et lance-le. Les versions suivantes s'installent toutes seules depuis l'appli."
           files: dist/BetScope.exe
           make_latest: true

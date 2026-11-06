@@ -36,7 +36,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.6.1"
+APP_VERSION = "1.6.2"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -120,6 +120,8 @@ def load_config():
     if cfg.get("cfg_version", 0) < 3:  # mise à jour : on ne parie que sur Betclic
         cfg["bookmakers"] = "betclic_fr"
         cfg["cfg_version"] = 3
+    if float(cfg.get("min_books", 4)) > 5:
+        cfg["min_books"] = 4
     if cfg.get("cfg_version", 0) < 4:  # 1.4.0 : on regarde les 7 prochains jours
         cfg["horizon_hours"] = max(float(cfg.get("horizon_hours", 168)), 168)
         cfg["cfg_version"] = 4
@@ -159,8 +161,24 @@ def sports_list(cfg):
     return out
 
 
+CONSENSUS_BOOKS = ["pinnacle", "betclic_fr", "winamax_fr", "unibet_fr", "pmu_fr", "parionssport_fr",
+                   "netbet_fr", "marathonbet", "onexbet", "sport888"]
+
+
+def effective_source_books(cfg):
+    """Toujours assez de bookmakers pour calculer la vraie proba : Pinnacle + tes bookmakers
+    + la liste de référence, 10 max (= 1 crédit par marché)."""
+    mine = [b.strip().lower() for b in cfg.get("bookmakers", "").split(",") if b.strip()]
+    extra = [b.strip().lower() for b in cfg.get("source_books", "").split(",") if b.strip()]
+    out = []
+    for b in ["pinnacle"] + mine + extra + CONSENSUS_BOOKS:
+        if b and b not in out:
+            out.append(b)
+    return out[:10]
+
+
 def credits_per_refresh(cfg):
-    books = [b for b in cfg.get("source_books", "").split(",") if b.strip()]
+    books = effective_source_books(cfg)
     if books:
         n_regions = (len(books) + 9) // 10
     else:
@@ -197,7 +215,7 @@ def fetch_odds(cfg):
             "dateFormat": "iso",
         }
         if cfg.get("source_books", "").strip():
-            params["bookmakers"] = cfg["source_books"].replace(" ", "")
+            params["bookmakers"] = ",".join(effective_source_books(cfg))
         else:
             params["regions"] = cfg["regions"]
         url = f"{API_BASE}/sports/{sport}/odds?{urllib.parse.urlencode(params)}"
@@ -1273,6 +1291,7 @@ class Api:
 
         def changed():
             self._stats_dirty = True
+        self._stats.last_error = ""
         if fd:
             self._stats.update_fd(fd, sports, events, on_change=changed)
         if af:  # optionnel (offre payante) : blessés, compos
@@ -1340,11 +1359,14 @@ class Api:
                 "errors": self._errors[:3], "warning": self._warning,
                 "n_events": len(self._events), "n_upcoming": upcoming,
                 "n_analyzed": len({s["event_id"] for s in self._sel}),
+                "max_books": max((len(e.get("bookmakers", [])) for e in self._events), default=0),
+                "min_books": int(self._cfg.get("min_books", 4)),
                 "n_value": sum(1 for s in self._picks if is_value(s, self._cfg)),
                 "has_key": bool(self._cfg["api_key"].strip()),
                 "update": self._update, "update_state": self._update_state,
                 "days": self._days, "day": self._cfg.get("day_filter", "all"),
                 "stats": dict(self._stats.status(), enabled=bool(self._stats_key()),
+                              af_set=bool(self._cfg.get("football_key", "").strip()),
                               matched=len(self._info)),
                 "dl_progress": self._dl_progress, "frozen": bool(getattr(sys, "frozen", False)),
             }

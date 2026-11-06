@@ -398,7 +398,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
             <div class="f"><label>Mise à jour automatique toutes les (minutes)</label><input class="in" id="c-refresh_minutes"></div>
             <div class="est" id="c-est"></div>
             <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>Par défaut betclic_fr. Tu peux en ajouter : winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr (séparés par des virgules).</small></div>
-            <div class="f"><label>Bookmakers utilisés pour calculer la vraie probabilité</label><input class="in" id="c-source_books"><small>10 max = 1 crédit par marché. Garde pinnacle dedans, c'est le plus précis.</small></div>
+            <div class="f"><label>Bookmakers en plus pour le calcul (optionnel)</label><input class="in" id="c-source_books"><small>Tu peux laisser vide : l'appli utilise toujours Pinnacle + tes bookmakers + une liste de référence (10 bookmakers = 1 crédit par marché). Ces bookmakers servent seulement à calculer la vraie probabilité, tu ne paries pas chez eux.</small></div>
             <div class="f"><label>Marchés</label><input class="in" id="c-markets"><small>h2h = 1N2 (victoire / nul), totals = plus/moins de buts.</small></div>
             <label class="chk" style="margin-top:4px"><input type="checkbox" id="c-web_info">Recherche web automatique : absents, compos officielles, actus (ESPN, sans clé)</label>
             <label class="chk" style="margin-top:8px"><input type="checkbox" id="c-demo">Forcer le mode démo (données fictives)</label>
@@ -481,6 +481,8 @@ function noData(){
   if (status.fetching) return emptyBox("Récupération des cotes…", "Quelques secondes.");
   if (status.errors && status.errors.length) return emptyBox("Impossible de récupérer les cotes", esc(status.errors[0]));
   if (status.n_upcoming === 0 && status.n_events === 0) return emptyBox("Aucun match à venir", "Coche d'autres championnats dans Paramètres, ou élargis « Matchs dans les (heures) ».");
+  if (status.n_events && !status.n_analyzed && status.max_books < status.min_books)
+    return emptyBox(`${status.n_events} matchs reçus, mais pas assez de bookmakers pour les analyser`, `Il faut au moins ${status.min_books} bookmakers par match (tu en as ${status.max_books}). Clique sur Actualiser : l'appli utilise maintenant automatiquement Pinnacle + 9 bookmakers.`);
   return emptyBox("Rien à afficher pour l'instant", "Essaie d'élargir les réglages (cote maxi, nombre de bookmakers mini) dans Paramètres.");
 }
 
@@ -716,7 +718,7 @@ function renderStatus(){
   }
   if (status.demo && !status.has_key) b += `<div class="banner warn">ℹ️ Mode démo : ajoute ta clé API dans <b style="cursor:pointer;text-decoration:underline" data-goto="settings">Paramètres</b> pour avoir les vrais matchs.</div>`;
   if (!status.demo && status.has_key && status.stats && !status.stats.enabled) b += `<div class="banner upd"><span>📊 <b>Active l'analyse complète</b> (forme, séries, classement, journée, face-à-face) avec une clé football-data.org gratuite.</span><div class="sp"></div><button class="btn" data-goto="settings">Ajouter la clé</button></div>`;
-  if (status.stats && status.stats.error) b += `<div class="banner err">⚠ ${esc(status.stats.error)}</div>`;
+  if (status.stats && status.stats.error && !/api-football/i.test(status.stats.error) || (status.stats && status.stats.error && status.stats.af_set)) b += `<div class="banner err">⚠ ${esc(status.stats.error)}</div>`;
   if (status.warning) b += `<div class="banner warn">ℹ️ ${esc(status.warning)}</div>`;
   if (status.errors && status.errors.length) b += `<div class="banner err">⚠ ${status.errors.map(esc).join(" · ")}</div>`;
   if ($("#banners").innerHTML !== b) $("#banners").innerHTML = b;

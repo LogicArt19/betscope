@@ -39,7 +39,7 @@ from history import History
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -1670,6 +1670,12 @@ class Api:
                 self._odds_hist = json.load(f)
         except (OSError, ValueError):
             pass
+        self._builder = []  # ticket construit à la main (liste d'uid)
+        try:
+            with open(os.path.join(config_dir(), "my_ticket.json"), encoding="utf-8") as f:
+                self._builder = json.load(f)
+        except (OSError, ValueError):
+            pass
         self._overrides = {}  # cotes Betclic tapées par l'utilisateur {uid: cote}
         try:
             with open(os.path.join(config_dir(), "my_odds.json"), encoding="utf-8") as f:
@@ -1790,6 +1796,104 @@ class Api:
                     json.dump(self._odds_hist, f)
             except OSError:
                 pass
+
+    # ---- ticket construit à la main ----
+    def _save_builder(self):
+        try:
+            with open(os.path.join(config_dir(), "my_ticket.json"), "w", encoding="utf-8") as f:
+                json.dump(self._builder, f)
+        except OSError:
+            pass
+
+    def builder_add(self, uid):
+        with self._lock:
+            if uid not in self._builder:
+                self._builder.append(uid)
+                self._save_builder()
+            return len(self._builder)
+
+    def builder_remove(self, uid):
+        with self._lock:
+            self._builder = [u for u in self._builder if u != uid]
+            self._save_builder()
+            return len(self._builder)
+
+    def builder_clear(self):
+        with self._lock:
+            self._builder = []
+            self._save_builder()
+        return 0
+
+    def builder_get(self, stake=10):
+        """Analyse complète du ticket construit à la main."""
+        try:
+            stake = float(str(stake).replace(",", ".").replace("€", "").strip() or 10)
+        except ValueError:
+            stake = 10.0
+        with self._lock:
+            cfg = self._cfg
+            by = {x["uid"]: x for x in self._sel}
+            legs = [by[u] for u in self._builder if u in by]
+            gone = [u for u in self._builder if u not in by]
+            if gone:  # matchs commencés ou disparus
+                self._builder = [u for u in self._builder if u in by]
+                self._save_builder()
+            out = {"legs": [ser_bet(x, cfg) for x in legs], "removed": len(gone), "stake": stake,
+                   "bank": None}
+            if not legs:
+                return out
+            odds = math.prod(x["odds"] for x in legs)
+            p = math.prod(x["p"] for x in legs)
+            warnings, tips = [], []
+            evs = {}
+            for x in legs:
+                evs.setdefault(x["event_id"], []).append(x)
+            for ev_id, lst in evs.items():
+                if len(lst) > 1:
+                    warnings.append(f"{len(lst)} paris sur le même match ({lst[0]['match']}) : ils sont liés, "
+                                    f"les chances réelles sont différentes du calcul et Betclic peut refuser la combinaison.")
+            for x in legs:
+                st = x.get("stats") or {}
+                if st.get("contra"):
+                    warnings.append(f"« {x['selection']} » va contre la forme et les stats.")
+                if x.get("estimated") and not x.get("user_odds"):
+                    mo = f"{x.get('min_odds', 0):.2f}".replace(".", ",")
+                    warnings.append(f"Cote estimée pour « {x['selection']} » : vérifie qu'elle est d'au moins {mo} sur Betclic.")
+                if x["p"] < 0.40:
+                    warnings.append(f"« {x['selection']} » n'a que {x['p'] * 100:.0f} % de chances.")
+                # meilleure alternative sur le même match : cote proche, plus sûre
+                alts = [y for y in self._sel if y["event_id"] == x["event_id"] and y["uid"] != x["uid"]
+                        and y["odds"] >= x["odds"] * 0.92 and y["p"] >= x["p"] + 0.03 and not y["suspect"]
+                        and not (y.get("stats") or {}).get("contra")]
+                if alts:
+                    y = max(alts, key=lambda z: z["p"] * _trust(z))
+                    f2 = lambda v: f"{v:.2f}".replace(".", ",")
+                    tips.append({"from": x["uid"], "to": y["uid"],
+                                 "text": f"Remplace « {x['selection']} » ({f2(x['odds'])}, {x['p'] * 100:.0f} %) par "
+                                         f"« {y['selection']} » ({f2(y['odds'])}, {y['p'] * 100:.0f} %) : "
+                                         f"cote proche, plus de chances."})
+            weakest = min(legs, key=lambda z: z["p"] * _trust(z))
+            confs = [x.get("conf", 50) for x in legs]
+            qs = [(x.get("stats") or {}).get("q", 0) for x in legs]
+            out.update({
+                "odds": round(odds, 2), "p": p, "ev": p * odds - 1, "gain": round(stake * (odds - 1), 2),
+                "ret": round(stake * odds, 2), "conf": round(sum(confs) / len(confs)),
+                "quality": round(sum(qs) / len(qs), 2), "weakest": weakest["uid"],
+                "warnings": warnings, "tips": tips[:6], "n_value": sum(1 for x in legs if is_value(x, cfg)),
+            })
+        out["bank"] = self.get_bank()
+        return out
+
+    def builder_swap(self, old, new):
+        with self._lock:
+            self._builder = [new if u == old else u for u in self._builder]
+            self._save_builder()
+        return True
+
+    def builder_play(self, stake):
+        with self._lock:
+            uids = list(self._builder)
+        return self.log_ticket(uids, stake, "mon ticket")
 
     # ---- historique / bankroll ----
     def log_ticket(self, uids, stake, label=""):
@@ -1954,7 +2058,7 @@ class Api:
                 except (KeyError, ValueError):
                     pass
             return {
-                "rev": self._rev, "version": APP_VERSION, "demo": self._is_demo,
+                "rev": self._rev, "version": APP_VERSION, "demo": self._is_demo, "builder_n": len(self._builder),
                 "fetching": self._fetching,
                 "last_fetch": datetime.fromtimestamp(self._last_fetch).strftime("%d/%m à %H:%M")
                 if self._last_fetch else None,

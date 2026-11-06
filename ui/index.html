@@ -251,6 +251,14 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
 [data-leg]{cursor:pointer;border-radius:8px;transition:.12s}
 [data-leg]:hover{background:rgba(255,255,255,.04)}
 
+.addb{width:28px;height:28px;border-radius:8px;background:var(--card2);border:1px solid var(--line);font-weight:800;color:var(--green2);flex:none}
+.addb:hover{background:rgba(34,197,94,.15)}
+.addb.in{background:var(--green);color:#04220f}
+.bet{grid-template-columns:118px minmax(0,1.5fr) minmax(0,1.2fr) 150px 92px 118px 30px !important}
+.head{grid-template-columns:118px minmax(0,1.5fr) minmax(0,1.2fr) 150px 92px 118px 30px !important}
+.mleg{display:grid;grid-template-columns:1fr auto auto auto 30px;gap:12px;align-items:center;padding:12px 14px}
+.mleg.weak{border-color:rgba(239,68,68,.5)}
+
 /* ---------- settings ---------- */
 .set{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .set .card{padding:20px}
@@ -299,6 +307,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
       <button data-p="picks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 8.5l7 1-5 4.9 1.2 7L12 18l-6.2 3.4L7 14.4 2 9.5l7-1z"/></svg>Meilleurs paris<span class="count" id="cnt-v" hidden></span></button>
       <button data-p="combos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg>Combinés</button>
       <button data-p="budget"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2.5"/><path d="M2 10h20M6 15h4"/></svg>Mon budget</button>
+      <button data-p="mine"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/><path d="M12 7v12" stroke-dasharray="2 2"/></svg>Mon ticket<span class="count" id="cnt-b" hidden></span></button>
       <button data-p="hist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>Historique</button>
       <button data-p="prob"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.5 0 9-3.6 9-9V5l-9-3-9 3v8c0 5.4 3.5 9 9 9z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>Plus probables</button>
       <button data-p="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Paramètres</button>
@@ -446,6 +455,12 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
         </div>
       </section>
 
+      <!-- MON TICKET -->
+      <section class="page" id="p-mine">
+        <p class="sub">Construis ton ticket toi-même : clique sur <b>＋</b> à côté d'un pari (Meilleurs paris, Plus probables, fiches, tickets proposés). L'appli l'analyse en direct.</p>
+        <div id="mine"></div>
+      </section>
+
       <!-- HISTORIQUE -->
       <section class="page" id="p-hist">
         <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px"><p class="sub" style="margin:0;flex:1">Chaque ticket que tu marques « Je joue » et chaque pari que BetScope jouerait lui-même (✔ JE JOUE) sont vérifiés automatiquement après le match (résultats ESPN). C'est le juge de paix de l'analyse.</p><button class="btn" id="h-check">⟳ Vérifier les résultats</button></div>
@@ -529,10 +544,10 @@ const pc = (x, d=0) => fr(x * 100, d) + " %";
 const sg = x => (x >= 0 ? "+" : "−") + fr(Math.abs(x) * 100, 1) + " %";
 let api = null, status = {}, data = {picks: [], probable: [], combos: []}, rev = -1, cfg = null;
 let nextAt = 0, page = "home";
-const TITLES = {hist:"Historique & bilan", home:"Accueil", picks:"Meilleurs paris", combos:"Combinés", budget:"Mon budget", prob:"Plus probables", settings:"Paramètres"};
+const TITLES = {mine:"Mon ticket", hist:"Historique & bilan", home:"Accueil", picks:"Meilleurs paris", combos:"Combinés", budget:"Mon budget", prob:"Plus probables", settings:"Paramètres"};
 
 function toast(t){ const e=$("#toast"); e.textContent=t; e.classList.add("on"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove("on"),2600); }
-function go(p){ if (p==="hist") setTimeout(loadHist, 50); page=p; $$("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.p===p)); $$(".page").forEach(s=>s.classList.toggle("on",s.id==="p-"+p)); $("#title").textContent=TITLES[p]; $("#content").scrollTop=0; if(p==="settings") loadCfg(); }
+function go(p){ if (p==="hist") setTimeout(loadHist, 50); if (p==="mine") setTimeout(loadMine, 50); page=p; $$("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.p===p)); $$(".page").forEach(s=>s.classList.toggle("on",s.id==="p-"+p)); $("#title").textContent=TITLES[p]; $("#content").scrollTop=0; if(p==="settings") loadCfg(); }
 $$("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.p));
 document.addEventListener("click",e=>{ const g=e.target.closest("[data-goto]"); if(g) go(g.dataset.goto); });
 
@@ -550,7 +565,7 @@ function betRow(b){
     <div class="s">${esc(b.selection)}<small>${esc(b.market)} · ${esc(b.book)}</small></div>
     <div class="prob">${pc(b.p)} de chances<div class="t"><i style="width:${Math.round(b.p*100)}%"></i></div></div>
     <div class="odds">${b.estimated?"≈":""}${fr(b.odds)}<small>${b.estimated?"cote estimée":"juste "+fr(b.fair)}</small></div>
-    ${tag(b)}</div>`;
+    ${tag(b)}<button class="addb ${inB(b.uid)?"in":""}" data-add="${esc(b.uid)}" title="Ajouter à mon ticket">${inB(b.uid)?"✓":"＋"}</button></div>`;
 }
 function comboCard(c){
   return `<div class="card combo">
@@ -633,6 +648,7 @@ async function openBet(b){
       <div class="card stat"><div class="l">Proba finale</div><div class="v">${pc(b.p)}</div><div class="h">marché ${pc(b.p_market)}${st&&st.p_model!=null?" · modèle "+pc(st.p_model):""}</div></div>
       <div class="card stat"><div class="l">Cote juste</div><div class="v">${fr(b.fair)}</div></div>
     </div>
+    <button class="btn primary" data-add="${esc(b.uid)}" style="margin-top:12px;width:100%;justify-content:center">${inB(b.uid)?"✓ Dans mon ticket (cliquer pour retirer)":"＋ Ajouter à mon ticket"}</button>
     <div class="mybox"><div style="flex:1"><b>Cote affichée sur Betclic</b><div style="font-size:12px;color:var(--muted)">Tape-la pour un verdict exact${b.estimated?` · minimum à exiger : <b style="color:var(--fg)">${fr(b.min_odds)}</b>`:""}</div></div>
       <input class="in" id="my-odds" inputmode="decimal" placeholder="ex : 1,85" value="${b.user_odds?fr(b.odds):""}"><button class="btn primary" id="my-go">Vérifier</button></div>
     <div id="my-verdict">${b.user_odds?verdictHtml(b):""}</div>
@@ -807,7 +823,7 @@ async function makeGoal(){
           <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances · ≈ 1 fois sur ${Math.max(1, Math.round(1/o.p_hit))}</small></div></div>
         ${o.tickets.map((t,j)=>`<div class="tk">
           <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise <b style="font-size:13px">${eur(t.stake)}</b></span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><div class="sp"></div></div>
-          ${t.legs.map(l=>`<div class="ln" data-leg="${esc(l.uid)}" title="Clique pour voir l'analyse"><span><b>${esc(l.selection)}</b> <span class="conf ${l.p>=0.62?"hi":l.p<0.45?"lo":""}">${pc(l.p)}</span> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">prends si Betclic ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b><input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic" title="Tape la cote vue sur Betclic"></div>`).join("")}
+          ${t.legs.map(l=>`<div class="ln" data-leg="${esc(l.uid)}" title="Clique pour voir l'analyse"><span><b>${esc(l.selection)}</b> <span class="conf ${l.p>=0.62?"hi":l.p<0.45?"lo":""}">${pc(l.p)}</span> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">prends si Betclic ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b><input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic" title="Tape la cote vue sur Betclic"><button class="addb ${inB(l.uid)?"in":""}" data-add="${esc(l.uid)}" title="Ajouter à mon ticket" style="margin-left:8px">${inB(l.uid)?"✓":"＋"}</button></div>`).join("")}
           <div class="ft"><span>Si ça passe, tu touches</span><b>${eur(t.ret)} (+${eur(t.ret - r.stake)})</b></div>
           <div style="text-align:right;margin-top:8px"><button class="btn primary" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}" style="padding:7px 12px">✔ Je joue ce ticket</button></div>
         </div>`).join("")}
@@ -815,6 +831,58 @@ async function makeGoal(){
   $("#goal").innerHTML = bankWarn(r.bank, r.stake) + warn + optCard(best, true) +
     (others.length ? `<h2>${others.length} autres tickets possibles</h2><div class="list">${others.map(o=>optCard(o,false)).join("")}</div>` : "");
 }
+
+/* ----- mon ticket ----- */
+let bset = new Set();
+const inB = uid => bset.has(uid);
+async function refreshB(){ if(!api) return; const r = await api.builder_get($("#m-stake")?$("#m-stake").value:10); bset = new Set(r.legs.map(l=>l.uid)); const c=$("#cnt-b"); c.hidden=!bset.size; c.textContent=bset.size; return r; }
+document.addEventListener("click", async e => {
+  const a = e.target.closest("[data-add]"); if (!a || !api) return;
+  e.stopPropagation();
+  const uid = a.dataset.add;
+  if (inB(uid)) { await api.builder_remove(uid); toast("Retiré de ton ticket"); }
+  else { await api.builder_add(uid); toast("✓ Ajouté à ton ticket"); }
+  await refreshB();
+  $$(`[data-add="${CSS.escape(uid)}"]`).forEach(x => { const on=inB(uid); x.classList.toggle("in",on); if (x.classList.contains("addb")) x.textContent=on?"✓":"＋"; else x.textContent=on?"✓ Dans mon ticket (cliquer pour retirer)":"＋ Ajouter à mon ticket"; });
+  if (page==="mine") loadMine();
+}, true);
+async function loadMine(){
+  const stake = $("#m-stake") ? $("#m-stake").value : 10;
+  const r = await refreshB();
+  if (!r.legs.length) { $("#mine").innerHTML = emptyBox("Ton ticket est vide", "Clique sur ＋ à côté d'un pari pour l'ajouter. Tu peux mélanger tous les types de paris et tous les matchs."); return; }
+  const pos = r.ev >= 0;
+  $("#mine").innerHTML = `
+    ${bankWarn(r.bank, r.stake)}
+    ${r.removed?`<div class="banner warn" style="margin:0 0 12px">${r.removed} sélection(s) retirée(s) : match commencé ou plus disponible.</div>`:""}
+    <div class="sumst">
+      <div class="card stat"><div class="l">Cote totale</div><div class="v" style="color:var(--green2)">${fr(r.odds)}</div><div class="h">${r.legs.length} sélection${r.legs.length>1?"s":""}</div></div>
+      <div class="card stat"><div class="l">Chances réelles</div><div class="v">${pc(r.p, r.p<0.1?1:0)}</div><div class="h">≈ 1 fois sur ${Math.max(1,Math.round(1/r.p))}</div></div>
+      <div class="card stat"><div class="l">Gain attendu</div><div class="v" style="color:${pos?'var(--green2)':'#fca5a5'}">${sg(r.ev)}</div><div class="h">${pos?"rentable sur la durée":"la marge Betclic joue contre toi"}</div></div>
+      <div class="card stat"><div class="l">Confiance moyenne</div><div class="v">${r.conf}/100</div><div class="h">données dispo : ${pc(r.quality)}</div></div>
+    </div>
+    <div class="card" style="padding:14px 16px;display:flex;gap:14px;align-items:center;margin-bottom:12px">
+      <b>Je mise</b><div class="money" style="width:160px"><input id="m-stake" value="${r.stake}" inputmode="decimal" style="font-size:20px"><span>€</span></div>
+      <div style="flex:1">Si ça passe, tu touches <b style="color:var(--green2);font-size:18px">${eur(r.ret)}</b> (+${eur(r.gain)})</div>
+      <button class="btn primary" id="m-play">✔ Je joue ce ticket</button><button class="btn" id="m-clear">Vider</button>
+    </div>
+    ${r.warnings.map(w=>`<div class="verdict ko" style="margin:0 0 6px">⚠ ${esc(w)}</div>`).join("")}
+    ${r.tips.map(t=>`<div class="verdict ok" style="margin:0 0 6px;display:flex;gap:10px;align-items:center"><span style="flex:1">💡 ${esc(t.text)}</span><button class="btn" data-swap="${esc(t.from)}~${esc(t.to)}" style="padding:5px 10px;font-size:12px">Remplacer</button></div>`).join("")}
+    <div class="list" style="margin-top:10px">${r.legs.map(l=>`
+      <div class="card mleg ${l.uid===r.weakest&&r.legs.length>1?"weak":""}" data-leg="${esc(l.uid)}">
+        <div><b>${esc(l.selection)}</b>${l.uid===r.weakest&&r.legs.length>1?' <span class="conf lo">maillon faible</span>':""}
+          <div style="font-size:12px;color:var(--muted)">${esc(l.match)} · ${esc(l.sport)} · ${esc(l.date)}</div>
+          ${l.stats?`<div style="font-size:12px;margin-top:4px">${(l.stats.pros||[]).slice(0,2).map(x=>`<span style="color:#bbf7d0">✔ ${esc(x)}</span>`).join(" &nbsp; ")} ${(l.stats.cons||[]).slice(0,2).map(x=>`<span style="color:#fecaca">✖ ${esc(x)}</span>`).join(" &nbsp; ")}</div>`:""}</div>
+        <span class="conf ${l.p>=0.62?"hi":l.p<0.45?"lo":""}">${pc(l.p)}</span>
+        ${confTag(l)||'<span></span>'}
+        <div class="odds" style="min-width:70px">${l.estimated?"≈":""}${fr(l.odds)}<small>${l.estimated?`mini ${fr(l.min_odds)}`:esc(l.book)}</small></div>
+        <button class="addb in" data-add="${esc(l.uid)}" title="Retirer">✕</button>
+      </div>`).join("")}</div>`;
+  $("#m-stake").onchange = loadMine;
+  $("#m-stake").onkeydown = e => { if (e.key==="Enter") loadMine(); };
+  $("#m-play").onclick = async () => { const x = await api.builder_play($("#m-stake").value); toast(x.ok?"✔ Ticket ajouté à ton historique":(x.error||"Erreur")); };
+  $("#m-clear").onclick = async () => { await api.builder_clear(); loadMine(); };
+}
+document.addEventListener("click", async e => { const s=e.target.closest("[data-swap]"); if(!s) return; e.stopPropagation(); const [a,b]=s.dataset.swap.split("~"); await api.builder_swap(a,b); toast("Sélection remplacée"); loadMine(); }, true);
 
 /* ----- historique ----- */
 const ST = {won:"✅ Gagné", lost:"❌ Perdu", void:"↩ Remboursé", pending:"⏳ En attente", unknown:"❔ Non vérifiable"};
@@ -951,7 +1019,7 @@ async function poll(){
     if (status.rev !== rev) { rev = status.rev; data = await api.get_data(); renderHome(); renderPicks(); }
   } catch (e) { console.error(e); }
 }
-function start(a){ api = a; poll(); setInterval(poll, 1500); setInterval(tickClock, 500); }
+function start(a){ api = a; poll(); setTimeout(refreshB, 300); setInterval(poll, 1500); setInterval(tickClock, 500); }
 window.addEventListener("pywebviewready", () => start(window.pywebview.api));
 if (window.pywebview && window.pywebview.api) start(window.pywebview.api);
 if (window.__MOCK_API__) start(window.__MOCK_API__);

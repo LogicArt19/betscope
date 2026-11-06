@@ -39,7 +39,7 @@ from history import History
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -1241,6 +1241,39 @@ def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None, mi
     return {"legs": [x[0] for x in legs], "leg_odds": [x[1] for x in legs], "odds": o, "p": p, "ev": p * o - 1}
 
 
+def favorites_ticket(items, need_odds, min_p, min_legs=1, max_legs=60, exclude_events=()):
+    """1 favori par match, autant de matchs qu'il faut : on prend d'abord les favoris qui « coûtent »
+    le moins de probabilité pour la cote qu'ils apportent, jusqu'à atteindre la cote nécessaire."""
+    best = {}
+    for s, o in items:
+        if s["event_id"] in exclude_events or s["p"] < min_p or o <= 1.01:
+            continue
+        cost = -math.log(max(1e-9, s["p"] * _trust(s))) / math.log(o)
+        cur = best.get(s["event_id"])
+        if cur is None or cost < cur[0]:
+            best[s["event_id"]] = (cost, s, o)
+    order = sorted(best.values(), key=lambda x: x[0])
+    L = math.log(need_odds)
+    legs, tot = [], 0.0
+    for cost, s, o in order:
+        if tot >= L and len(legs) >= min_legs:
+            break
+        legs.append((s, o))
+        tot += math.log(o)
+    if tot < L - 1e-9 or len(legs) < min_legs or len(legs) > max_legs:
+        return None
+    # si la dernière sélection dépasse beaucoup la cote, on essaie une plus sûre pour la remplacer
+    if len(legs) > 1:
+        rest = tot - math.log(legs[-1][1])
+        last_ev = legs[-1][0]["event_id"]
+        alts = [(s, o) for s, o in items if s["event_id"] == last_ev and s["p"] >= min_p and rest + math.log(o) >= L]
+        if alts:
+            legs[-1] = max(alts, key=lambda x: x[0]["p"] * _trust(x[0]))
+    o = math.prod(x[1] for x in legs)
+    p = math.prod(x[0]["p"] for x in legs)
+    return {"legs": [x[0] for x in legs], "leg_odds": [x[1] for x in legs], "odds": o, "p": p, "ev": p * o - 1}
+
+
 def objective_plan(stake, target, selections, cfg):
     res = _objective_plan(stake, target, selections, cfg)
     o = cfg.get("_obj") or {}
@@ -1326,17 +1359,21 @@ def _objective_plan(stake, target, selections, cfg):
                 f"La meilleure probabilité globale pour une cote ≥ {need1:.2f}".replace(".", ","), [t], btitle)
         # 1 ticket : que des favoris (chaque sélection très probable), quitte à mettre plus de matchs
         # 1 favori par match : on cherche le seuil de sécurité le plus haut qui permet d'atteindre la cote
-        tf, thr = None, None
-        for th in (0.80, 0.75, 0.70, 0.65, 0.60, 0.55):
-            fav = _book_items(selections, cfg, book, min_p=th)
-            tf = bt(fav, need1, max_legs=lmax, min_leg_p=th)
-            if tf:
-                thr = th
-                break
-        if tf:
+        fmax = int(cfg.get("_max_legs") or 60)
+        allit = _book_items(selections, cfg, book)
+        seen_sets = []
+        for th in (0.85, 0.80, 0.75, 0.70, 0.65, 0.60, 0.55):
+            tf = favorites_ticket(allit, need1, th, min_legs=lmin, max_legs=fmax)
+            if not tf:
+                continue
+            key = frozenset(l["uid"] for l in tf["legs"])
+            if key in seen_sets:
+                continue
+            seen_sets.append(key)
             tf["stake"] = stake
-            add("fav", "1 favori par match",
-                f"Uniquement des favoris : chaque sélection a au moins {thr * 100:.0f} % de chances", [tf], btitle)
+            add("fav", f"Favoris ≥ {th * 100:.0f} % · {len(tf['legs'])} matchs",
+                f"1 favori par match, chacun avec au moins {th * 100:.0f} % de chances", [tf], btitle)
+            options[-1]["safety"] = th
         if t:
             # moins de matchs (si le plus sûr en a 3+)
             if len(t["legs"]) >= 3:
@@ -1371,7 +1408,8 @@ def _objective_plan(stake, target, selections, cfg):
                 tickets, btitle)
 
     # le ticket « favoris » passe en premier quand il existe (c'est le plus objectif), puis par chances
-    options.sort(key=lambda o: (o["kind"] != "fav", -o["p_hit"]))
+    # tickets « favoris » d'abord (du plus sûr par match au moins sûr), puis les autres par chances
+    options.sort(key=lambda o: (o["kind"] != "fav", -o.get("safety", 0), -o["p_hit"]))
     seen, uniq = set(), []
     for o in options:
         key = tuple(sorted(l["uid"] for t in o["tickets"] for l in t["legs"]))
@@ -1390,7 +1428,7 @@ def _objective_plan(stake, target, selections, cfg):
         for o in sorted(evs.values(), reverse=True)[:6]:
             prod *= o
         max_odds = max(max_odds, prod)
-    return {"stake": stake, "target": target, "need_odds": need1, "options": uniq[:6], "max_odds": max_odds}
+    return {"stake": stake, "target": target, "need_odds": need1, "options": uniq[:12], "max_odds": max_odds}
 
 
 # --------------------------------------------------------------------------

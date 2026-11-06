@@ -803,7 +803,7 @@ async function makeGoal(){
   const warn = best.relaxed ? `<div class="banner warn" style="margin:0 0 12px">⚠ Avec tes critères d'objectivité, le maximum atteignable aujourd'hui est d'environ +${eur(r.strict_max_gain||0)}. Ce ticket les dépasse un peu pour atteindre +${eur(r.target)}.</div>` : "";
   const optCard = (o, main) => `
       <div class="card opt ${main?"best":""}">
-        <div class="hd"><div><b>${main?"🎯 Le ticket à jouer":esc(o.title)}</b><small>${main?`${esc(o.title)} · `:""}${esc(o.book)}</small></div><div class="sp"></div>
+        <div class="hd"><div><b>${main?"🎯 Le ticket le plus sûr":esc(o.title)}</b><small>${main?`${esc(o.title)} · `:""}${esc(o.desc)} · ${esc(o.book)}</small></div><div class="sp"></div>
           <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances · ≈ 1 fois sur ${Math.max(1, Math.round(1/o.p_hit))}</small></div></div>
         ${o.tickets.map((t,j)=>`<div class="tk">
           <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise <b style="font-size:13px">${eur(t.stake)}</b></span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><div class="sp"></div></div>
@@ -813,7 +813,7 @@ async function makeGoal(){
         </div>`).join("")}
       </div>`;
   $("#goal").innerHTML = bankWarn(r.bank, r.stake) + warn + optCard(best, true) +
-    (others.length ? `<details style="margin-top:12px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Voir les ${others.length} autres façons d'y arriver (moins bonnes)</summary><div class="list" style="margin-top:10px">${others.map(o=>optCard(o,false)).join("")}</div></details>` : "");
+    (others.length ? `<h2>${others.length} autres tickets possibles</h2><div class="list">${others.map(o=>optCard(o,false)).join("")}</div>` : "");
 }
 
 /* ----- historique ----- */

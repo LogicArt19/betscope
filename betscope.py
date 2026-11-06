@@ -35,10 +35,11 @@ import urllib.request
 import markets as mk
 import model as modelmod
 import stats as statsmod
+from history import History
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.9.3"
+APP_VERSION = "2.0.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -93,7 +94,10 @@ DEFAULT_CONFIG = {
     "stats_weight": 0.25,    # part du modèle forme/stats dans la proba finale (0 = cotes seules)
     "day_filter": "all",
     "web_info": True,
-    "auto_refresh": True,    # l'appli choisit seule la fréquence pour rester dans l'offre gratuite        # recherche web automatique (ESPN) : absents, compos, actus
+    "auto_refresh": True,
+    "bankroll": 0.0,         # capital de départ (0 = pas de suivi)
+    "daily_max_pct": 10.0,   # mise max par jour, en % du capital actuel
+    "stop_loss": 0.0,        # perte max par jour en € (0 = pas de limite)    # l'appli choisit seule la fréquence pour rester dans l'offre gratuite        # recherche web automatique (ESPN) : absents, compos, actus
 }
 
 # Bookmakers dont les cotes reflètent le mieux la vraie probabilité
@@ -528,12 +532,37 @@ def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
             elif l - w >= 2:
                 cons.append(txt)
             score += max(-5, min(5, 1.5 * (w - l)))
+        def inj_txt(lst):
+            return ", ".join((f"⭐ {i['player']} ({i['goals']} buts)" if i.get("key") else i["player"]) for i in lst[:5])
+
+        def inj_w(lst):
+            return sum(i.get("weight", 0.025) for i in lst)
         if im:
-            cons.append(f"{len(im)} absent{'s' if len(im) > 1 else ''} chez {me} : " + ", ".join(i["player"] for i in im[:4]))
-            score -= min(10, 2.5 * len(im))
+            cons.append(f"{len(im)} absent{'s' if len(im) > 1 else ''} chez {me} : " + inj_txt(im))
+            score -= min(14, 90 * inj_w(im))
         if io:
-            pros.append(f"{len(io)} absent{'s' if len(io) > 1 else ''} chez {opp} : " + ", ".join(i["player"] for i in io[:4]))
-            score += min(10, 2.5 * len(io))
+            pros.append(f"{len(io)} absent{'s' if len(io) > 1 else ''} chez {opp} : " + inj_txt(io))
+            score += min(14, 90 * inj_w(io))
+        # rotation (autre match à moins de 3,5 jours) et enjeu
+        rm, ro = st.get("rotation_home" if side == "home" else "rotation_away"), \
+            st.get("rotation_away" if side == "home" else "rotation_home")
+        def rot_txt(t, r):
+            quand = f"dans {r['days']:.0f} j" if r["days"] > 0 else f"il y a {-r['days']:.0f} j"
+            return f"Rotation possible : {t} joue {r['comp']} {quand}"
+        if rm:
+            cons.append(rot_txt(me, rm))
+            score -= 3
+        if ro:
+            pros.append(rot_txt(opp, ro))
+            score += 3
+        sm, so = st.get("stake_home" if side == "home" else "stake_away"), \
+            st.get("stake_away" if side == "home" else "stake_home")
+        if sm and not so:
+            pros.append(f"Enjeu : {me} en {sm}")
+            score += 2
+        elif so and not sm:
+            cons.append(f"Enjeu : {opp} en {so}")
+            score -= 2
     elif side == "draw":
         if fh and fa:
             gap = abs(fh["ppg5"] - fa["ppg5"])
@@ -560,6 +589,11 @@ def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
             (pros if good else cons).append(
                 f"Face-à-face : {hs['avg_goals']:.1f} buts par match en moyenne ({hs['n']} matchs)".replace(".", ","))
             score += 3 if good else -3
+    wx = st.get("weather")
+    if mkey == "totals" and wx and (wx.get("rain", 0) >= 3 or wx.get("wind", 0) >= 40):
+        txt = f"Météo à {wx['city']} : {wx['rain']:g} mm de pluie, vent {wx['wind']:.0f} km/h (moins de buts en général)"
+        (pros if name == "Under" else cons).append(txt)
+        score += 4 if name == "Under" else -4
     if p_model is not None:
         d = p_model - p_market
         txt = f"Modèle forme : {p_model * 100:.0f} % contre {p_market * 100:.0f} % pour le marché"
@@ -1377,7 +1411,7 @@ def ser_bet(b, cfg):
         "ev": round(b["ev"], 4), "n_books": b["n_books"], "suspect": b["suspect"],
         "value": is_value(b, cfg), "event_id": b["event_id"], "conf": b.get("conf"),
         "mine": would_bet(b, cfg), "cat": b.get("cat"), "estimated": bool(b.get("estimated")),
-        "user_odds": bool(b.get("user_odds")),
+        "user_odds": bool(b.get("user_odds")), "move": b.get("move"),
         "min_odds": b.get("min_odds"),
         "p_market": round(b.get("p_market", b["p"]), 4), "stats": b.get("stats"),
         "prices": [{"book": t, "odds": o, "playable": k in b["playable"]}
@@ -1583,6 +1617,14 @@ class Api:
         self._next_stats = time.time() + 5
         self._next_web = time.time() + 8
         self._days = []
+        self._hist = History(config_dir())
+        self._next_settle = time.time() + 20
+        self._odds_hist = {}
+        try:
+            with open(os.path.join(config_dir(), "odds_history.json"), encoding="utf-8") as f:
+                self._odds_hist = json.load(f)
+        except (OSError, ValueError):
+            pass
         self._overrides = {}  # cotes Betclic tapées par l'utilisateur {uid: cote}
         try:
             with open(os.path.join(config_dir(), "my_odds.json"), encoding="utf-8") as f:
@@ -1609,6 +1651,9 @@ class Api:
                 last_an = now
                 self._stats_dirty = False
                 self._reanalyze()
+            if now >= self._next_settle:
+                self._next_settle = now + 20 * 60
+                threading.Thread(target=self._hist.settle_all, args=(statsmod.ESPN_SLUGS,), daemon=True).start()
             if now >= self._next_web and self._cfg.get("web_info", True) and self._events and not self._is_demo:
                 self._next_web = now + 5 * 60
                 with self._lock:
@@ -1658,6 +1703,87 @@ class Api:
             self._next_refresh = now + (15 if demo else refresh_minutes(cfg, (self._quota or {}).get("remaining"))) * 60
             self._fetching = False
             self._reanalyze()
+
+    def _apply_moves(self):
+        """Mouvement de la cote Pinnacle depuis qu'on suit le match (l'argent « sérieux »)."""
+        changed = False
+        ts = self._last_fetch
+        live = set()
+        for x in self._sel:
+            pin = (x.get("all_prices") or {}).get("pinnacle")
+            if not pin or x.get("estimated"):
+                continue
+            live.add(x["uid"])
+            h = self._odds_hist.get(x["uid"])
+            if not h:
+                self._odds_hist[x["uid"]] = {"f": pin[0], "ft": ts, "l": pin[0], "lt": ts}
+                changed = True
+                continue
+            if ts > h["lt"] and pin[0] != h["l"]:
+                h["l"], h["lt"] = pin[0], ts
+                changed = True
+            mv = (h["l"] - h["f"]) / h["f"]
+            if abs(mv) < 0.05:
+                continue
+            st = x.get("stats")
+            if st is None:
+                st = x["stats"] = {"q": 0, "round": "", "p_model": None, "pros": [], "cons": [], "score": 0,
+                                   "contra": False, "xg": None, "form_home": "", "form_away": ""}
+            txt = (f"Cote Pinnacle passée de {h['f']:.2f} à {h['l']:.2f}".replace(".", ","))
+            if mv < 0:
+                st["pros"].append("📉 " + txt + " : l'argent des parieurs pros arrive sur ce pari")
+                x["conf"] = min(99, x.get("conf", 50) + 6)
+            else:
+                st["cons"].append("📈 " + txt + " : les parieurs pros s'en détournent")
+                x["conf"] = max(1, x.get("conf", 50) - 6)
+            x["move"] = round(mv, 3)
+        if changed:
+            if len(self._odds_hist) > 6000:
+                self._odds_hist = {k: v for k, v in self._odds_hist.items() if k in live}
+            try:
+                with open(os.path.join(config_dir(), "odds_history.json"), "w", encoding="utf-8") as f:
+                    json.dump(self._odds_hist, f)
+            except OSError:
+                pass
+
+    # ---- historique / bankroll ----
+    def log_ticket(self, uids, stake, label=""):
+        try:
+            stake = float(str(stake).replace(",", ".").replace("€", "").strip())
+        except ValueError:
+            return {"ok": False, "error": "Mise invalide"}
+        with self._lock:
+            by = {x["uid"]: x for x in self._sel}
+            legs = [History.leg_of(by[u]) for u in uids if u in by]
+        if not legs or len(legs) != len(uids):
+            return {"ok": False, "error": "Un des matchs n'est plus disponible"}
+        self._hist.log_ticket(legs, stake, label)
+        return {"ok": True}
+
+    def delete_ticket(self, tid):
+        self._hist.delete_ticket(tid)
+        return True
+
+    def get_history(self):
+        out = self._hist.summary()
+        out["bank"] = self.get_bank()
+        return out
+
+    def settle_now(self):
+        threading.Thread(target=self._hist.settle_all, args=(statsmod.ESPN_SLUGS,), daemon=True).start()
+        return True
+
+    def get_bank(self):
+        cfg = self._cfg
+        start = float(cfg.get("bankroll") or 0)
+        u = self._hist.summary()["user"]
+        cur = start + u["profit"] if start else None
+        day_max = round(cur * float(cfg.get("daily_max_pct") or 10) / 100, 2) if cur else None
+        left = round(day_max - u["today_staked"], 2) if day_max is not None else None
+        sl = float(cfg.get("stop_loss") or 0)
+        return {"enabled": bool(start), "start": start, "current": round(cur, 2) if cur is not None else None,
+                "day_max": day_max, "left_today": left, "today_pl": u["today_pl"],
+                "stop": bool(sl and u["today_pl"] <= -sl), "stop_loss": sl}
 
     def _apply_overrides(self, cfg):
         """Remplace la cote estimée par la vraie cote Betclic tapée par l'utilisateur."""
@@ -1745,6 +1871,8 @@ class Api:
                                      "bookmakers affichées à titre indicatif.")
                 self._sel = analyze(events, cfg, info=self._info)
                 self._apply_overrides(cfg)
+                if not self._is_demo:
+                    self._apply_moves()
                 self._picks = top_picks(self._sel, cfg)
                 self._prob = most_probable(self._sel, cfg)
                 vpool = [s for s in self._sel if is_value(s, cfg)]
@@ -1753,6 +1881,8 @@ class Api:
                                      float(cfg["min_combo_prob"]))
                 seen = {c["uid"] for c in value_combos}
                 self._combos = (value_combos + [c for c in other if c["uid"] not in seen])[:40]
+                if not self._is_demo:
+                    self._hist.log_app([x for x in self._picks if would_bet(x, cfg)])
             except Exception as e:
                 self._errors = [f"Erreur d'analyse : {e!r}"]
             self._rev += 1
@@ -1852,7 +1982,9 @@ class Api:
             cfg["_types"] = set(types)
         cfg["_min_legs"], cfg["_max_legs"] = _int_or_none(min_legs), _int_or_none(max_legs)
         cfg["_obj"] = _obj_opts(obj)
-        return ser_plan(stake_plan(budget, mode, sel, cfg), cfg)
+        out = ser_plan(stake_plan(budget, mode, sel, cfg), cfg)
+        out["bank"] = self.get_bank()
+        return out
 
     def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None):
         try:
@@ -1872,7 +2004,9 @@ class Api:
         cfg["_obj"] = _obj_opts(obj)
         if cfg["_min_legs"] and cfg["_max_legs"] and cfg["_min_legs"] > cfg["_max_legs"]:
             cfg["_min_legs"], cfg["_max_legs"] = cfg["_max_legs"], cfg["_min_legs"]
-        return ser_objective(objective_plan(stake, target, sel, cfg), cfg)
+        out = ser_objective(objective_plan(stake, target, sel, cfg), cfg)
+        out["bank"] = self.get_bank()
+        return out
 
     def reset_settings(self):
         """Remet tous les réglages par défaut, en gardant les clés et les championnats."""

@@ -97,6 +97,14 @@ def _sim(a, b):
     return max(difflib.SequenceMatcher(None, a, b).ratio(), jac)
 
 
+def _rest(date_str):
+    try:
+        d = datetime.fromisoformat(str(date_str)[:10]).replace(tzinfo=timezone.utc)
+        return round((datetime.now(timezone.utc) - d).total_seconds() / 86400, 1)
+    except ValueError:
+        return None
+
+
 def season_for(dt):
     return dt.year if dt.month >= 7 else dt.year - 1
 
@@ -405,8 +413,13 @@ class Stats:
                     except Exception as e:
                         errors.append(f"recherche web : {e}")
                         continue
+                    parsed = self._parse_summary(j)
+                    try:
+                        parsed["weather"] = self._weather(parsed.get("venue") or {}, t)
+                    except Exception:
+                        parsed["weather"] = None
                     with self.lock:
-                        web[ev["id"]] = {"ts": time.time(), "v": self._parse_summary(j)}
+                        web[ev["id"]] = {"ts": time.time(), "v": parsed}
                         self._save()
                     if on_change:
                         on_change()
@@ -420,6 +433,36 @@ class Stats:
                 self._save()
             if on_change:
                 on_change()
+
+    def _weather(self, venue, kickoff):
+        """Météo au coup d'envoi (Open-Meteo, gratuit, sans clé)."""
+        city = (venue or {}).get("city")
+        if not city:
+            return None
+        if (kickoff - datetime.now(timezone.utc)).total_seconds() > 6 * 86400:
+            return None
+        geo = self.data.setdefault("geo", {})
+        if city not in geo:
+            g = self._web_get("https://geocoding-api.open-meteo.com/v1/search?" +
+                              urllib.parse.urlencode({"name": city, "count": 1, "language": "fr"}))
+            r = (g.get("results") or [None])[0]
+            geo[city] = {"lat": r["latitude"], "lon": r["longitude"]} if r else None
+        loc = geo.get(city)
+        if not loc:
+            return None
+        day = kickoff.astimezone(timezone.utc).strftime("%Y-%m-%d")
+        w = self._web_get("https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode({
+            "latitude": loc["lat"], "longitude": loc["lon"], "hourly": "precipitation,wind_speed_10m,temperature_2m",
+            "start_date": day, "end_date": day, "timezone": "UTC"}))
+        h = w.get("hourly") or {}
+        times = h.get("time") or []
+        target = kickoff.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:00")
+        idx = times.index(target) if target in times else None
+        if idx is None:
+            return None
+        rain = sum((h.get("precipitation") or [0] * len(times))[idx:idx + 2])
+        return {"city": city, "rain": round(rain, 1), "wind": round((h.get("wind_speed_10m") or [0])[idx], 0),
+                "temp": round((h.get("temperature_2m") or [0])[idx], 0)}
 
     def _parse_summary(self, j):
         out = {"inj_home": [], "inj_away": [], "lineups": [], "news": []}
@@ -477,6 +520,13 @@ class Stats:
                                            "comp": e.get("leagueName") or e.get("leagueAbbreviation") or ""})
             except (AttributeError, TypeError):
                 continue
+        try:
+            v = (j.get("gameInfo") or {}).get("venue") or {}
+            addr = v.get("address") or {}
+            out["venue"] = {"name": v.get("fullName") or "", "city": addr.get("city") or "",
+                            "country": addr.get("country") or ""}
+        except (AttributeError, TypeError):
+            out["venue"] = {}
         out["table"] = {}
         try:
             groups = (j.get("standings") or {}).get("groups") or []
@@ -769,6 +819,12 @@ class Stats:
             ratings = {}
             for lid, c in self.data["results"].items():
                 ratings[lid] = model.fit_ratings(c.get("v") or [])
+            sc_all_ref = []
+            for c in (self.data.get("scorers") or {}).values():
+                sc_all_ref.extend(c.get("v") or [])
+            all_fixtures = []
+            for c in self.data["fixtures"].values():
+                all_fixtures.extend(c.get("list", []))
             inj_by_fx = {}
             for c in self.data["inj_day"].values():
                 for fid, lst in (c.get("v") or {}).items():
@@ -776,12 +832,24 @@ class Stats:
             for eid, fx in mapping.items():
                 fid = str(fx["id"])
                 lid = str(fx.get("league"))
-                inj = inj_by_fx.get(fid, [])
+                inj = [dict(i) for i in inj_by_fx.get(fid, [])]
                 inj_h = [i for i in inj if i.get("team_id") == fx.get("home_id")]
                 inj_a = [i for i in inj if i.get("team_id") == fx.get("away_id")]
                 table = (self.data["standings"].get(lid) or {}).get("v") or {}
                 pred_api = (self.data["pred"].get(fid) or {}).get("v")
-                mdl = model.predict(ratings.get(lid), fx.get("home_id"), fx.get("away_id"), inj_h, inj_a)
+                w0 = ((self.data.get("web") or {}).get(eid) or {}).get("v") or {}
+                if not inj_h and not inj_a and (w0.get("inj_home") or w0.get("inj_away")):
+                    inj_h = [dict(i) for i in w0.get("inj_home") or []]
+                    inj_a = [dict(i) for i in w0.get("inj_away") or []]
+                self._weigh_injuries(inj_h, fx.get("home_id"), sc_all_ref, all_results)
+                self._weigh_injuries(inj_a, fx.get("away_id"), sc_all_ref, all_results)
+                rot_h = self._rotation(fx, fx.get("home_id"), all_fixtures)
+                rot_a = self._rotation(fx, fx.get("away_id"), all_fixtures)
+                wx = w0.get("weather")
+                wscale = 0.93 if wx and (wx.get("rain", 0) >= 3 or wx.get("wind", 0) >= 40) else 1.0
+                mdl = model.predict(ratings.get(lid), fx.get("home_id"), fx.get("away_id"), inj_h, inj_a,
+                                    scale_home=wscale * (0.95 if rot_h else 1.0),
+                                    scale_away=wscale * (0.95 if rot_a else 1.0))
                 hk = f"{min(fx['home_id'], fx['away_id'])}-{max(fx['home_id'], fx['away_id'])}"
                 h2h = ((self.data.get("h2h") or {}).get(hk) or {}).get("v") or (pred_api or {}).get("h2h") or [
                     {"date": r["date"][:10], "home": r["home"], "away": r["away"], "gh": r["gh"], "ga": r["ga"]}
@@ -807,7 +875,11 @@ class Stats:
                             g += r["ga"] or 0
                             m += 1
                     return g, m
+                tbl_n = len(table)
                 res[eid] = {
+                    "rotation_home": rot_h, "rotation_away": rot_a, "weather": wx,
+                    "stake_home": self._stake(table.get(str(fx.get("home_id"))), tbl_n),
+                    "stake_away": self._stake(table.get(str(fx.get("away_id"))), tbl_n),
                     "scorers_home": team_scorers(fx.get("home_id")), "scorers_away": team_scorers(fx.get("away_id")),
                     "goals_home": team_totals(fx.get("home_id")), "goals_away": team_totals(fx.get("away_id")),
                     "fixture_id": fx["id"], "round": fx.get("round", ""), "round_label": round_label(fx.get("round", "")),
@@ -822,10 +894,6 @@ class Stats:
                 }
                 w = ((self.data.get("web") or {}).get(eid) or {}).get("v")
                 if w:
-                    if not inj_h and not inj_a and (w["inj_home"] or w["inj_away"]):
-                        res[eid]["inj_home"], res[eid]["inj_away"] = w["inj_home"], w["inj_away"]
-                        res[eid]["model"] = model.predict(ratings.get(lid), fx.get("home_id"), fx.get("away_id"),
-                                                          w["inj_home"], w["inj_away"])
                     if not res[eid]["lineups"]:
                         res[eid]["lineups"] = w["lineups"]
                     res[eid]["news"] = w["news"]
@@ -836,7 +904,9 @@ class Stats:
                 w = ((self.data.get("web") or {}).get(eid) or {}).get("v")
                 if eid in res or not w:
                     continue
-                res[eid] = {"fixture_id": None, "round": "", "round_label": "", "home": ev.get("home_team", ""),
+                res[eid] = {"weather": w.get("weather"), "rotation_home": None, "rotation_away": None,
+                            "stake_home": None, "stake_away": None,
+                            "fixture_id": None, "round": "", "round_label": "", "home": ev.get("home_team", ""),
                             "away": ev.get("away_team", ""), "form_home": None, "form_away": None,
                             "table_home": None, "table_away": None, "inj_home": w["inj_home"],
                             "inj_away": w["inj_away"], "model": None, "pred": None, "h2h": [], "h2h_sum": None,
@@ -845,6 +915,59 @@ class Stats:
             for eid, r in res.items():
                 r["sources"] = self._sources(eid, r)
         return res
+
+    @staticmethod
+    def _weigh_injuries(inj, team_id, scorers, results):
+        """Importance de chaque absent : part des buts + passes de l'équipe -> poids dans le modèle."""
+        if not inj:
+            return
+        tg = sum((r["gh"] or 0) for r in results if r["home_id"] == team_id) + \
+            sum((r["ga"] or 0) for r in results if r["away_id"] == team_id)
+        mine = [x for x in scorers if x.get("team_id") == team_id]
+        for i in inj:
+            name = str(i.get("player", "")).lower().split()
+            last = name[-1] if name else ""
+            sc = next((x for x in mine if x["name"].lower().split() and x["name"].lower().split()[-1] == last), None)
+            share = ((sc["goals"] + 0.7 * sc["assists"]) / tg) if (sc and tg) else 0.0
+            i["share"] = round(share, 2)
+            i["goals"] = sc["goals"] if sc else 0
+            i["key"] = share >= 0.12
+            i["weight"] = round(min(0.15, 0.02 + 0.55 * share), 3)
+
+    @staticmethod
+    def _rotation(fx, team_id, fixtures):
+        """Autre match de cette équipe à moins de 3,5 jours (avant ou après) -> risque de rotation."""
+        try:
+            t0 = datetime.fromisoformat(fx["date"].replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            return None
+        best = None
+        for f in fixtures:
+            if f.get("id") == fx.get("id") or team_id not in (f.get("home_id"), f.get("away_id")):
+                continue
+            try:
+                t = datetime.fromisoformat(f["date"].replace("Z", "+00:00"))
+            except (KeyError, ValueError):
+                continue
+            d = (t - t0).total_seconds() / 86400
+            if abs(d) <= 3.5 and (best is None or abs(d) < abs(best["days"])):
+                comp = {"CL": "Ligue des champions", "FL1": "Ligue 1", "PL": "Premier League", "PD": "Liga",
+                        "SA": "Serie A", "BL1": "Bundesliga"}.get(str(f.get("league")), "un autre match")
+                best = {"days": round(d, 1), "comp": comp, "opp": f["away"] if f.get("home_id") == team_id else f["home"]}
+        return best
+
+    @staticmethod
+    def _stake(row, n):
+        if not row or not row.get("rank") or not n or (row.get("played") or 0) < 10:
+            return None
+        r = row["rank"]
+        if r <= 2:
+            return "course au titre"
+        if r <= 5:
+            return "course à l'Europe"
+        if r > n - 3:
+            return "lutte pour le maintien"
+        return None
 
     @staticmethod
     def _form_from_games(games):
@@ -875,7 +998,8 @@ class Stats:
                 "loss_streak": streak if first == "D" else 0, "unbeaten": unbeaten, "winless": winless,
                 "streak_txt": txt, "played": len(games), "home_rec": rec(hg), "away_rec": rec(ag),
                 "home_ppg": round(pts(hg) / len(hg), 2) if hg else None,
-                "away_ppg": round(pts(ag) / len(ag), 2) if ag else None, "rest_days": None,
+                "away_ppg": round(pts(ag) / len(ag), 2) if ag else None,
+                "rest_days": _rest(games[0]["date"]),
                 "over25": round(sum(g["gf"] + g["ga"] > 2.5 for g in last) / len(last), 2),
                 "btts": round(sum(g["gf"] > 0 and g["ga"] > 0 for g in last) / len(last), 2),
                 "scored_in": round(sum(g["gf"] > 0 for g in last) / len(last), 2), "src": "ESPN"}

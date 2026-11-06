@@ -299,6 +299,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
       <button data-p="picks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 15 8.5l7 1-5 4.9 1.2 7L12 18l-6.2 3.4L7 14.4 2 9.5l7-1z"/></svg>Meilleurs paris<span class="count" id="cnt-v" hidden></span></button>
       <button data-p="combos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/></svg>Combinés</button>
       <button data-p="budget"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="13" rx="2.5"/><path d="M2 10h20M6 15h4"/></svg>Mon budget</button>
+      <button data-p="hist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>Historique</button>
       <button data-p="prob"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.5 0 9-3.6 9-9V5l-9-3-9 3v8c0 5.4 3.5 9 9 9z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>Plus probables</button>
       <button data-p="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Paramètres</button>
     </nav>
@@ -445,6 +446,12 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
         </div>
       </section>
 
+      <!-- HISTORIQUE -->
+      <section class="page" id="p-hist">
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px"><p class="sub" style="margin:0;flex:1">Chaque ticket que tu marques « Je joue » et chaque pari que BetScope jouerait lui-même (✔ JE JOUE) sont vérifiés automatiquement après le match (résultats ESPN). C'est le juge de paix de l'analyse.</p><button class="btn" id="h-check">⟳ Vérifier les résultats</button></div>
+        <div id="hist"></div>
+      </section>
+
       <!-- PLUS PROBABLES -->
       <section class="page" id="p-prob">
         <p class="sub">Les issues les plus probables selon le marché. Attention : un pari qui passe souvent n'est pas forcément rentable si la cote est trop basse (value négative).</p>
@@ -460,7 +467,13 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
             <div class="f"><label>Clé The Odds API (les cotes)</label><input class="in" id="c-api_key" type="password" autocomplete="off"><small>Gratuite sur the-odds-api.com. Sans clé, l'appli tourne en mode démo.</small></div>
             <div class="f"><label>Clé football-data.org (forme, classement, face-à-face)</label><input class="in" id="c-fd_key" type="password" autocomplete="off"><small>Gratuite à vie sur football-data.org → « Register », la clé arrive par e-mail.</small></div>
             <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>betclic_fr. Tous les paris proposés se jouent ici.</small></div>
-            <label class="chk"><input type="checkbox" id="c-web_info">Recherche web automatique : absents, compos officielles, actus</label>
+            <label class="chk"><input type="checkbox" id="c-web_info">Recherche web automatique : absents, compos officielles, actus, météo</label>
+            <h3 style="margin-top:18px">Ma bankroll (optionnel)</h3>
+            <div class="nums">
+              <div class="f"><label>Capital de départ (€)</label><input class="in" id="c-bankroll" placeholder="0 = pas de suivi"></div>
+              <div class="f"><label>Mise max par jour (% du capital)</label><input class="in" id="c-daily_max_pct"></div>
+              <div class="f"><label>Stop-loss : perte max par jour (€)</label><input class="in" id="c-stop_loss" placeholder="0 = aucune"></div>
+            </div>
             <div class="est ok" id="c-est" style="margin-top:14px"></div>
             <button class="btn primary" id="c-save">Enregistrer</button>
           </div>
@@ -516,10 +529,10 @@ const pc = (x, d=0) => fr(x * 100, d) + " %";
 const sg = x => (x >= 0 ? "+" : "−") + fr(Math.abs(x) * 100, 1) + " %";
 let api = null, status = {}, data = {picks: [], probable: [], combos: []}, rev = -1, cfg = null;
 let nextAt = 0, page = "home";
-const TITLES = {home:"Accueil", picks:"Meilleurs paris", combos:"Combinés", budget:"Mon budget", prob:"Plus probables", settings:"Paramètres"};
+const TITLES = {hist:"Historique & bilan", home:"Accueil", picks:"Meilleurs paris", combos:"Combinés", budget:"Mon budget", prob:"Plus probables", settings:"Paramètres"};
 
 function toast(t){ const e=$("#toast"); e.textContent=t; e.classList.add("on"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove("on"),2600); }
-function go(p){ page=p; $$("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.p===p)); $$(".page").forEach(s=>s.classList.toggle("on",s.id==="p-"+p)); $("#title").textContent=TITLES[p]; $("#content").scrollTop=0; if(p==="settings") loadCfg(); }
+function go(p){ if (p==="hist") setTimeout(loadHist, 50); page=p; $$("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.p===p)); $$(".page").forEach(s=>s.classList.toggle("on",s.id==="p-"+p)); $("#title").textContent=TITLES[p]; $("#content").scrollTop=0; if(p==="settings") loadCfg(); }
 $$("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.p));
 document.addEventListener("click",e=>{ const g=e.target.closest("[data-goto]"); if(g) go(g.dataset.goto); });
 
@@ -550,7 +563,7 @@ const fbad = f => f ? `<span class="fb">${[...f].map(c=>`<b class="${c}">${c}</b
 function confTag(b){ if (b.conf==null || !b.stats) return ""; const c=b.conf; return `<span class="conf ${c>=60?"hi":c<40?"lo":""}" title="Indice de confiance (forme, classement, absents, modèle)">${c}/100</span>`; }
 function mini(b){
   const st=b.stats; if(!st) return "";
-  return `<div class="mini">${fbad(st.form_home)}<span>·</span>${fbad(st.form_away)} ${confTag(b)} ${st.contra?'<span class="conf lo">⚠ contre la forme</span>':""}</div>`;
+  return `<div class="mini">${b.move?`<span class="conf ${b.move<0?"hi":"lo"}" title="Mouvement de la cote Pinnacle">${b.move<0?"📉":"📈"} ${sg(b.move)}</span>`:""}${fbad(st.form_home)}<span>·</span>${fbad(st.form_away)} ${confTag(b)} ${st.contra?'<span class="conf lo">⚠ contre la forme</span>':""}</div>`;
 }
 const emptyBox = (t, s) => `<div class="card empty"><b>${t}</b>${s}</div>`;
 
@@ -637,7 +650,9 @@ async function openBet(b){
   if (!b.event_id) return;
   const m = await api.get_match(b.event_id);
   if (!m) { if (b.stats) $("#dmatch").innerHTML=""; return; }
-  const side = (name, f, t, inj) => `<div class="card"><h4>${esc(name)}</h4>
+  const side = (name, f, t, inj, rot, stake) => `<div class="card"><h4>${esc(name)}</h4>
+    ${stake?`<div class="r"><span>Enjeu</span><b>${esc(stake)}</b></div>`:""}
+    ${rot?`<div class="r"><span>Rotation ?</span><b style="color:var(--amber)">${esc(rot.comp)} ${rot.days>0?"dans":"il y a"} ${Math.abs(Math.round(rot.days))} j</b></div>`:""}
     ${t&&t.rank?`<div class="r"><span>Classement</span><b>${t.rank}e · ${t.points} pts</b></div>`:""}
     ${f?`<div class="r"><span>Forme</span>${fbad(f.form)}</div>
     ${f.streak_txt?`<div class="r"><span>Série</span><b>${esc(f.streak_txt)}</b></div>`:""}
@@ -648,7 +663,7 @@ async function openBet(b){
     <div class="r"><span>+2,5 buts / Les 2 marquent</span><b>${pc(f.over25)} · ${pc(f.btts)}</b></div>
     <div class="r"><span>Dernier match</span><b>il y a ${Math.round(f.rest_days)} j</b></div>
     <div class="l5">${f.last.map(g=>`<span>${fbad(g.res)} ${g.home?"vs":"à"} ${esc(g.opp)} <b style="color:var(--fg)">${g.score}</b> · ${g.date}</span>`).join("")}</div>`:'<div class="r">Pas encore de résultats</div>'}
-    ${inj&&inj.length?`<div class="inj">🚑 ${inj.map(i=>`${esc(i.player)}${/question/i.test(i.type)?" (incertain)":""}`).join(", ")}</div>`:""}
+    ${inj&&inj.length?`<div class="inj">🚑 ${inj.map(i=>`${i.key?"⭐ ":""}${esc(i.player)}${i.goals?` (${i.goals} buts)`:""}${/question/i.test(i.type)?" (incertain)":""}`).join(", ")}</div>`:""}
   </div>`;
   const md = m.model, nv = m.neutral || {};
   const relc = nv.reliability>=70?"#22c55e":nv.reliability>=45?"#f59e0b":"#ef4444";
@@ -673,7 +688,8 @@ async function openBet(b){
     ${md?`<div class="sec">Modèle forme · buts attendus ${fr(md.xg_home,1)} – ${fr(md.xg_away,1)}</div>
     <div class="pbar"><span style="width:${md.home*100}%;background:#34d399">${pc(md.home)}</span><span style="width:${md.draw*100}%;background:#94a3b8">${pc(md.draw)}</span><span style="width:${md.away*100}%;background:#60a5fa">${pc(md.away)}</span></div>
     <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:4px"><span>${esc(m.home)}</span><span>Nul</span><span>${esc(m.away)}</span></div>`:""}
-    <div class="cmp">${side(m.home,m.form_home,m.table_home,m.inj_home)}${side(m.away,m.form_away,m.table_away,m.inj_away)}</div>
+    ${m.weather?`<div class="card note" style="margin:10px 0 0">🌦️ Météo prévue à ${esc(m.weather.city)} au coup d'envoi : ${fr(m.weather.temp,0)} °C · pluie ${fr(m.weather.rain,1)} mm · vent ${fr(m.weather.wind,0)} km/h${(m.weather.rain>=3||m.weather.wind>=40)?" → conditions difficiles, souvent moins de buts":""}</div>`:""}
+    <div class="cmp">${side(m.home,m.form_home,m.table_home,m.inj_home,m.rotation_home,m.stake_home)}${side(m.away,m.form_away,m.table_away,m.inj_away,m.rotation_away,m.stake_away)}</div>
     ${m.h2h&&m.h2h.length?`<div class="sec">Confrontations directes${m.h2h_sum?` · ${esc(m.home)} ${m.h2h_sum.w}V ${m.h2h_sum.d}N ${m.h2h_sum.l}D · ${fr(m.h2h_sum.avg_goals,1)} buts/match`:""}</div>${m.h2h.map(h=>`<div class="pr"><span>${esc(h.date)} · ${esc(h.home)} – ${esc(h.away)}${h.comp?` <small style="color:var(--dim)">${esc(h.comp)}</small>`:""}</span><b>${h.gh} - ${h.ga}</b></div>`).join("")}`:""}
     ${m.news&&m.news.length?`<div class="sec">📰 Dernières infos (web)</div>${m.news.map(n=>`<div class="card note" style="margin:0 0 8px;cursor:${n.url?"pointer":"default"}" ${n.url?`data-url="${esc(n.url)}"`:""}><b style="color:var(--fg)">${esc(n.title)}</b>${n.date?` <small style="color:var(--dim)">· ${esc(n.date)}</small>`:""}${n.desc?`<br>${esc(n.desc)}`:""}</div>`).join("")}`:""}
     ${m.pred&&m.pred.advice?`<div class="sec">Avis API-Football</div><div class="card note" style="margin:0">${esc(m.pred.advice)}</div>`:""}
@@ -698,7 +714,7 @@ async function makePlan(){
   if (p.error) { $("#plan").innerHTML = emptyBox(esc(p.error), "Entre un montant, par exemple 10."); return; }
   if (!p.items || !p.items.length) { $("#plan").innerHTML = noData(); return; }
   const pos = p.expected >= 0;
-  $("#plan").innerHTML = `
+  $("#plan").innerHTML = bankWarn(p.bank, p.staked) + `
     <div class="sumst">
       <div class="card stat"><div class="l">Total misé</div><div class="v">${eur(p.staked)}</div><div class="h">${p.items.length} ticket${p.items.length>1?"s":""} chez Betclic</div></div>
       <div class="card stat"><div class="l">Gain max (tout passe)</div><div class="v" style="color:var(--green2)">+${eur(p.max_win)}</div></div>
@@ -710,14 +726,14 @@ async function makePlan(){
         <div class="num">${i+1}</div>
         <div class="x"><b>${esc(it.selection)}</b><div class="m">${esc(it.match)} · ${esc(it.sport)} · ${esc(it.date)}</div>
           <div class="meta"><input class="oin" style="margin:0" data-uid="${esc(it.uid)}" placeholder="cote Betclic"><span class="tag n">Simple · ${esc(it.book)}</span><span class="tag n">${pc(it.p)} de chances</span>${tag(it)}</div></div>
-        <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div></div>
+        <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div><button class="btn" data-play="${esc(it.uid)}" data-stake="${it.stake}" style="padding:5px 9px;font-size:12px;margin-top:6px">✔ Je joue</button></div>
       </div>` : `
       <div class="card ticket">
         <div class="num">${i+1}</div>
         <div class="x"><b>Combiné ×${it.legs.length}</b>
           <div class="legs">${it.legs.map(l=>`<div data-leg="${esc(l.uid)}" title="Clique pour voir l'analyse">• ${esc(l.selection)} <span style="color:var(--dim)">— ${esc(l.match)}, ${esc(l.date)}</span> @ ${l.estimated?"≈":""}${fr(l.odds)}${l.estimated?` <span style="color:var(--amber)">(prends si ≥ ${fr(l.min_odds)})</span>`:""}<input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic"></div>`).join("")}</div>
           <div class="meta"><span class="tag n">Combiné · ${esc(it.book)}</span><span class="tag n">${pc(it.p)} de chances</span>${it.value?`<span class="tag v">VALUE ${sg(it.ev)}</span>`:`<span class="tag n">Sans value ${sg(it.ev)}</span>`}</div></div>
-        <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div></div>
+        <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div><button class="btn" data-play="${it.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${it.stake}" style="padding:5px 9px;font-size:12px;margin-top:6px">✔ Je joue</button></div>
       </div>`).join("")}</div>
     <div class="card note">${p.n_value ? "Les tickets <b style='color:var(--green2)'>VALUE</b> sont rentables en moyenne sur la durée." : "Aucune value aujourd'hui chez Betclic : ce plan prend les meilleurs paris disponibles, mais il reste légèrement perdant en moyenne (marge du bookmaker)."}
       Même un bon plan perd souvent sur une seule journée. Vérifie que la cote n'a pas bougé avant de valider sur Betclic, et ne mise que ce que tu peux perdre.</div>`;
@@ -793,14 +809,58 @@ async function makeGoal(){
           <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise <b style="font-size:13px">${eur(t.stake)}</b></span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><div class="sp"></div></div>
           ${t.legs.map(l=>`<div class="ln" data-leg="${esc(l.uid)}" title="Clique pour voir l'analyse"><span><b>${esc(l.selection)}</b> <span class="conf ${l.p>=0.62?"hi":l.p<0.45?"lo":""}">${pc(l.p)}</span> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">prends si Betclic ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b><input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic" title="Tape la cote vue sur Betclic"></div>`).join("")}
           <div class="ft"><span>Si ça passe, tu touches</span><b>${eur(t.ret)} (+${eur(t.ret - r.stake)})</b></div>
+          <div style="text-align:right;margin-top:8px"><button class="btn primary" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}" style="padding:7px 12px">✔ Je joue ce ticket</button></div>
         </div>`).join("")}
       </div>`;
-  $("#goal").innerHTML = warn + optCard(best, true) +
+  $("#goal").innerHTML = bankWarn(r.bank, r.stake) + warn + optCard(best, true) +
     (others.length ? `<details style="margin-top:12px"><summary style="cursor:pointer;color:var(--muted);font-size:13px">Voir les ${others.length} autres façons d'y arriver (moins bonnes)</summary><div class="list" style="margin-top:10px">${others.map(o=>optCard(o,false)).join("")}</div></details>` : "");
 }
 
+/* ----- historique ----- */
+const ST = {won:"✅ Gagné", lost:"❌ Perdu", void:"↩ Remboursé", pending:"⏳ En attente", unknown:"❔ Non vérifiable"};
+async function loadHist(){
+  if (!api) return;
+  const h = await api.get_history();
+  const u = h.user, a = h.app, bk = h.bank;
+  const rate = x => x==null ? "–" : pc(x);
+  $("#hist").innerHTML = `
+    <div class="stats">
+      <div class="card stat"><div class="l">Mes tickets</div><div class="v">${u.n}</div><div class="h">${u.wins} gagnés · ${u.pending} en attente</div></div>
+      <div class="card stat"><div class="l">Mon bilan</div><div class="v" style="color:${u.profit>=0?'var(--green2)':'#fca5a5'}">${u.profit>=0?"+":""}${eur(u.profit)}</div><div class="h">pour ${eur(u.staked)} misés · ROI ${u.roi==null?"–":sg(u.roi)}</div></div>
+      <div class="card stat"><div class="l">Propositions de BetScope</div><div class="v">${rate(a.rate)}</div><div class="h">de réussite sur ${a.n} paris vérifiés · ${a.pending} en attente</div></div>
+      <div class="card stat"><div class="l">Rentabilité de BetScope</div><div class="v" style="color:${(a.roi||0)>=0?'var(--green2)':'#fca5a5'}">${a.roi==null?"–":sg(a.roi)}</div><div class="h">si 1 € misé sur chaque « ✔ JE JOUE »</div></div>
+    </div>
+    ${bk.enabled?`<h2>Bankroll</h2><div class="stats">
+      <div class="card stat"><div class="l">Capital actuel</div><div class="v">${eur(bk.current)}</div><div class="h">départ ${eur(bk.start)}</div></div>
+      <div class="card stat"><div class="l">Mise max aujourd'hui</div><div class="v">${eur(bk.day_max)}</div><div class="h">reste ${eur(Math.max(0,bk.left_today))}</div></div>
+      <div class="card stat"><div class="l">Résultat du jour</div><div class="v" style="color:${bk.today_pl>=0?'var(--green2)':'#fca5a5'}">${bk.today_pl>=0?"+":""}${eur(bk.today_pl)}</div></div>
+      <div class="card stat"><div class="l">Stop-loss</div><div class="v" style="font-size:20px;padding-top:6px">${bk.stop?"⛔ Atteint":bk.stop_loss?"OK":"—"}</div><div class="h">${bk.stop_loss?`perte max ${eur(bk.stop_loss)} / jour`:"non défini"}</div></div>
+    </div>`:""}
+    <h2>Fiabilité des pourcentages <span style="font-weight:400;color:var(--dim);font-size:12px">(si BetScope dit 60 %, ça passe-t-il vraiment 6 fois sur 10 ?)</span></h2>
+    ${a.buckets.length?`<div class="card" style="padding:6px 16px"><table class="nt"><tr><th>Tranche</th><th>Paris</th><th>Prévu</th><th>Réel</th><th>Verdict</th></tr>${a.buckets.map(b=>`<tr><td>${b.label}</td><td>${b.n}</td><td>${pc(b.pred)}</td><td><b>${pc(b.real)}</b></td><td>${b.n<15?'<span style="color:var(--dim)">pas assez de paris</span>':Math.abs(b.real-b.pred)<0.07?'✅ fiable':b.real>b.pred?'👍 mieux que prévu':'⚠ trop optimiste'}</td></tr>`).join("")}</table></div>`:'<div class="card empty"><b>Pas encore de paris vérifiés</b>Le bilan se remplit tout seul après les matchs.</div>'}
+    <h2>Mes tickets</h2>
+    <div class="list">${h.tickets.length?h.tickets.map(t=>`<div class="card" style="padding:14px 16px">
+      <div style="display:flex;gap:10px;align-items:center"><b>${ST[t.status]||t.status}</b><span style="color:var(--muted);font-size:12.5px">${new Date(t.created*1000).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · mise ${eur(t.stake)} · cote ${fr(t.legs.reduce((a,l)=>a*l.odds,1))}</span><div class="sp" style="flex:1"></div>${t.status==="won"?`<b style="color:var(--green2)">+${eur(t.payout-t.stake)}</b>`:t.status==="lost"?`<b style="color:#fca5a5">−${eur(t.stake)}</b>`:""}<button class="btn" data-del="${t.id}" style="padding:5px 9px;font-size:12px">Supprimer</button></div>
+      <div class="legs" style="margin-top:8px;font-size:12.5px;display:flex;flex-direction:column;gap:3px">${t.legs.map(l=>`<div>${(ST[l.status]||"").split(" ")[0]} ${esc(l.selection)} <span style="color:var(--dim)">— ${esc(l.match)}${l.score?` · ${l.score}`:""}</span> @ ${fr(l.odds)}</div>`).join("")}</div></div>`).join(""):'<div class="card empty"><b>Aucun ticket enregistré</b>Clique sur « ✔ Je joue ce ticket » dans Mon budget pour suivre tes paris.</div>'}</div>
+    <h2>Propositions de BetScope (✔ JE JOUE)</h2>
+    <div class="list">${h.app_list.slice(0,60).map(l=>`<div class="card" style="padding:10px 16px;display:flex;gap:12px;font-size:13px"><span style="width:120px">${ST[l.status]||l.status}</span><b style="flex:1">${esc(l.selection)}</b><span style="color:var(--dim)">${esc(l.match)}${l.score?` · ${l.score}`:""}</span><span>${pc(l.p)} · @ ${fr(l.odds)}</span></div>`).join("")||'<div class="card empty"><b>Rien pour l\'instant</b>Les paris marqués ✔ JE JOUE sont suivis automatiquement.</div>'}</div>`;
+}
+$("#h-check").onclick = async () => { await api.settle_now(); toast("Vérification des résultats…"); setTimeout(loadHist, 4000); };
+document.addEventListener("click", async e => { const d=e.target.closest("[data-del]"); if(d){ await api.delete_ticket(d.dataset.del); loadHist(); } });
+
+/* ----- « Je joue ce ticket » ----- */
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-play]"); if (!b) return;
+  e.stopPropagation();
+  const r = await api.log_ticket(b.dataset.play.split("~"), b.dataset.stake, "");
+  if (r.ok) { b.textContent = "✔ Enregistré"; b.disabled = true; toast("Ticket ajouté à ton historique"); } else toast(r.error || "Erreur");
+});
+const bankWarn = (bk, amount) => !bk || !bk.enabled ? "" :
+  bk.stop ? `<div class="banner err" style="margin:0 0 12px">⛔ Stop-loss atteint aujourd'hui (${eur(bk.today_pl)}). Le plus sage : ne plus parier aujourd'hui.</div>` :
+  (amount > bk.left_today ? `<div class="banner warn" style="margin:0 0 12px">⚠ Ta bankroll conseille de ne pas miser plus de ${eur(Math.max(0,bk.left_today))} aujourd'hui (capital ${eur(bk.current)}).</div>` : "");
+
 /* ----- paramètres ----- */
-const NUMS=["stats_weight","refresh_minutes","min_ev","max_ev","min_odds","max_odds","horizon_hours","min_stake","max_legs","min_books"];
+const NUMS=["bankroll","daily_max_pct","stop_loss","stats_weight","refresh_minutes","min_ev","max_ev","min_odds","max_odds","horizon_hours","min_stake","max_legs","min_books"];
 const TXT=["fd_key","football_key","api_key","bookmakers","source_books","markets"];
 async function loadCfg(){
   if (!api) return;

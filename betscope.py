@@ -37,7 +37,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.8.1"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -1052,7 +1052,7 @@ def stake_plan(budget, mode, selections, cfg, sims=20000, seed=None):
 # Mode objectif : "je mise X €, je veux gagner au moins Y €"
 # --------------------------------------------------------------------------
 
-def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.25):
+def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.25, by_prob=False):
     """Sélections jouables chez `book`, max 2 par match, triées par intérêt (p x cote)."""
     lo = float(cfg["min_odds"])
     items = []
@@ -1066,8 +1066,10 @@ def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.
         if o < lo or s["p"] < min_p or (s["ev"] < WORST_EV and not s.get("estimated")):
             continue
         items.append((s, o))
-    items.sort(key=lambda it: it[0]["p"] * it[1] * (0.9 if (it[0].get("stats") or {}).get("contra") else 1),
-               reverse=True)
+    if by_prob:
+        items.sort(key=lambda it: it[0]["p"] * _trust(it[0]), reverse=True)
+    else:
+        items.sort(key=lambda it: it[0]["p"] * it[1] * _trust(it[0]), reverse=True)
     per_event, out = {}, []
     for s, o in items:
         if per_event.get(s["event_id"], 0) >= 2:
@@ -1079,7 +1081,20 @@ def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.
     return out
 
 
-def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None):
+def _trust(s):
+    """Prudence : une cote estimée ou un pari contre la forme vaut un peu moins qu'il n'y paraît."""
+    t = 1.0
+    if s.get("estimated"):
+        t *= 0.95
+    st = s.get("stats") or {}
+    if st.get("contra"):
+        t *= 0.85
+    c = s.get("conf", 50)
+    t *= 1 + max(-0.08, min(0.05, (c - 50) / 600))
+    return t
+
+
+def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None, min_leg_p=0.0):
     """Le ticket (simple ou combiné) qui atteint la cote demandée avec la plus grande proba."""
     best = None
     lim = min(max_legs, legs_limit or max_legs)
@@ -1098,14 +1113,17 @@ def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None):
                 o *= x
             if o < need_odds or (max_odds and o > max_odds):
                 continue
-            p = 1.0
+            if min_leg_p and any(s["p"] < min_leg_p for s, _ in combo):
+                continue
+            p = sc = 1.0
             for s, _ in combo:
                 p *= s["p"]
-            if best is None or p > best[0] + 1e-12 or (abs(p - best[0]) < 1e-12 and o > best[1]):
-                best = (p, o, combo)
+                sc *= s["p"] * _trust(s)
+            if best is None or sc > best[0] + 1e-12 or (abs(sc - best[0]) < 1e-12 and o > best[1]):
+                best = (sc, o, combo, p)
     if not best:
         return None
-    p, o, combo = best
+    _, o, combo, p = best
     return {"legs": [s for s, _ in combo], "leg_odds": [x for _, x in combo], "odds": o, "p": p, "ev": p * o - 1}
 
 
@@ -1139,8 +1157,16 @@ def objective_plan(stake, target, selections, cfg):
         t = best_ticket(items, need1)
         if t:
             t["stake"] = stake
-            add("one", "1 seul ticket · le plus sûr", f"Toute ta mise sur un ticket de cote ≥ {need1:.2f}".replace(".", ","),
-                [t], btitle)
+            add("one", "1 ticket · le plus de chances au total",
+                f"La meilleure probabilité globale pour une cote ≥ {need1:.2f}".replace(".", ","), [t], btitle)
+        # 1 ticket : que des favoris (chaque sélection très probable), quitte à mettre plus de matchs
+        fav = _book_items(selections, cfg, book, pool_size=16, min_p=0.62, by_prob=True)
+        tf = best_ticket(fav, need1, max_legs=10, min_leg_p=0.62)
+        if tf:
+            tf["stake"] = stake
+            add("fav", "1 ticket · que des favoris",
+                "Chaque sélection a au moins 62 % de chances (plus de matchs, mais aucun outsider)", [tf], btitle)
+        if t:
             # moins de matchs (si le plus sûr en a 3+)
             if len(t["legs"]) >= 3:
                 t2 = best_ticket(items, need1, legs_limit=len(t["legs"]) - 1)

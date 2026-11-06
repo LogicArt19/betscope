@@ -756,7 +756,7 @@ async function makeGoal(){
           <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances d'atteindre l'objectif</small></div></div>
         ${o.tickets.map((t,j)=>`<div class="tk">
           <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise ${eur(t.stake)}</span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><span>·</span><span>${pc(t.p,1)} de chances</span><div class="sp"></div>${t.value?`<span class="tag v">VALUE ${sg(t.ev)}</span>`:`<span class="tag n">Sans value ${sg(t.ev)}</span>`}</div>
-          ${t.legs.map(l=>`<div class="ln"><span><b>${esc(l.selection)}</b> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">cote estimée, prends si ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b><input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic" title="Tape la cote vue sur Betclic"></div>`).join("")}
+          ${t.legs.map(l=>`<div class="ln"><span><b>${esc(l.selection)}</b> <span class="conf ${l.p>=0.62?"hi":l.p<0.45?"lo":""}">${pc(l.p)}</span> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">cote estimée, prends si ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b><input class="oin" data-uid="${esc(l.uid)}" placeholder="cote Betclic" title="Tape la cote vue sur Betclic"></div>`).join("")}
           <div class="ft"><span>Si ce ticket passe, tu touches</span><b>${eur(t.ret)} (+${eur(t.ret - r.stake)})</b></div>
         </div>`).join("")}
       </div>`).join("")}</div>

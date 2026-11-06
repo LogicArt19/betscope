@@ -773,7 +773,7 @@ async function makeGoal(){
   const best = strictOpts[0] || r.options[0];
   const strictNote = r.strict ? (strictOpts.length
       ? `<div class="banner upd" style="margin:0 0 12px">🧭 Mode objectivité : seulement des sélections qui respectent tes critères (${r.n_ok} trouvées sur tous les matchs).</div>`
-      : `<div class="banner warn" style="margin:0 0 12px">🧭 Impossible d'atteindre +${eur(r.target)} en restant objectif : seules ${r.n_ok||0} sélections respectent tes critères, et le gain maximum objectif en ce moment est d'environ <b>+${eur(r.strict_max_gain||0)}</b>. Ci-dessous, les options hors critères, à tes risques.</div>`) : "";
+      : `<div class="banner warn" style="margin:0 0 12px">🧭 Impossible d'atteindre +${eur(r.target)} en restant objectif : seules ${r.n_ok||0} sélections respectent tes critères, et le gain maximum objectif en ce moment est d'environ <b>+${eur(r.strict_max_gain||0)}</b>. ${r.why&&Object.keys(r.why).length?`<br><small>Sélections écartées : ${Object.entries(r.why).map(([k,v])=>`${v} ${esc(k)}`).join(" · ")}. Si « données manquantes » domine, ajoute la clé football-data.org ou décoche « Exiger des données ».</small>`:""} Ci-dessous, les options hors critères, à tes risques.</div>`) : "";
   $("#goal").innerHTML = strictNote + `
     <div class="sumst" style="grid-template-columns:repeat(3,1fr)">
       <div class="card stat"><div class="l">Cote nécessaire</div><div class="v">${fr(r.need_odds)}</div><div class="h">pour ${eur(r.stake)} → +${eur(r.target)}</div></div>

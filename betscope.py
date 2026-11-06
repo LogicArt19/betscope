@@ -38,7 +38,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -760,7 +760,14 @@ def analyze(events, cfg, now=None, info=None):
                 conf = 50 + 250 * ev_
                 if stat_sum:
                     conf += stat_sum["score"]
+                if mkey == "h2h":
+                    skey = {"home": "r1", "draw": "rN", "away": "r2"}.get(side)
+                elif mkey == "totals" and a["point"] is not None:
+                    skey = f"{'o' if a['name'] == 'Over' else 'u'}{float(a['point']):g}"
+                else:
+                    skey = None
                 out.append({
+                    "key": skey, "sport_key": sport_key, "home": home, "away": away,
                     "cat": "1n2" if mkey == "h2h" else ("total" if mkey == "totals" else "hcp"),
                     "estimated": False,
                     "p_market": p_market,
@@ -842,6 +849,7 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
                      "cons": cons_, "score": conf - 50, "contra": d <= -0.05, "xg": None,
                      "form_home": fh_.get("form", ""), "form_away": fa_.get("form", "")}
         out.append({
+            "key": key, "sport_key": sport_key, "home": home, "away": away,
             "cat": cat, "estimated": True, "min_odds": min_odds,
             "p_market": p_market, "stats": dstat, "conf": conf,
             "uid": f"{eid}|x|{key}", "event_id": eid, "match": match,
@@ -1147,7 +1155,7 @@ def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None, mi
     if lim < 1 or need_odds <= 1:
         return None
     L = math.log(need_odds)
-    B = 160
+    B = 400
     step = L / B
     by_ev = {}
     for s, o in items:
@@ -1164,20 +1172,22 @@ def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None, mi
                 front.append(x)
                 best_sc = x[2]
         events.append(front[:14])
+    # état = (score, somme EXACTE des log-cotes, chemin) ; le seau ne sert qu'à comparer
     dp = [dict() for _ in range(lim + 1)]
-    dp[0][0] = (0.0, None)
+    dp[0][0] = (0.0, 0.0, None)
     for opts in events:
         for k in range(lim - 1, -1, -1):
             if not dp[k]:
                 continue
             nxt = dp[k + 1]
-            for bkt, (sc, path) in list(dp[k].items()):
+            for bkt, (sc, lo_sum, path) in list(dp[k].items()):
                 for x in opts:
-                    nb = min(B, bkt + int(x[3] / step))
+                    nl = lo_sum + x[3]
+                    nb = min(B, int(nl / step + 1e-9))
                     nsc = sc + x[2]
                     cur = nxt.get(nb)
                     if cur is None or nsc > cur[0]:
-                        nxt[nb] = (nsc, (x, path))
+                        nxt[nb] = (nsc, nl, (x, path))
     best = None
     for k in range(max(1, min_legs), lim + 1):
         cur = dp[k].get(B)
@@ -1185,7 +1195,7 @@ def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None, mi
             best = cur
     if not best:
         return None
-    legs, node = [], best[1]
+    legs, node = [], best[2]
     while node:
         legs.append(node[0])
         node = node[1]
@@ -1205,6 +1215,22 @@ def objective_plan(stake, target, selections, cfg):
         # ce qui est atteignable en restant objectif
         ok = [s for s in selections if objective_ok(s, cfg) and not s["suspect"]]
         res["n_ok"] = len(ok)
+        o2 = cfg["_obj"]
+        why = {"proba trop basse": 0, "contre la forme": 0, "confiance trop basse": 0,
+               "données manquantes": 0, "cote estimée": 0}
+        for x in selections:
+            st = x.get("stats") or {}
+            if x["p"] < float(o2.get("min_p", 0.55)):
+                why["proba trop basse"] += 1
+            elif st.get("contra"):
+                why["contre la forme"] += 1
+            elif x.get("conf", 50) < float(o2.get("min_conf", 50)):
+                why["confiance trop basse"] += 1
+            elif o2.get("need_data", True) and st.get("q", 0) < 0.5:
+                why["données manquantes"] += 1
+            elif o2.get("no_est") and x.get("estimated"):
+                why["cote estimée"] += 1
+        res["why"] = {k: v for k, v in why.items() if v}
         best = {}
         for s in ok:
             if s["event_id"] not in best or s["odds"] > best[s["event_id"]]["odds"]:
@@ -1228,7 +1254,7 @@ def _objective_plan(stake, target, selections, cfg):
     total_needed = stake + target
     need1 = total_needed / stake
     lmin = max(1, int(cfg.get("_min_legs") or 1))
-    lmax = max(lmin, min(10, int(cfg.get("_max_legs") or 6)))
+    lmax = max(lmin, min(10, int(cfg.get("_max_legs") or 10)))
     pool = 22 if lmax <= 6 else (18 if lmax <= 8 else 15)
     bt = lambda its, need, **kw: best_ticket(its, need, **dict(dict(max_legs=lmax, min_legs=lmin), **kw))
     books = set()
@@ -1266,7 +1292,7 @@ def _objective_plan(stake, target, selections, cfg):
                 f"La meilleure probabilité globale pour une cote ≥ {need1:.2f}".replace(".", ","), [t], btitle)
         # 1 ticket : que des favoris (chaque sélection très probable), quitte à mettre plus de matchs
         fav = _book_items(selections, cfg, book, pool_size=min(16, pool), min_p=0.62, by_prob=True)
-        tf = bt(fav, need1, max_legs=max(lmax, min(10, lmax + 4)) if not cfg.get("_max_legs") else lmax, min_leg_p=0.62)
+        tf = bt(fav, need1, max_legs=lmax, min_leg_p=0.62)
         if tf:
             tf["stake"] = stake
             add("fav", "1 ticket · que des favoris",
@@ -1371,7 +1397,7 @@ def ser_combo(c):
 
 
 def ser_objective(res, cfg):
-    out = {k: res.get(k) for k in ("stake", "target", "need_odds", "max_odds", "strict", "n_ok", "strict_max_gain")}
+    out = {k: res.get(k) for k in ("stake", "target", "need_odds", "max_odds", "strict", "n_ok", "strict_max_gain", "why")}
     out["options"] = []
     for o in res["options"] + res.get("relaxed_options", []):
         tickets = []

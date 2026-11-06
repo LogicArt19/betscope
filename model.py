@@ -72,16 +72,24 @@ def fit_ratings(results, ref=None):
 
 
 def _inj_factor(injuries):
-    out = sum(1 for i in injuries if "missing" in str(i.get("type", "")).lower())
-    doubt = sum(1 for i in injuries if "question" in str(i.get("type", "")).lower())
-    return 1 - min(INJ_CAP, out * INJ_OUT + doubt * INJ_DOUBT)
+    """Chaque absent retire des buts attendus selon son importance (part des buts/passes de l'équipe)."""
+    tot = 0.0
+    for i in injuries:
+        typ = str(i.get("type", "")).lower()
+        w = i.get("weight")
+        if w is None:
+            w = INJ_OUT if "missing" in typ else (INJ_DOUBT if "question" in typ else 0)
+        elif "question" in typ:
+            w *= 0.4
+        tot += w
+    return 1 - min(0.25, tot)
 
 
 def _pois(k, lam):
     return math.exp(-lam) * lam ** k / math.factorial(k)
 
 
-def predict(ratings, home_id, away_id, inj_home=(), inj_away=()):
+def predict(ratings, home_id, away_id, inj_home=(), inj_away=(), scale_home=1.0, scale_away=1.0):
     if not ratings:
         return None
     att, dfn = ratings["att"], ratings["dfn"]
@@ -91,6 +99,7 @@ def predict(ratings, home_id, away_id, inj_home=(), inj_away=()):
         return None
     lh = ratings["avg_h"] * att[home_id] * dfn[away_id] * _inj_factor(inj_home)
     la = ratings["avg_a"] * att[away_id] * dfn[home_id] * _inj_factor(inj_away)
+    lh, la = lh * scale_home, la * scale_away
     lh, la = max(0.15, min(lh, 5.0)), max(0.1, min(la, 5.0))
     ph = [_pois(i, lh) for i in range(11)]
     pa = [_pois(i, la) for i in range(11)]

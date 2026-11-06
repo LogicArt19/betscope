@@ -30,7 +30,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 API_BASE = "https://api.the-odds-api.com/v4"
 
 # --------------------------------------------------------------------------
@@ -62,6 +62,10 @@ DEFAULT_CONFIG = {
     "sports": ["soccer_france_ligue_one", "soccer_epl", "soccer_uefa_champs_league"],
     "extra_sports": "",
     "regions": "eu",
+    # Liste de bookmakers demandés à l'API (max 10 = prix d'une seule région).
+    # Pinnacle donne la vraie proba, les FR sont ceux où tu peux parier.
+    "source_books": "pinnacle,betclic_fr,winamax_fr,unibet_fr,pmu_fr,parionssport_fr,netbet_fr,"
+                    "marathonbet,onexbet,sport888",
     "markets": "h2h,totals",
     "refresh_minutes": 720,
     "bookmakers": FRENCH_BOOKS,
@@ -69,7 +73,7 @@ DEFAULT_CONFIG = {
     "max_ev": 0.15,
     "min_odds": 1.30,
     "max_odds": 6.00,
-    "min_books": 5,
+    "min_books": 4,
     "horizon_hours": 72,
     "max_legs": 3,
     "min_combo_prob": 0.15,
@@ -137,7 +141,11 @@ def sports_list(cfg):
 
 
 def credits_per_refresh(cfg):
-    n_regions = len([r for r in cfg["regions"].split(",") if r.strip()]) or 1
+    books = [b for b in cfg.get("source_books", "").split(",") if b.strip()]
+    if books:
+        n_regions = (len(books) + 9) // 10
+    else:
+        n_regions = len([r for r in cfg["regions"].split(",") if r.strip()]) or 1
     n_markets = len([m for m in cfg["markets"].split(",") if m.strip()]) or 1
     return len(sports_list(cfg)) * n_regions * n_markets
 
@@ -165,11 +173,14 @@ def fetch_odds(cfg):
     for sport in sports_list(cfg):
         params = {
             "apiKey": cfg["api_key"].strip(),
-            "regions": cfg["regions"],
             "markets": cfg["markets"],
             "oddsFormat": "decimal",
             "dateFormat": "iso",
         }
+        if cfg.get("source_books", "").strip():
+            params["bookmakers"] = cfg["source_books"].replace(" ", "")
+        else:
+            params["regions"] = cfg["regions"]
         url = f"{API_BASE}/sports/{sport}/odds?{urllib.parse.urlencode(params)}"
         try:
             data, h = http_get_json(url)
@@ -857,8 +868,10 @@ def run_gui():
                   hint="Clés : betclic_fr, winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr… "
                        "Vide = tous. Les autres bookmakers servent quand même au calcul de la proba.")
 
-            field(right, "regions", "Régions de bookmakers", hint="eu = Pinnacle + gros européens, fr = ANJ. "
-                                                                   "Chaque région coûte des crédits.")
+            field(right, "source_books", "Bookmakers analysés (10 max = 1 crédit par marché)",
+                  hint="Servent à calculer la vraie proba. Garde pinnacle dedans. "
+                       "Vide = on utilise les régions ci-dessous.")
+            field(right, "regions", "Régions (si la liste ci-dessus est vide)", hint="eu, fr, uk…")
             field(right, "markets", "Marchés", hint="h2h = 1N2 / vainqueur, totals = plus/moins de buts, "
                                                      "spreads = handicap.")
             field(right, "refresh_minutes", "Mise à jour automatique toutes les (minutes)")
@@ -917,8 +930,8 @@ def run_gui():
             except ValueError:
                 messagebox.showerror(APP_NAME, "Un champ numérique est invalide.")
                 return
-            changed_source = (cfg["api_key"], cfg["regions"], cfg["markets"], sports_list(cfg), cfg["demo"]) != \
-                (self.cfg["api_key"], self.cfg["regions"], self.cfg["markets"], sports_list(self.cfg),
+            changed_source = (cfg["api_key"], cfg["source_books"], cfg["regions"], cfg["markets"], sports_list(cfg), cfg["demo"]) != \
+                (self.cfg["api_key"], self.cfg["source_books"], self.cfg["regions"], self.cfg["markets"], sports_list(self.cfg),
                  self.cfg["demo"])
             self.cfg = cfg
             save_config(cfg)
@@ -967,7 +980,22 @@ def run_gui():
 
         def reanalyze(self):
             self.last_analysis = time.time()
-            self.selections = analyze(self.events, self.cfg)
+            try:
+                self._reanalyze()
+            except Exception as e:  # ne jamais laisser l'écran vide sans explication
+                import traceback
+                traceback.print_exc()
+                self.status.config(text=f"⚠ Erreur d'analyse : {e!r}  ·  envoie une capture au développeur")
+
+        def _reanalyze(self):
+            self.warning = ""
+            present = {bk.get("key") for ev in self.events for bk in ev.get("bookmakers", [])}
+            mine = {b.strip().lower() for b in self.cfg.get("bookmakers", "").split(",") if b.strip()}
+            cfg = self.cfg
+            if mine and not (mine & present) and present:
+                cfg = dict(self.cfg, bookmakers="")
+                self.warning = "Aucun de tes bookmakers n'a de cotes ici : affichage avec tous les bookmakers."
+            self.selections = analyze(self.events, cfg)
             self.vbets = value_bets(self.selections, self.cfg)
             self.probable = most_probable(self.selections, self.cfg)
             self.combos = build_combos(self.vbets, self.cfg)
@@ -983,15 +1011,33 @@ def run_gui():
             self.t_prob.set_rows(self.probable, tag)
             self.t_combo.set_rows(self.combos, lambda c: "hot" if c["ev"] >= 0.08 else "good")
             n_events = len({s["event_id"] for s in self.selections})
-            self.info1.config(text=f"{len(self.vbets)} value bets sur {n_events} matchs analysés  ·  "
-                                   f"Vert = value ≥ 5 %  ·  ⚠ = écart anormal, souvent une cote "
-                                   f"pas encore corrigée, vérifie avant  ·  Double-clic = détail des cotes")
+            now_utc = datetime.now(timezone.utc)
+            upcoming = 0
+            for ev in self.events:
+                try:
+                    if parse_time(ev["commence_time"]) > now_utc:
+                        upcoming += 1
+                except (KeyError, ValueError):
+                    pass
+            if self.selections and not self.vbets:
+                self.info1.config(text=f"Aucun value bet en ce moment sur {n_events} matchs : les cotes sont "
+                                       f"justes partout. Regarde « Plus probables », ou baisse « Value mini » "
+                                       f"dans Paramètres. Ne pas parier est aussi un bon choix.")
+            else:
+                self.info1.config(text=f"{len(self.vbets)} value bets sur {n_events} matchs analysés  ·  "
+                                       f"Vert = value ≥ 5 %  ·  ⚠ = écart anormal, souvent une cote "
+                                       f"pas encore corrigée, vérifie avant  ·  Double-clic = détail des cotes")
             if self.is_demo:
                 self.mode_badge.config(text="MODE DÉMO · données fictives", style="Badge.TLabel")
             else:
                 self.mode_badge.config(text="EN DIRECT", style="Live.TLabel")
             upd = datetime.fromtimestamp(self.last_fetch).strftime("%d/%m %H:%M") if self.last_fetch else "—"
-            parts = [f"Dernière mise à jour : {upd}"]
+            parts = [f"Dernière mise à jour : {upd}",
+                     f"{len(self.events)} matchs reçus ({upcoming} à venir), {n_events} analysés"]
+            if self.warning:
+                parts.append("ℹ " + self.warning)
+            if not self.events and not self.errors and not self.is_demo and self.last_fetch:
+                parts.append("ℹ Aucun match à venir dans tes compétitions : coches-en d'autres dans Paramètres")
             if self.quota and self.quota.get("remaining") is not None:
                 parts.append(f"Crédits API restants : {self.quota['remaining']}")
             if self.errors:

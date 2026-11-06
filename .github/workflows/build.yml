@@ -1,7 +1,7 @@
 name: Build BetScope.exe
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
@@ -15,11 +15,18 @@ jobs:
           python-version: "3.12"
       - run: pip install pyinstaller
       - run: pyinstaller --noconfirm --onefile --windowed --name BetScope betscope.py
+      - name: Version
+        id: v
+        shell: bash
+        run: echo "tag=v$(grep -oP 'APP_VERSION = "\K[^"]+' betscope.py)" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: BetScope
           path: dist/BetScope.exe
-      - if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          name: BetScope ${{ steps.v.outputs.tag }}
+          body: "Télécharge **BetScope.exe** ci-dessous et lance-le. Sans clé API, l'appli démarre en mode démo."
           files: dist/BetScope.exe
+          make_latest: true

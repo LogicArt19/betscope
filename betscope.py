@@ -648,22 +648,34 @@ def candidates(selections, cfg, min_p=0.0):
             ]
 
 
+def pro_score(b):
+    """Gain attendu par euro misé, corrigé par la confiance de l'analyse."""
+    sc = b["ev"] + (b.get("conf", 50) - 50) / 1000
+    if (b.get("stats") or {}).get("contra"):
+        sc -= 0.06
+    return sc
+
+
+def would_bet(b, cfg):
+    """Ce que BetScope jouerait avec son propre argent : rentable ET confirmé par l'analyse."""
+    st = b.get("stats") or {}
+    return (is_value(b, cfg) and not st.get("contra") and b.get("conf", 50) >= 50
+            and float(cfg["min_odds"]) <= b["odds"] <= float(cfg["max_odds"]))
+
+
 def rank_key(b, cfg):
     """Value d'abord (triée par Kelly), puis les autres par espérance."""
-    bonus = (b.get("conf", 50) - 50) / 2000  # la forme départage les paris proches
-    if (b.get("stats") or {}).get("contra"):
-        bonus -= 0.06  # tout va contre ce pari : classé tout en bas
-    return (1 if is_value(b, cfg) else 0, (b["kelly"] if is_value(b, cfg) else b["ev"]) + bonus)
+    return (2 if would_bet(b, cfg) else (1 if is_value(b, cfg) else 0), pro_score(b))
 
 
 def top_picks(selections, cfg, limit=40, min_p=0.33):
     """Value bets + meilleurs paris disponibles pour compléter."""
     vb = [s for s in selections if is_value(s, cfg)
           and float(cfg["min_odds"]) <= s["odds"] <= float(cfg["max_odds"])]
-    vb.sort(key=lambda s: s["ev"], reverse=True)
+    vb.sort(key=lambda s: rank_key(s, cfg), reverse=True)
     seen = {s["uid"] for s in vb}
     rest = [s for s in candidates(selections, cfg, min_p) if s["uid"] not in seen]
-    rest.sort(key=lambda s: s["ev"], reverse=True)
+    rest.sort(key=lambda s: pro_score(s), reverse=True)
     return (vb + rest)[:max(limit, len(vb))]
 
 
@@ -709,7 +721,12 @@ def build_combos(pool, cfg, max_legs=3, min_prob=0.15, limit=40, pool_size=14):
                 "book": btitle, "book_key": bkey,
                 "value": ev_ >= float(cfg["min_ev"]),
             })
-    combos.sort(key=lambda c: (c["value"], c["ev"]), reverse=True)
+    for c in combos:
+        c["conf"] = int(sum(l.get("conf", 50) for l in c["legs"]) / len(c["legs"]))
+        c["contra"] = any((l.get("stats") or {}).get("contra") for l in c["legs"])
+        c["would_bet"] = c["value"] and not c["contra"] and all(would_bet(l, cfg) or is_value(l, cfg) for l in c["legs"])
+    combos.sort(key=lambda c: (c["would_bet"], c["value"], c["ev"] + (c["conf"] - 50) / 1000 - (0.06 if c["contra"] else 0)),
+                reverse=True)
     out, used = [], []
     for c in combos:
         key = frozenset(l["uid"] for l in c["legs"])
@@ -749,6 +766,9 @@ def stake_plan(budget, mode, selections, cfg, sims=20000, seed=None):
     budget_c = int(round(budget * 100))
     min_c = max(10, int(round(float(cfg["min_stake"]) * 100)))
     pool = candidates(selections, cfg, rules["min_p"])
+    ids = {x["uid"] for x in pool}
+    # les paris que je jouerais moi-même passent en priorité, même un peu moins probables
+    pool += [x for x in candidates(selections, cfg, rules["min_p"] - 0.12) if x["uid"] not in ids and would_bet(x, cfg)]
     pool.sort(key=lambda b: rank_key(b, cfg), reverse=True)
 
     singles, seen = [], set()
@@ -792,6 +812,8 @@ def stake_plan(budget, mode, selections, cfg, sims=20000, seed=None):
     plan["staked"] = sum(it["stake"] for it in items)
     plan["expected"] = sum(it["stake"] * odds_p_ev(it)[2] for it in items)
     plan["max_win"] = sum(it["stake"] * (odds_p_ev(it)[0] - 1) for it in items)
+    plan["n_mine"] = sum(1 for it in items
+                         if (would_bet(it["bet"], cfg) if it["type"] == "single" else it["combo"].get("would_bet")))
     plan["n_value"] = sum(1 for it in items
                           if (is_value(it["bet"], cfg) if it["type"] == "single" else it["combo"]["value"]))
 
@@ -985,6 +1007,7 @@ def ser_bet(b, cfg):
         "p": round(b["p"], 4), "fair": round(b["fair"], 2), "odds": b["odds"], "book": b["book"],
         "ev": round(b["ev"], 4), "n_books": b["n_books"], "suspect": b["suspect"],
         "value": is_value(b, cfg), "event_id": b["event_id"], "conf": b.get("conf"),
+        "mine": would_bet(b, cfg),
         "p_market": round(b.get("p_market", b["p"]), 4), "stats": b.get("stats"),
         "prices": [{"book": t, "odds": o, "playable": k in b["playable"]}
                    for k, (o, t) in sorted(b["all_prices"].items(), key=lambda kv: -kv[1][0])],
@@ -994,7 +1017,7 @@ def ser_bet(b, cfg):
 def ser_combo(c):
     return {
         "uid": c["uid"], "odds": round(c["odds"], 2), "p": round(c["p"], 4), "ev": round(c["ev"], 4),
-        "book": c["book"], "value": c["value"],
+        "book": c["book"], "value": c["value"], "mine": c.get("would_bet", False),
         "legs": [{"selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
                   "sport": l["sport"], "odds": lo, "p": round(l["p"], 4)}
                  for l, lo in zip(c["legs"], c["leg_odds"])],
@@ -1021,7 +1044,7 @@ def ser_objective(res, cfg):
 
 
 def ser_plan(plan, cfg):
-    out = {k: plan.get(k) for k in ("budget", "mode", "staked", "expected", "max_win", "n_value",
+    out = {k: plan.get(k) for k in ("budget", "mode", "staked", "expected", "max_win", "n_value", "n_mine",
                                      "p_profit", "p_lose_all")}
     out["items"] = []
     for it in plan["items"]:

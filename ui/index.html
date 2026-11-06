@@ -301,7 +301,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
           <div class="card stat"><div class="l">Prochaine mise à jour</div><div class="v" id="s-nx">–</div><div class="h" id="s-last">&nbsp;</div></div>
           <div class="card stat"><div class="l">Crédits API restants</div><div class="v" id="s-q">–</div><div class="h">offre gratuite : 500 / mois</div></div>
         </div>
-        <h2>Pari du jour</h2>
+        <h2>Si c'était mon argent</h2>
         <div class="hero">
           <div class="card potd" id="potd"><div class="skel"></div></div>
           <div class="card quick">
@@ -329,6 +329,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
           <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="f-q" placeholder="Équipe, championnat…"></div>
           <div class="chips" id="f-type">
             <button class="chip on" data-t="all">Tous</button>
+            <button class="chip" data-t="mine">✔ Ce que je jouerais</button>
             <button class="chip" data-t="value">Value seulement</button>
             <button class="chip" data-t="h2h">Résultat</button>
             <button class="chip" data-t="tot">Buts</button>
@@ -445,6 +446,7 @@ $$("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.p));
 document.addEventListener("click",e=>{ const g=e.target.closest("[data-goto]"); if(g) go(g.dataset.goto); });
 
 function tag(b){
+  if (b.mine) return `<span class="tag v" title="BetScope jouerait ce pari avec son propre argent">✔ JE JOUE ${sg(b.ev)}</span>`;
   if (b.suspect) return `<span class="tag w">⚠ ${sg(b.ev)}</span>`;
   if (b.value) return `<span class="tag v">VALUE ${sg(b.ev)}</span>`;
   return `<span class="tag n">Sans value ${sg(b.ev)}</span>`;
@@ -460,7 +462,7 @@ function betRow(b){
 }
 function comboCard(c){
   return `<div class="card combo">
-    <div class="hd"><b>Combiné ×${c.legs.length}</b><span class="tag n">${esc(c.book)}</span><div class="sp"></div>${c.value?`<span class="tag v">VALUE ${sg(c.ev)}</span>`:`<span class="tag n">Sans value ${sg(c.ev)}</span>`}</div>
+    <div class="hd"><b>Combiné ×${c.legs.length}</b><span class="tag n">${esc(c.book)}</span><div class="sp"></div>${c.mine?`<span class="tag v">✔ JE JOUE ${sg(c.ev)}</span>`:c.value?`<span class="tag v">VALUE ${sg(c.ev)}</span>`:`<span class="tag n">Sans value ${sg(c.ev)}</span>`}</div>
     ${c.legs.map((l,i)=>`<div class="leg"><div class="n">${i+1}</div><div class="x"><b>${esc(l.selection)}</b><small>${esc(l.match)} · ${esc(l.date)}</small></div><div class="o">${fr(l.odds)}</div></div>`).join("")}
     <div class="ft"><div class="tot"><span>Cote totale</span><b>${fr(c.odds)}</b></div><div><span>Chances que tout passe</span><b>${pc(c.p)}</b></div><div><span>Pour 10 €</span><b>${eur(10*c.odds)}</b></div></div>
   </div>`;
@@ -481,19 +483,24 @@ function noData(){
 }
 
 function renderHome(){
-  const p = data.picks[0];
+  const mine = data.picks.filter(b=>b.mine);
+  const p = mine[0] || data.picks[0];
+  const others = mine.slice(1,3);
   $("#potd").innerHTML = p ? `
-    <div class="k">${p.value ? "★ MEILLEURE VALUE DU MOMENT" : "★ MEILLEUR PARI DISPONIBLE"}</div>
+    <div class="k">${p.mine ? "✔ JE JOUERAIS CE PARI" : "✖ AUJOURD'HUI JE NE PARIERAIS PAS · LE MOINS MAUVAIS"}</div>
     <div class="sel">${esc(p.selection)}</div>
-    <div class="m">${esc(p.match)} · ${esc(p.sport)} · ${esc(p.date)}</div>
+    <div class="m">${esc(p.match)} · ${esc(p.sport)}${p.stats&&p.stats.round?" · "+esc(p.stats.round):""} · ${esc(p.date)}</div>
     <div class="row">
       <div><span>Cote ${esc(p.book)}</span><b class="big">${fr(p.odds)}</b></div>
-      <div><span>Vraie probabilité</span><b>${pc(p.p)}</b></div>
-      <div><span>Cote juste</span><b>${fr(p.fair)}</b></div>
-      <div><span>Value</span><b style="color:${p.value?'var(--green2)':'var(--muted)'}">${sg(p.ev)}</b></div>
-    </div>` : noData();
+      <div><span>Proba réelle</span><b>${pc(p.p)}</b></div>
+      <div><span>Gain attendu</span><b style="color:${p.ev>=0?'var(--green2)':'var(--muted)'}">${sg(p.ev)}</b></div>
+      ${p.conf!=null&&p.stats?`<div><span>Confiance</span><b>${p.conf}/100</b></div>`:""}
+    </div>
+    ${p.stats&&p.stats.pros.length?`<div style="margin-top:14px;font-size:12.5px;color:#bbf7d0">✔ ${esc(p.stats.pros[0])}</div>`:""}
+    ${!p.mine?`<div style="margin-top:12px;font-size:12.5px;color:var(--muted)">Aucune cote Betclic n'est assez bonne en ce moment. Pour jouer quand même, voici l'option la plus raisonnable.</div>`:""}
+    ${others.length?`<div style="margin-top:14px;font-size:12.5px;color:var(--muted)">Je jouerais aussi : ${others.map(o=>`<b style="color:var(--fg)">${esc(o.selection)}</b> (${esc(o.match)}) @ ${fr(o.odds)}`).join(" · ")}</div>`:""}` : noData();
   $("#potd").onclick = p ? () => openBet(p) : null; $("#potd").style.cursor = p ? "pointer" : "";
-  $("#home-picks").innerHTML = data.picks.slice(1, 6).map(betRow).join("") || (p ? "" : "");
+  $("#home-picks").innerHTML = data.picks.filter(b=>b!==p).slice(0, 5).map(betRow).join("");
   $("#home-combos").innerHTML = data.combos.slice(0, 2).map(comboCard).join("") || emptyBox("Pas de combiné pour l'instant", "Il faut au moins 2 matchs différents avec des cotes.");
 }
 let fType="all", fSort="ev";
@@ -503,7 +510,7 @@ $("#f-q").oninput = () => renderPicks();
 function renderPicks(){
   const q = $("#f-q").value.trim().toLowerCase();
   let L = data.picks.filter(b =>
-    (fType==="all" || (fType==="value" && b.value) || (fType==="h2h" && b.market==="Résultat") || (fType==="tot" && b.market==="Total")) &&
+    (fType==="all" || (fType==="mine" && b.mine) || (fType==="value" && b.value) || (fType==="h2h" && b.market==="Résultat") || (fType==="tot" && b.market==="Total")) &&
     (!q || (b.match+" "+b.sport+" "+b.selection).toLowerCase().includes(q)));
   L = L.slice().sort((a,b)=> fSort==="ts" ? a.ts-b.ts : b[fSort]-a[fSort]);
   $("#picks").innerHTML = L.map(betRow).join("") || (data.picks.length ? emptyBox("Aucun pari avec ces filtres", "") : noData());
@@ -583,7 +590,7 @@ async function makePlan(){
       <div class="card stat"><div class="l">Total misé</div><div class="v">${eur(p.staked)}</div><div class="h">${p.items.length} ticket${p.items.length>1?"s":""} chez Betclic</div></div>
       <div class="card stat"><div class="l">Gain max (tout passe)</div><div class="v" style="color:var(--green2)">+${eur(p.max_win)}</div></div>
       <div class="card stat"><div class="l">Chance de finir gagnant</div><div class="v">${pc(p.p_profit)}</div><div class="h">tout perdre : ${pc(p.p_lose_all)}</div></div>
-      <div class="card stat"><div class="l">Gain moyen espéré</div><div class="v" style="color:${pos?'var(--green2)':'var(--muted)'}">${pos?'+':''}${eur(p.expected)}</div><div class="h">${p.n_value}/${p.items.length} ticket(s) avec value</div></div>
+      <div class="card stat"><div class="l">Gain moyen espéré</div><div class="v" style="color:${pos?'var(--green2)':'var(--muted)'}">${pos?'+':''}${eur(p.expected)}</div><div class="h">${p.n_mine||0}/${p.items.length} ticket(s) que je jouerais moi-même</div></div>
     </div>
     <div class="list">${p.items.map((it,i)=> it.type==="single" ? `
       <div class="card ticket bet" data-uid="${esc(it.uid)}">

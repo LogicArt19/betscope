@@ -31,12 +31,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import markets as mk
 import model as modelmod
 import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.6.5"
+APP_VERSION = "1.7.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -656,6 +657,8 @@ def analyze(events, cfg, now=None, info=None):
                 if stat_sum:
                     conf += stat_sum["score"]
                 out.append({
+                    "cat": "1n2" if mkey == "h2h" else ("total" if mkey == "totals" else "hcp"),
+                    "estimated": False,
                     "p_market": p_market,
                     "stats": stat_sum,
                     "conf": int(max(1, min(99, round(conf)))),
@@ -678,7 +681,58 @@ def analyze(events, cfg, now=None, info=None):
                     "all_prices": a["prices"],
                     "suspect": p_market * odds - 1 > float(cfg["max_ev"]),
                 })
+        add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, allowed)
     return out
+
+
+def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, allowed):
+    """Ajoute tous les autres paris Betclic du match (cotes estimées)."""
+    eid = ev.get("id")
+    mine = [s for s in out if s["event_id"] == eid and not s.get("estimated")]
+    h2h = {s["selection"]: s for s in mine if s["cat"] == "1n2"}
+    try:
+        p1 = h2h[f"Victoire {home}"]["p_market"]
+        p2 = h2h[f"Victoire {away}"]["p_market"]
+        pn = h2h["Match nul"]["p_market"]
+    except KeyError:
+        return
+    over = next((s for s in mine if s["cat"] == "total" and s["selection"].startswith("Plus de 2,5")), None)
+    lh, la = mk.fit_lambdas(p1, pn, p2, over["p_market"] if over else None)
+    lh_m, la_m = (mdl["xg_home"], mdl["xg_away"]) if mdl else (None, None)
+    w = w_stats if mdl and 0 < w_stats <= 0.6 else 0.0
+    fh, fa = (1 - w) * lh + w * (lh_m or lh), (1 - w) * la + w * (la_m or la)
+    ref = mine[0]
+    # bookmaker où l'on parie (Betclic) : même nom que sur les vrais marchés
+    bkey = ref["book_key"]
+    btitle = ref["book"]
+    rows_m = {r[4]: r for r in mk.derive(lh, la, home, away, has_total25=over is not None)}
+    rows_f = mk.derive(fh, fa, home, away, has_total25=over is not None)
+    if st:
+        inj_h = [i.get("player", "") for i in (st.get("inj_home") or [])]
+        inj_a = [i.get("player", "") for i in (st.get("inj_away") or [])]
+        gh, mh = st.get("goals_home") or (0, 0)
+        ga, ma = st.get("goals_away") or (0, 0)
+        rows_f += mk.player_markets(fh, st.get("scorers_home") or [], gh, mh, inj_h)
+        rows_f += mk.player_markets(fa, st.get("scorers_away") or [], ga, ma, inj_a)
+        for r in mk.player_markets(lh, st.get("scorers_home") or [], gh, mh, inj_h) + \
+                mk.player_markets(la, st.get("scorers_away") or [], ga, ma, inj_a):
+            rows_m[r[4]] = r
+    for cat, market, sel, p, key in rows_f:
+        if p <= 0.02 or p >= 0.985:
+            continue
+        p_market = rows_m.get(key, (None, None, None, p))[3]
+        odds, min_odds = mk.estimated_odds(cat, p_market)
+        ev_ = p * odds - 1
+        out.append({
+            "cat": cat, "estimated": True, "min_odds": min_odds,
+            "p_market": p_market, "stats": None, "conf": 50,
+            "uid": f"{eid}|x|{key}", "event_id": eid, "match": match,
+            "sport": SPORTS.get(sport_key, ev.get("sport_title", sport_key)), "start": start,
+            "market": market, "selection": sel, "p": p, "fair": 1 / p, "odds": odds,
+            "book": btitle, "book_key": bkey, "ev": ev_, "kelly": ev_ / (odds - 1) if odds > 1 else 0,
+            "n_books": ref["n_books"], "playable": {bkey: (odds, btitle)}, "all_prices": {bkey: (odds, btitle)},
+            "suspect": False,
+        })
 
 
 
@@ -698,14 +752,15 @@ WORST_EV = -0.09  # au-delà, la cote est vraiment mauvaise : jamais proposée
 
 
 def is_value(b, cfg):
-    return b["ev"] >= float(cfg["min_ev"]) and not b["suspect"]
+    return b["ev"] >= float(cfg["min_ev"]) and not b["suspect"] and not b.get("estimated")
 
 
 def candidates(selections, cfg, min_p=0.0):
     lo, hi = float(cfg["min_odds"]), float(cfg["max_odds"])
-    return [s for s in selections
-            if lo <= s["odds"] <= hi and not s["suspect"] and s["p"] >= min_p and s["ev"] >= WORST_EV
-            ]
+    types = cfg.get("_types")
+    return [s for s in selections if (not types or s.get("cat") in types)
+            and lo <= s["odds"] <= hi and not s["suspect"] and s["p"] >= min_p
+            and (s.get("estimated") or s["ev"] >= WORST_EV)]
 
 
 def pro_score(b):
@@ -735,8 +790,9 @@ def top_picks(selections, cfg, limit=40, min_p=0.33):
     vb.sort(key=lambda s: rank_key(s, cfg), reverse=True)
     seen = {s["uid"] for s in vb}
     rest = [s for s in candidates(selections, cfg, min_p) if s["uid"] not in seen]
-    rest.sort(key=lambda s: pro_score(s), reverse=True)
-    return (vb + rest)[:max(limit, len(vb))]
+    real = sorted([s for s in rest if not s.get("estimated")], key=pro_score, reverse=True)[:limit]
+    est = sorted([s for s in rest if s.get("estimated")], key=pro_score, reverse=True)[:limit + 20]
+    return vb + sorted(real + est, key=pro_score, reverse=True)
 
 
 def most_probable(selections, cfg, limit=60):
@@ -910,10 +966,13 @@ def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.
     lo = float(cfg["min_odds"])
     items = []
     for s in selections:
+        types = cfg.get("_types")
+        if types and s.get("cat") not in types:
+            continue
         if s["suspect"] or s["event_id"] in exclude_events or book not in s["playable"]:
             continue
         o = s["playable"][book][0]
-        if o < lo or s["p"] < min_p or s["ev"] < WORST_EV:
+        if o < lo or s["p"] < min_p or (s["ev"] < WORST_EV and not s.get("estimated")):
             continue
         items.append((s, o))
     items.sort(key=lambda it: it[0]["p"] * it[1] * (0.9 if (it[0].get("stats") or {}).get("contra") else 1),
@@ -1067,7 +1126,8 @@ def ser_bet(b, cfg):
         "p": round(b["p"], 4), "fair": round(b["fair"], 2), "odds": b["odds"], "book": b["book"],
         "ev": round(b["ev"], 4), "n_books": b["n_books"], "suspect": b["suspect"],
         "value": is_value(b, cfg), "event_id": b["event_id"], "conf": b.get("conf"),
-        "mine": would_bet(b, cfg),
+        "mine": would_bet(b, cfg), "cat": b.get("cat"), "estimated": bool(b.get("estimated")),
+        "min_odds": b.get("min_odds"),
         "p_market": round(b.get("p_market", b["p"]), 4), "stats": b.get("stats"),
         "prices": [{"book": t, "odds": o, "playable": k in b["playable"]}
                    for k, (o, t) in sorted(b["all_prices"].items(), key=lambda kv: -kv[1][0])],
@@ -1079,7 +1139,8 @@ def ser_combo(c):
         "uid": c["uid"], "odds": round(c["odds"], 2), "p": round(c["p"], 4), "ev": round(c["ev"], 4),
         "book": c["book"], "value": c["value"], "mine": c.get("would_bet", False),
         "legs": [{"selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
-                  "sport": l["sport"], "odds": lo, "p": round(l["p"], 4)}
+                  "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
+                  "min_odds": l.get("min_odds")}
                  for l, lo in zip(c["legs"], c["leg_odds"])],
     }
 
@@ -1095,7 +1156,8 @@ def ser_objective(res, cfg):
                 "ret": round(t["stake"] * t["odds"], 2),
                 "value": t["ev"] >= float(cfg["min_ev"]),
                 "legs": [{"selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
-                          "sport": l["sport"], "odds": lo, "p": round(l["p"], 4)}
+                          "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
+                          "min_odds": l.get("min_odds"), "market": l["market"]}
                          for l, lo in zip(t["legs"], t["leg_odds"])],
             })
         out["options"].append({"kind": o["kind"], "title": o["title"], "desc": o["desc"], "book": o["book"],
@@ -1435,7 +1497,7 @@ class Api:
             threading.Thread(target=self._do_refresh, daemon=True).start()
         return True
 
-    def compute_plan(self, budget, mode):
+    def compute_plan(self, budget, mode, types=None):
         try:
             budget = float(str(budget).replace(",", ".").replace("€", "").strip())
         except ValueError:
@@ -1446,9 +1508,11 @@ class Api:
             sel, cfg = list(self._sel), dict(self._cfg)
         if self._warning:
             cfg["bookmakers"] = ""
+        if types:
+            cfg["_types"] = set(types)
         return ser_plan(stake_plan(budget, mode, sel, cfg), cfg)
 
-    def compute_objective(self, stake, target):
+    def compute_objective(self, stake, target, types=None):
         try:
             stake = float(str(stake).replace(",", ".").replace("€", "").strip())
             target = float(str(target).replace(",", ".").replace("€", "").strip())
@@ -1460,6 +1524,8 @@ class Api:
             sel, cfg = list(self._sel), dict(self._cfg)
         if self._warning:
             cfg["bookmakers"] = ""
+        if types:
+            cfg["_types"] = set(types)
         return ser_objective(objective_plan(stake, target, sel, cfg), cfg)
 
     def reset_settings(self):
@@ -1476,6 +1542,7 @@ class Api:
     def get_config(self):
         with self._lock:
             cfg = dict(self._cfg)
+        cfg["_cats"] = [{"key": k, "label": v} for k, v in mk.CATEGORIES.items()]
         cfg["_sports"] = [{"key": k, "label": v} for k, v in SPORTS.items()]
         cfg["_credits_month"] = credits_per_month(self._cfg)
         return cfg

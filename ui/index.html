@@ -331,8 +331,18 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
             <button class="chip on" data-t="all">Tous</button>
             <button class="chip" data-t="mine">✔ Ce que je jouerais</button>
             <button class="chip" data-t="value">Value seulement</button>
-            <button class="chip" data-t="h2h">Résultat</button>
-            <button class="chip" data-t="tot">Buts</button>
+
+            <button class="chip" data-t="1n2">Résultat 1N2</button>
+            <button class="chip" data-t="dc">Double chance</button>
+            <button class="chip" data-t="dnb">Remboursé si nul</button>
+            <button class="chip" data-t="total">Nombre de buts</button>
+            <button class="chip" data-t="team">Buts par équipe</button>
+            <button class="chip" data-t="btts">Les 2 marquent</button>
+            <button class="chip" data-t="hcp">Handicap</button>
+            <button class="chip" data-t="exact">Score exact</button>
+            <button class="chip" data-t="mtft">Mi-temps/Fin</button>
+            <button class="chip" data-t="scorer">Buteurs</button>
+            <button class="chip" data-t="decisive">Joueurs décisifs</button>
           </div>
           <div class="chips" id="f-sort" style="margin-left:auto">
             <button class="chip on" data-s="ev">Meilleure value</button>
@@ -361,6 +371,9 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
             <div class="k" style="font-weight:650">Je veux gagner au moins</div>
             <div class="money"><input id="g-target" value="200" inputmode="decimal"><span>€</span></div>
             <div class="need" id="g-need"></div>
+            <div class="k" style="font-weight:650">Types de paris</div>
+            <div class="chips tsel"><button class="chip on" data-cat="1n2">Résultat 1N2</button><button class="chip on" data-cat="dc">Double chance</button><button class="chip on" data-cat="dnb">Remboursé si nul</button><button class="chip on" data-cat="total">Nombre de buts</button><button class="chip on" data-cat="team">Buts par équipe</button><button class="chip on" data-cat="btts">Les 2 marquent</button><button class="chip on" data-cat="hcp">Handicap</button><button class="chip on" data-cat="exact">Score exact</button><button class="chip on" data-cat="mtft">Mi-temps/Fin</button><button class="chip on" data-cat="scorer">Buteurs</button><button class="chip on" data-cat="decisive">Joueurs décisifs</button></div>
+            <div style="display:flex;gap:8px"><button class="link" data-allcat="1" style="font-size:12px;color:var(--green2)">Tout cocher</button><button class="link" data-allcat="0" style="font-size:12px;color:var(--muted)">Tout décocher</button></div>
             <button class="btn primary" id="g-go" style="justify-content:center;padding:13px">Trouver les meilleures options</button>
           </div>
           <div id="goal"><div class="card empty"><b>Tes options s'afficheront ici</b>Choisis ta mise et ton objectif de gain : BetScope cherche les tickets qui l'atteignent avec le plus de chances de passer.</div></div>
@@ -374,6 +387,9 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
               <button data-m="equilibre" class="on"><b>⚖️ Équilibré</b><small>3 simples + 1 combiné de 2 matchs</small></button>
               <button data-m="agressif"><b>🔥 Agressif</b><small>Gros combinés, gains plus gros, plus risqué</small></button>
             </div>
+<div class="k" style="font-weight:650">Types de paris</div>
+            <div class="chips tsel"><button class="chip on" data-cat="1n2">Résultat 1N2</button><button class="chip on" data-cat="dc">Double chance</button><button class="chip on" data-cat="dnb">Remboursé si nul</button><button class="chip on" data-cat="total">Nombre de buts</button><button class="chip on" data-cat="team">Buts par équipe</button><button class="chip on" data-cat="btts">Les 2 marquent</button><button class="chip on" data-cat="hcp">Handicap</button><button class="chip on" data-cat="exact">Score exact</button><button class="chip on" data-cat="mtft">Mi-temps/Fin</button><button class="chip on" data-cat="scorer">Buteurs</button><button class="chip on" data-cat="decisive">Joueurs décisifs</button></div>
+            <div style="display:flex;gap:8px"><button class="link" data-allcat="1" style="font-size:12px;color:var(--green2)">Tout cocher</button><button class="link" data-allcat="0" style="font-size:12px;color:var(--muted)">Tout décocher</button></div>
             <button class="btn primary" id="b-go" style="justify-content:center;padding:13px">Trouver le meilleur plan</button>
           </div>
           <div id="plan"><div class="card empty"><b>Ton plan de mise s'affichera ici</b>Entre un montant, choisis un style, puis clique sur « Trouver le meilleur plan ».</div></div>
@@ -459,6 +475,7 @@ $$("#nav button").forEach(b=>b.onclick=()=>go(b.dataset.p));
 document.addEventListener("click",e=>{ const g=e.target.closest("[data-goto]"); if(g) go(g.dataset.goto); });
 
 function tag(b){
+  if (b.estimated) return `<span class="tag n" title="Cote Betclic estimée : prends ce pari seulement si Betclic affiche au moins ${fr(b.min_odds)}">≈ prends si ≥ ${fr(b.min_odds)}</span>`;
   if (b.mine) return `<span class="tag v" title="BetScope jouerait ce pari avec son propre argent">✔ JE JOUE ${sg(b.ev)}</span>`;
   if (b.suspect) return `<span class="tag w">⚠ ${sg(b.ev)}</span>`;
   if (b.value) return `<span class="tag v">VALUE ${sg(b.ev)}</span>`;
@@ -470,13 +487,13 @@ function betRow(b){
     <div class="mt"><b>${esc(b.match)}</b><small>${esc(b.sport)}${b.stats&&b.stats.round?" · "+esc(b.stats.round):""}</small>${mini(b)}</div>
     <div class="s">${esc(b.selection)}<small>${esc(b.market)} · ${esc(b.book)}</small></div>
     <div class="prob">${pc(b.p)} de chances<div class="t"><i style="width:${Math.round(b.p*100)}%"></i></div></div>
-    <div class="odds">${fr(b.odds)}<small>juste ${fr(b.fair)}</small></div>
+    <div class="odds">${b.estimated?"≈":""}${fr(b.odds)}<small>${b.estimated?"cote estimée":"juste "+fr(b.fair)}</small></div>
     ${tag(b)}</div>`;
 }
 function comboCard(c){
   return `<div class="card combo">
     <div class="hd"><b>Combiné ×${c.legs.length}</b><span class="tag n">${esc(c.book)}</span><div class="sp"></div>${c.mine?`<span class="tag v">✔ JE JOUE ${sg(c.ev)}</span>`:c.value?`<span class="tag v">VALUE ${sg(c.ev)}</span>`:`<span class="tag n">Sans value ${sg(c.ev)}</span>`}</div>
-    ${c.legs.map((l,i)=>`<div class="leg"><div class="n">${i+1}</div><div class="x"><b>${esc(l.selection)}</b><small>${esc(l.match)} · ${esc(l.date)}</small></div><div class="o">${fr(l.odds)}</div></div>`).join("")}
+    ${c.legs.map((l,i)=>`<div class="leg"><div class="n">${i+1}</div><div class="x"><b>${esc(l.selection)}</b><small>${esc(l.match)} · ${esc(l.date)}${l.estimated?" · cote estimée":""}</small></div><div class="o">${l.estimated?"≈":""}${fr(l.odds)}</div></div>`).join("")}
     <div class="ft"><div class="tot"><span>Cote totale</span><b>${fr(c.odds)}</b></div><div><span>Chances que tout passe</span><b>${pc(c.p)}</b></div><div><span>Pour 10 €</span><b>${eur(10*c.odds)}</b></div></div>
   </div>`;
 }
@@ -525,7 +542,7 @@ $("#f-q").oninput = () => renderPicks();
 function renderPicks(){
   const q = $("#f-q").value.trim().toLowerCase();
   let L = data.picks.filter(b =>
-    (fType==="all" || (fType==="mine" && b.mine) || (fType==="value" && b.value) || (fType==="h2h" && b.market==="Résultat") || (fType==="tot" && b.market==="Total")) &&
+    (fType==="all" || (fType==="mine" && b.mine) || (fType==="value" && b.value) || b.cat===fType) &&
     (!q || (b.match+" "+b.sport+" "+b.selection).toLowerCase().includes(q)));
   L = L.slice().sort((a,b)=> fSort==="ts" ? a.ts-b.ts : b[fSort]-a[fSort]);
   $("#picks").innerHTML = L.map(betRow).join("") || (data.picks.length ? emptyBox("Aucun pari avec ces filtres", "") : noData());
@@ -596,7 +613,7 @@ $("#q-amount").onkeydown = e => { if (e.key==="Enter") $("#q-go").click(); };
 async function makePlan(){
   if (!api) return;
   $("#plan").innerHTML = '<div class="skel" style="height:120px"></div>';
-  const p = await api.compute_plan($("#b-amount").value, mode);
+  const p = await api.compute_plan($("#b-amount").value, mode, selTypes());
   lastPlan = p;
   if (p.error) { $("#plan").innerHTML = emptyBox(esc(p.error), "Entre un montant, par exemple 10."); return; }
   if (!p.items || !p.items.length) { $("#plan").innerHTML = noData(); return; }
@@ -618,13 +635,22 @@ async function makePlan(){
       <div class="card ticket">
         <div class="num">${i+1}</div>
         <div class="x"><b>Combiné ×${it.legs.length}</b>
-          <div class="legs">${it.legs.map(l=>`<div>• ${esc(l.selection)} <span style="color:var(--dim)">— ${esc(l.match)}, ${esc(l.date)}</span> @ ${fr(l.odds)}</div>`).join("")}</div>
+          <div class="legs">${it.legs.map(l=>`<div>• ${esc(l.selection)} <span style="color:var(--dim)">— ${esc(l.match)}, ${esc(l.date)}</span> @ ${l.estimated?"≈":""}${fr(l.odds)}${l.estimated?` <span style="color:var(--amber)">(prends si ≥ ${fr(l.min_odds)})</span>`:""}</div>`).join("")}</div>
           <div class="meta"><span class="tag n">Combiné · ${esc(it.book)}</span><span class="tag n">${pc(it.p)} de chances</span>${it.value?`<span class="tag v">VALUE ${sg(it.ev)}</span>`:`<span class="tag n">Sans value ${sg(it.ev)}</span>`}</div></div>
         <div class="r"><small>Mise</small><div class="stake">${eur(it.stake)}</div><small>cote ${fr(it.odds)}</small><div class="g">+${eur(it.gain)} si gagné</div></div>
       </div>`).join("")}</div>
     <div class="card note">${p.n_value ? "Les tickets <b style='color:var(--green2)'>VALUE</b> sont rentables en moyenne sur la durée." : "Aucune value aujourd'hui chez Betclic : ce plan prend les meilleurs paris disponibles, mais il reste légèrement perdant en moyenne (marge du bookmaker)."}
       Même un bon plan perd souvent sur une seule journée. Vérifie que la cote n'a pas bougé avant de valider sur Betclic, et ne mise que ce que tu peux perdre.</div>`;
 }
+
+/* ----- types de paris ----- */
+document.addEventListener("click", e => {
+  const c = e.target.closest(".tsel .chip");
+  if (c) { const on=!c.classList.contains("on"); $$(`.tsel [data-cat="${c.dataset.cat}"]`).forEach(x=>x.classList.toggle("on",on)); return; }
+  const a = e.target.closest("[data-allcat]");
+  if (a) $$(".tsel .chip").forEach(x=>x.classList.toggle("on", a.dataset.allcat==="1"));
+});
+const selTypes = () => { const t=[...new Set($$(".tsel .chip.on").map(x=>x.dataset.cat))]; return t.length===11?null:t; };
 
 /* ----- objectif ----- */
 function seg(v){ $$("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===v)); $("#v-goal").style.display=v==="goal"?"":"none"; $("#v-split").style.display=v==="split"?"":"none"; }
@@ -643,7 +669,7 @@ $("#g-go").onclick = makeGoal;
 async function makeGoal(){
   if (!api) return;
   $("#goal").innerHTML = '<div class="skel" style="height:140px"></div>';
-  const r = await api.compute_objective($("#g-stake").value, $("#g-target").value);
+  const r = await api.compute_objective($("#g-stake").value, $("#g-target").value, selTypes());
   if (r.error) { $("#goal").innerHTML = emptyBox(esc(r.error), ""); return; }
   if (!r.options.length) {
     $("#goal").innerHTML = data.picks.length ? emptyBox("Objectif impossible avec les matchs actuels",
@@ -663,11 +689,11 @@ async function makeGoal(){
           <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances d'atteindre l'objectif</small></div></div>
         ${o.tickets.map((t,j)=>`<div class="tk">
           <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise ${eur(t.stake)}</span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><span>·</span><span>${pc(t.p,1)} de chances</span><div class="sp"></div>${t.value?`<span class="tag v">VALUE ${sg(t.ev)}</span>`:`<span class="tag n">Sans value ${sg(t.ev)}</span>`}</div>
-          ${t.legs.map(l=>`<div class="ln"><span><b>${esc(l.selection)}</b> <small>— ${esc(l.match)} · ${esc(l.date)}</small></span><b>${fr(l.odds)}</b></div>`).join("")}
+          ${t.legs.map(l=>`<div class="ln"><span><b>${esc(l.selection)}</b> <small>— ${esc(l.match)} · ${esc(l.date)}${l.estimated?` · <span style="color:var(--amber)">cote estimée, prends si ≥ ${fr(l.min_odds)}</span>`:""}</small></span><b>${l.estimated?"≈":""}${fr(l.odds)}</b></div>`).join("")}
           <div class="ft"><span>Si ce ticket passe, tu touches</span><b>${eur(t.ret)} (+${eur(t.ret - r.stake)})</b></div>
         </div>`).join("")}
       </div>`).join("")}</div>
-    <div class="card note">Plus l'objectif est gros par rapport à la mise, plus la cote nécessaire est haute et moins il y a de chances que ça passe. Les options sont classées de la plus probable à la moins probable. Vérifie les cotes sur Betclic avant de valider.</div>`;
+    <div class="card note">Les cotes marquées ≈ sont estimées : sur Betclic, prends la sélection seulement si la cote affichée est au moins égale au minimum indiqué.<br>Plus l'objectif est gros par rapport à la mise, plus la cote nécessaire est haute et moins il y a de chances que ça passe. Les options sont classées de la plus probable à la moins probable. Vérifie les cotes sur Betclic avant de valider.</div>`;
 }
 
 /* ----- paramètres ----- */

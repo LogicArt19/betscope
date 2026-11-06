@@ -134,7 +134,7 @@ class Stats:
         self.remaining = None
         self.last_call = 0.0
         self.data = {"fixtures": {}, "results": {}, "standings": {}, "inj_day": {}, "pred": {}, "lineups": {},
-                     "usage": {"day": "", "n": 0}, "h2h": {}}
+                     "usage": {"day": "", "n": 0}, "h2h": {}, "scorers": {}}
         try:
             with open(self.path, encoding="utf-8") as f:
                 self.data.update(json.load(f))
@@ -258,6 +258,17 @@ class Stats:
                     with self.lock:
                         self.data["fixtures"][code] = {"ts": time.time(), "list": fx}
                     self._put("results", code, res, on_change)
+                if not self._fresh("scorers", code, 12 * 3600):
+                    body = self._fd_get(key, f"/competitions/{code}/scorers", {"limit": 60})
+                    sc = []
+                    for x in body.get("scorers", []):
+                        try:
+                            sc.append({"name": x["player"]["name"], "team_id": x["team"]["id"],
+                                       "goals": x.get("goals") or 0, "assists": x.get("assists") or 0,
+                                       "played": x.get("playedMatches") or 0})
+                        except (KeyError, TypeError):
+                            continue
+                    self._put("scorers", code, sc, on_change)
                 if code != "CL" and not self._fresh("standings", code, 6 * 3600):
                     body = self._fd_get(key, f"/competitions/{code}/standings")
                     table = {}
@@ -715,7 +726,30 @@ class Stats:
                 h2h = ((self.data.get("h2h") or {}).get(hk) or {}).get("v") or (pred_api or {}).get("h2h") or [
                     {"date": r["date"][:10], "home": r["home"], "away": r["away"], "gh": r["gh"], "ga": r["ga"]}
                     for r in all_results if {r["home_id"], r["away_id"]} == {fx.get("home_id"), fx.get("away_id")}]
+                sc_all = []
+                for c in (self.data.get("scorers") or {}).values():
+                    sc_all.extend(c.get("v") or [])
+
+                def team_scorers(tid):
+                    best = {}
+                    for x in sc_all:
+                        if x["team_id"] == tid and x["goals"] >= best.get(x["name"], {}).get("goals", -1):
+                            best[x["name"]] = x
+                    return sorted(best.values(), key=lambda x: -x["goals"])[:4]
+
+                def team_totals(tid):
+                    g = m = 0
+                    for r in all_results:
+                        if r["home_id"] == tid:
+                            g += r["gh"] or 0
+                            m += 1
+                        elif r["away_id"] == tid:
+                            g += r["ga"] or 0
+                            m += 1
+                    return g, m
                 res[eid] = {
+                    "scorers_home": team_scorers(fx.get("home_id")), "scorers_away": team_scorers(fx.get("away_id")),
+                    "goals_home": team_totals(fx.get("home_id")), "goals_away": team_totals(fx.get("away_id")),
                     "fixture_id": fx["id"], "round": fx.get("round", ""), "round_label": round_label(fx.get("round", "")),
                     "home": fx["home"], "away": fx["away"],
                     "form_home": model.team_form(all_results, fx.get("home_id")),

@@ -36,7 +36,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.6.1"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -282,6 +282,8 @@ if errorlevel 1 (
   exit /b 1
 )
 del "{new_exe}" >nul 2>nul
+copy /b "{exe}"+,, "{exe}" >nul 2>nul
+ie4uinit.exe -show >nul 2>nul
 start "" "{exe}"
 del "%~f0"
 """

@@ -57,6 +57,17 @@ FD_CODES = {
 FD_STAGES = {"LAST_16": "Round of 16", "QUARTER_FINALS": "Quarter-finals", "SEMI_FINALS": "Semi-finals",
              "FINAL": "Final", "PLAYOFFS": "Knockout Round Play-offs", "PLAYOFF_ROUND": "Knockout Round Play-offs"}
 
+# recherche web sans clé : données publiques ESPN (absents, compos, actus)
+ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+ESPN_SLUGS = {
+    "soccer_france_ligue_one": "fra.1", "soccer_france_ligue_two": "fra.2", "soccer_epl": "eng.1",
+    "soccer_efl_champ": "eng.2", "soccer_spain_la_liga": "esp.1", "soccer_italy_serie_a": "ita.1",
+    "soccer_germany_bundesliga": "ger.1", "soccer_uefa_champs_league": "uefa.champions",
+    "soccer_uefa_europa_league": "uefa.europa", "soccer_uefa_europa_conference_league": "uefa.europa.conf",
+    "soccer_netherlands_eredivisie": "ned.1", "soccer_portugal_primeira_liga": "por.1",
+    "soccer_belgium_first_div": "bel.1", "soccer_turkey_super_league": "tur.1",
+}
+
 DAILY_BUDGET = 100
 KEEP_SPARE = 4            # requêtes gardées en réserve
 MIN_GAP = 6.5             # secondes entre 2 requêtes (≈ 9 / minute)
@@ -298,6 +309,158 @@ class Stats:
                 self._save()
             if on_change:
                 on_change()
+
+    # ---------- recherche web (ESPN, sans clé) ----------
+    def _web_get(self, url):
+        wait = 1.0 - (time.time() - getattr(self, "_web_last", 0))
+        if wait > 0:
+            time.sleep(wait)
+        self._web_last = time.time()
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 BetScope", "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode("utf-8"))
+
+    @staticmethod
+    def _inj_type(status):
+        st = str(status or "").lower()
+        if any(k in st for k in ("doubt", "question", "day-to-day", "probable", "incertain")):
+            return "Questionable"
+        return "Missing Fixture"
+
+    def update_web(self, sports, events, on_change=None):
+        """Va chercher sur le web (ESPN) : absents, compos officielles et actus de chaque match à venir."""
+        if getattr(self, "web_running", False):
+            return
+        self.web_running = True
+        self.web_error = ""
+        web = self.data.setdefault("web", {})
+        board = self.data.setdefault("web_board", {})
+        try:
+            now = datetime.now(timezone.utc)
+            by_sport = {}
+            for ev in events:
+                try:
+                    t = datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00"))
+                except (KeyError, ValueError):
+                    continue
+                if now - timedelta(hours=2) < t < now + timedelta(days=4):
+                    by_sport.setdefault(ev.get("_sport_key") or ev.get("sport_key"), []).append((t, ev))
+            for sk, lst in by_sport.items():
+                slug = ESPN_SLUGS.get(sk)
+                if not slug:
+                    continue
+                # calendrier ESPN sur la période (1 requête / ligue / 3 h)
+                c = board.get(slug)
+                if not c or time.time() - c["ts"] > 3 * 3600:
+                    d1 = (now - timedelta(days=1)).strftime("%Y%m%d")
+                    d2 = (now + timedelta(days=5)).strftime("%Y%m%d")
+                    try:
+                        body = self._web_get(f"{ESPN_BASE}/{slug}/scoreboard?dates={d1}-{d2}&limit=200")
+                    except Exception as e:
+                        self.web_error = f"recherche web : {e}"
+                        continue
+                    evs = []
+                    for e in body.get("events", []):
+                        try:
+                            comp = e["competitions"][0]
+                            teams = {c["homeAway"]: c["team"] for c in comp["competitors"]}
+                            evs.append({"id": e["id"], "date": e["date"],
+                                        "home": teams["home"].get("displayName", ""),
+                                        "home_short": teams["home"].get("shortDisplayName", ""),
+                                        "away": teams["away"].get("displayName", ""),
+                                        "away_short": teams["away"].get("shortDisplayName", "")})
+                        except (KeyError, IndexError, TypeError):
+                            continue
+                    board[slug] = c = {"ts": time.time(), "list": evs}
+                # détail de chaque match : plus souvent quand le match approche (compos ~1 h avant)
+                for t, ev in sorted(lst, key=lambda x: x[0]):
+                    m = self._match_one(ev, c["list"])
+                    if not m:
+                        continue
+                    mins = (t - now).total_seconds() / 60
+                    ttl = 10 * 60 if mins < 120 else (45 * 60 if mins < 24 * 60 else 3 * 3600)
+                    cur = web.get(ev["id"])
+                    if cur and time.time() - cur["ts"] < ttl:
+                        continue
+                    try:
+                        j = self._web_get(f"{ESPN_BASE}/{slug}/summary?event={m['id']}")
+                    except Exception as e:
+                        self.web_error = f"recherche web : {e}"
+                        continue
+                    with self.lock:
+                        web[ev["id"]] = {"ts": time.time(), "v": self._parse_summary(j)}
+                        self._save()
+                    if on_change:
+                        on_change()
+        except Exception as e:
+            self.web_error = f"recherche web : {e}"
+        finally:
+            self.web_running = False
+            with self.lock:
+                self._save()
+            if on_change:
+                on_change()
+
+    def _parse_summary(self, j):
+        out = {"inj_home": [], "inj_away": [], "lineups": [], "news": []}
+        side_by_team = {}
+        try:
+            for c in j["header"]["competitions"][0]["competitors"]:
+                side_by_team[str(c.get("id") or c.get("team", {}).get("id"))] = c.get("homeAway")
+        except (KeyError, IndexError, TypeError):
+            pass
+        for blk in j.get("injuries") or []:
+            try:
+                side = side_by_team.get(str(blk.get("team", {}).get("id")))
+                for i in blk.get("injuries") or []:
+                    name = (i.get("athlete") or {}).get("displayName") or ""
+                    status = i.get("status") or (i.get("type") or {}).get("description") or ""
+                    reason = ((i.get("details") or {}).get("type") or i.get("longComment") or "")
+                    if name and side in ("home", "away"):
+                        out[f"inj_{side}"].append({"player": name, "type": self._inj_type(status),
+                                                   "reason": str(reason)[:60], "status": status})
+            except (AttributeError, TypeError):
+                continue
+        for r in j.get("rosters") or []:
+            try:
+                xi = [p["athlete"]["displayName"] for p in r.get("roster", []) if p.get("starter")]
+                if xi:
+                    out["lineups"].append({"team": (r.get("team") or {}).get("displayName", ""),
+                                           "formation": r.get("formation") or "", "xi": xi,
+                                           "side": r.get("homeAway")})
+            except (KeyError, TypeError):
+                continue
+        for a in ((j.get("news") or {}).get("articles") or [])[:6]:
+            try:
+                out["news"].append({"title": a.get("headline", ""), "desc": (a.get("description") or "")[:220],
+                                    "date": (a.get("published") or "")[:10],
+                                    "url": ((a.get("links") or {}).get("web") or {}).get("href", "")})
+            except (AttributeError, TypeError):
+                continue
+        return out
+
+    def _match_one(self, ev, cands):
+        try:
+            t = datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            return None
+        best, score = None, 0.0
+        for fx in cands:
+            try:
+                ft = datetime.fromisoformat(fx["date"].replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if abs((ft - t).total_seconds()) > 3 * 3600:
+                continue
+            sh = max(_sim(ev.get("home_team", ""), fx["home"]), _sim(ev.get("home_team", ""), fx.get("home_short", "")))
+            sa = max(_sim(ev.get("away_team", ""), fx["away"]), _sim(ev.get("away_team", ""), fx.get("away_short", "")))
+            if (sh + sa) / 2 > score:
+                best, score = fx, (sh + sa) / 2
+        return best if score >= 0.55 else None
+
+    def web_for(self, event_id):
+        with self.lock:
+            return ((self.data.get("web") or {}).get(event_id) or {}).get("v")
 
     def update(self, key, sports, events, on_change=None, lineup_window_min=75):
         """Récupère ce qui manque en respectant le quota (≈ 30-45 requêtes / jour). À lancer dans un thread."""
@@ -554,11 +717,33 @@ class Stats:
                     "h2h_sum": model.h2h_summary(h2h[:10], fx["home"], fx["away"]),
                     "lineups": (self.data["lineups"].get(fid) or {}).get("list") or [],
                 }
+                w = ((self.data.get("web") or {}).get(eid) or {}).get("v")
+                if w:
+                    if not inj_h and not inj_a and (w["inj_home"] or w["inj_away"]):
+                        res[eid]["inj_home"], res[eid]["inj_away"] = w["inj_home"], w["inj_away"]
+                        res[eid]["model"] = model.predict(ratings.get(lid), fx.get("home_id"), fx.get("away_id"),
+                                                          w["inj_home"], w["inj_away"])
+                    if not res[eid]["lineups"]:
+                        res[eid]["lineups"] = w["lineups"]
+                    res[eid]["news"] = w["news"]
+            # matchs sans stats (pas de clé) : on garde quand même les infos web
+            for ev in events:
+                eid = ev.get("id")
+                w = ((self.data.get("web") or {}).get(eid) or {}).get("v")
+                if eid in res or not w:
+                    continue
+                res[eid] = {"fixture_id": None, "round": "", "round_label": "", "home": ev.get("home_team", ""),
+                            "away": ev.get("away_team", ""), "form_home": None, "form_away": None,
+                            "table_home": None, "table_away": None, "inj_home": w["inj_home"],
+                            "inj_away": w["inj_away"], "model": None, "pred": None, "h2h": [], "h2h_sum": None,
+                            "lineups": w["lineups"], "news": w["news"]}
         return res
 
     def status(self):
         with self.lock:
             used = self.data["usage"]["n"] if self.data["usage"].get("day") == \
                 datetime.now(timezone.utc).strftime("%Y-%m-%d") else 0
-        return {"running": self.running, "error": self.last_error, "used_today": used,
+        return {"running": self.running or getattr(self, "web_running", False),
+                "error": self.last_error or getattr(self, "web_error", ""), "used_today": used,
+                "web_matches": len(self.data.get("web") or {}),
                 "remaining": self.remaining}

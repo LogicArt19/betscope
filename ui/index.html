@@ -400,7 +400,8 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
             <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>Par défaut betclic_fr. Tu peux en ajouter : winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr (séparés par des virgules).</small></div>
             <div class="f"><label>Bookmakers utilisés pour calculer la vraie probabilité</label><input class="in" id="c-source_books"><small>10 max = 1 crédit par marché. Garde pinnacle dedans, c'est le plus précis.</small></div>
             <div class="f"><label>Marchés</label><input class="in" id="c-markets"><small>h2h = 1N2 (victoire / nul), totals = plus/moins de buts.</small></div>
-            <label class="chk" style="margin-top:4px"><input type="checkbox" id="c-demo">Forcer le mode démo (données fictives)</label>
+            <label class="chk" style="margin-top:4px"><input type="checkbox" id="c-web_info">Recherche web automatique : absents, compos officielles, actus (ESPN, sans clé)</label>
+            <label class="chk" style="margin-top:8px"><input type="checkbox" id="c-demo">Forcer le mode démo (données fictives)</label>
           </div>
           <div class="card">
             <h3>Championnats suivis</h3>
@@ -537,13 +538,13 @@ async function openBet(b){
       <div class="card stat"><div class="l">Cote juste</div><div class="v">${fr(b.fair)}</div></div>
     </div>
     ${verdict}
-    <div id="dmatch">${b.stats?'<div class="skel" style="height:90px"></div>':'<div class="card note" style="margin-top:12px">💡 Ajoute ta clé <b>football-data.org</b> (gratuite) dans Paramètres pour voir la forme, les séries, le classement et les confrontations directes de ce match.</div>'}</div>
+    <div id="dmatch">${b.stats||b.has_info?'<div class="skel" style="height:90px"></div>':'<div class="card note" style="margin-top:12px">💡 Ajoute ta clé <b>football-data.org</b> (gratuite) dans Paramètres pour voir la forme, les séries, le classement et les confrontations directes de ce match.</div>'}</div>
     <div class="sec">Cotes de tous les bookmakers (${b.n_books})</div>
     ${b.prices.map(x=>`<div class="pr ${x.playable?'me':''}"><span>${esc(x.book)}${x.playable?' ← tu peux parier ici':''}</span><b>${fr(x.odds)}</b></div>`).join("")}`;
   $("#drawer").classList.add("on"); $("#ov").classList.add("on");
-  if (!b.stats || !b.event_id) return;
+  if (!b.event_id) return;
   const m = await api.get_match(b.event_id);
-  if (!m) { $("#dmatch").innerHTML=""; return; }
+  if (!m) { if (b.stats) $("#dmatch").innerHTML=""; return; }
   const side = (name, f, t, inj) => `<div class="card"><h4>${esc(name)}</h4>
     ${t&&t.rank?`<div class="r"><span>Classement</span><b>${t.rank}e · ${t.points} pts</b></div>`:""}
     ${f?`<div class="r"><span>Forme</span>${fbad(f.form)}</div>
@@ -564,6 +565,7 @@ async function openBet(b){
     <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:4px"><span>${esc(m.home)}</span><span>Nul</span><span>${esc(m.away)}</span></div>`:""}
     <div class="cmp">${side(m.home,m.form_home,m.table_home,m.inj_home)}${side(m.away,m.form_away,m.table_away,m.inj_away)}</div>
     ${m.h2h&&m.h2h.length?`<div class="sec">Confrontations directes${m.h2h_sum?` · ${esc(m.home)} ${m.h2h_sum.w}V ${m.h2h_sum.d}N ${m.h2h_sum.l}D · ${fr(m.h2h_sum.avg_goals,1)} buts/match`:""}</div>${m.h2h.map(h=>`<div class="pr"><span>${esc(h.date)} · ${esc(h.home)} – ${esc(h.away)}${h.comp?` <small style="color:var(--dim)">${esc(h.comp)}</small>`:""}</span><b>${h.gh} - ${h.ga}</b></div>`).join("")}`:""}
+    ${m.news&&m.news.length?`<div class="sec">📰 Dernières infos (web)</div>${m.news.map(n=>`<div class="card note" style="margin:0 0 8px;cursor:${n.url?"pointer":"default"}" ${n.url?`data-url="${esc(n.url)}"`:""}><b style="color:var(--fg)">${esc(n.title)}</b>${n.date?` <small style="color:var(--dim)">· ${esc(n.date)}</small>`:""}${n.desc?`<br>${esc(n.desc)}`:""}</div>`).join("")}`:""}
     ${m.pred&&m.pred.advice?`<div class="sec">Avis API-Football</div><div class="card note" style="margin:0">${esc(m.pred.advice)}</div>`:""}
     ${m.lineups&&m.lineups.length?`<div class="sec">Compositions officielles</div>${m.lineups.map(l=>`<div class="card note" style="margin:0 0 8px"><b style="color:var(--fg)">${esc(l.team)}</b> · ${esc(l.formation)}<br>${l.xi.map(esc).join(", ")}</div>`).join("")}`:""}`;
 }
@@ -663,6 +665,7 @@ async function loadCfg(){
   cfg = await api.get_config();
   TXT.concat(NUMS).forEach(k => { const el=$("#c-"+k); if (el) el.value = NUMS.includes(k) ? String(cfg[k]).replace(".", ",") : cfg[k]; });
   $("#c-demo").checked = !!cfg.demo;
+  $("#c-web_info").checked = cfg.web_info !== false;
   $("#c-leagues").innerHTML = cfg._sports.map(s=>`<label class="chk"><input type="checkbox" value="${s.key}" ${cfg.sports.includes(s.key)?"checked":""}>${esc(s.label)}</label>`).join("");
   $$("#c-leagues input").forEach(i=>i.onchange=est);
   est();
@@ -671,6 +674,7 @@ function readCfg(){
   const o = {};
   TXT.concat(NUMS).forEach(k => o[k] = $("#c-"+k).value);
   o.demo = $("#c-demo").checked;
+  o.web_info = $("#c-web_info").checked;
   o.sports = $$("#c-leagues input:checked").map(i=>i.value);
   return o;
 }
@@ -685,6 +689,7 @@ async function est(){
 $("#c-save").onclick = async () => { const r = await api.save_config(readCfg()); toast(r.ok ? "✓ Paramètres enregistrés" : r.error); };
 
 /* ----- mise à jour, statut ----- */
+document.addEventListener("click", e => { const u=e.target.closest("[data-url]"); if(u && api) api.open_url(u.dataset.url); });
 document.addEventListener("click", async e => { const d=e.target.closest("[data-day]"); if(d){ $$("#days .chip").forEach(c=>c.classList.toggle("on",c===d)); await api.set_day(d.dataset.day); poll(); } });
 $("#btn-ref").onclick = async () => { await api.refresh(); toast("Actualisation des cotes…"); poll(); };
 $("#btn-upd").onclick = async () => { toast("Recherche de mises à jour…"); const r = await api.check_updates(); if (!r.update) toast(`✓ Tu as la dernière version (${r.version})`); poll(); };

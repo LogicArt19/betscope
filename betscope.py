@@ -36,7 +36,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -91,6 +91,7 @@ DEFAULT_CONFIG = {
     "football_key": "",      # clé API-Football (payante pour la saison en cours : blessés, compos)
     "stats_weight": 0.25,    # part du modèle forme/stats dans la proba finale (0 = cotes seules)
     "day_filter": "all",
+    "web_info": True,        # recherche web automatique (ESPN) : absents, compos, actus
 }
 
 # Bookmakers dont les cotes reflètent le mieux la vraie probabilité
@@ -1188,6 +1189,7 @@ class Api:
         self._info = {}
         self._stats_dirty = False
         self._next_stats = time.time() + 5
+        self._next_web = time.time() + 8
         self._days = []
         cache = load_cache()
         if cache and cache.get("events") and self._cfg["api_key"] and not self._cfg["demo"]:
@@ -1209,6 +1211,16 @@ class Api:
                 last_an = now
                 self._stats_dirty = False
                 self._reanalyze()
+            if now >= self._next_web and self._cfg.get("web_info", True) and self._events and not self._is_demo:
+                self._next_web = now + 5 * 60
+                with self._lock:
+                    sports, events = sports_list(self._cfg), list(self._events)
+
+                def web_job():
+                    def changed():
+                        self._stats_dirty = True
+                    self._stats.update_web(sports, events, on_change=changed)
+                threading.Thread(target=web_job, daemon=True).start()
             if now >= self._next_stats and self._stats_key() and self._events \
                     and not self._is_demo and not self._stats.running:
                 self._next_stats = now + 20 * 60
@@ -1244,6 +1256,7 @@ class Api:
                 if not demo:
                     save_cache(events, self._quota)
                     self._next_stats = now + 2
+                    self._next_web = now + 4
             self._next_refresh = now + (15 if demo else float(cfg["refresh_minutes"])) * 60
             self._fetching = False
             self._reanalyze()
@@ -1270,8 +1283,8 @@ class Api:
         with self._lock:
             try:
                 cfg = self._cfg
-                has_key = bool(self._stats_key()) and not self._is_demo
-                self._info = self._stats.info_for(self._events) if has_key else {}
+                use = (bool(self._stats_key()) or cfg.get("web_info", True)) and not self._is_demo
+                self._info = self._stats.info_for(self._events) if use else {}
                 self._days = day_options(self._events, self._info)
                 events = filter_events(self._events, cfg.get("day_filter", "all"), self._info)
                 present = {bk.get("key") for ev in self._events for bk in ev.get("bookmakers", [])}

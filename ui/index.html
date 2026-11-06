@@ -393,6 +393,8 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
             <div class="k" style="font-weight:650">Je veux gagner au moins</div>
             <div class="money"><input id="g-target" value="200" inputmode="decimal"><span>€</span></div>
             <div class="need" id="g-need"></div>
+            <div class="k" style="font-weight:650">Nombre de matchs par ticket</div>
+            <div style="display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted)">min <input class="in lgmin" inputmode="numeric" placeholder="1" style="width:64px"> max <input class="in lgmax" inputmode="numeric" placeholder="auto" style="width:72px"><span style="font-size:11.5px">(vide = automatique, 10 max)</span></div>
             <div class="k" style="font-weight:650">Types de paris</div>
             <div class="chips tsel"><button class="chip on" data-cat="1n2">Résultat 1N2</button><button class="chip on" data-cat="dc">Double chance</button><button class="chip on" data-cat="dnb">Remboursé si nul</button><button class="chip on" data-cat="total">Nombre de buts</button><button class="chip on" data-cat="team">Buts par équipe</button><button class="chip on" data-cat="btts">Les 2 marquent</button><button class="chip on" data-cat="hcp">Handicap</button><button class="chip on" data-cat="exact">Score exact</button><button class="chip on" data-cat="mtft">Mi-temps/Fin</button><button class="chip on" data-cat="scorer">Buteurs</button><button class="chip on" data-cat="decisive">Joueurs décisifs</button></div>
             <div style="display:flex;gap:8px"><button class="link" data-allcat="1" style="font-size:12px;color:var(--green2)">Tout cocher</button><button class="link" data-allcat="0" style="font-size:12px;color:var(--muted)">Tout décocher</button></div>
@@ -409,7 +411,9 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
               <button data-m="equilibre" class="on"><b>⚖️ Équilibré</b><small>3 simples + 1 combiné de 2 matchs</small></button>
               <button data-m="agressif"><b>🔥 Agressif</b><small>Gros combinés, gains plus gros, plus risqué</small></button>
             </div>
-<div class="k" style="font-weight:650">Types de paris</div>
+<div class="k" style="font-weight:650">Nombre de matchs par ticket</div>
+            <div style="display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted)">min <input class="in lgmin" inputmode="numeric" placeholder="1" style="width:64px"> max <input class="in lgmax" inputmode="numeric" placeholder="auto" style="width:72px"><span style="font-size:11.5px">(vide = automatique, 10 max)</span></div>
+            <div class="k" style="font-weight:650">Types de paris</div>
             <div class="chips tsel"><button class="chip on" data-cat="1n2">Résultat 1N2</button><button class="chip on" data-cat="dc">Double chance</button><button class="chip on" data-cat="dnb">Remboursé si nul</button><button class="chip on" data-cat="total">Nombre de buts</button><button class="chip on" data-cat="team">Buts par équipe</button><button class="chip on" data-cat="btts">Les 2 marquent</button><button class="chip on" data-cat="hcp">Handicap</button><button class="chip on" data-cat="exact">Score exact</button><button class="chip on" data-cat="mtft">Mi-temps/Fin</button><button class="chip on" data-cat="scorer">Buteurs</button><button class="chip on" data-cat="decisive">Joueurs décisifs</button></div>
             <div style="display:flex;gap:8px"><button class="link" data-allcat="1" style="font-size:12px;color:var(--green2)">Tout cocher</button><button class="link" data-allcat="0" style="font-size:12px;color:var(--muted)">Tout décocher</button></div>
             <button class="btn primary" id="b-go" style="justify-content:center;padding:13px">Trouver le meilleur plan</button>
@@ -666,7 +670,7 @@ $("#q-amount").onkeydown = e => { if (e.key==="Enter") $("#q-go").click(); };
 async function makePlan(){
   if (!api) return;
   $("#plan").innerHTML = '<div class="skel" style="height:120px"></div>';
-  const p = await api.compute_plan($("#b-amount").value, mode, selTypes());
+  const p = await api.compute_plan($("#b-amount").value, mode, selTypes(), ...legsOf("#v-split"));
   lastPlan = p;
   if (p.error) { $("#plan").innerHTML = emptyBox(esc(p.error), "Entre un montant, par exemple 10."); return; }
   if (!p.items || !p.items.length) { $("#plan").innerHTML = noData(); return; }
@@ -717,6 +721,7 @@ document.addEventListener("click", e => {
   const a = e.target.closest("[data-allcat]");
   if (a) $$(".tsel .chip").forEach(x=>x.classList.toggle("on", a.dataset.allcat==="1"));
 });
+const legsOf = id => { const r=$(id); return [r.querySelector(".lgmin").value||null, r.querySelector(".lgmax").value||null]; };
 const selTypes = () => { const t=[...new Set($$(".tsel .chip.on").map(x=>x.dataset.cat))]; return t.length===11?null:t; };
 
 /* ----- objectif ----- */
@@ -736,7 +741,7 @@ $("#g-go").onclick = makeGoal;
 async function makeGoal(){
   if (!api) return;
   $("#goal").innerHTML = '<div class="skel" style="height:140px"></div>';
-  const r = await api.compute_objective($("#g-stake").value, $("#g-target").value, selTypes());
+  const r = await api.compute_objective($("#g-stake").value, $("#g-target").value, selTypes(), ...legsOf("#v-goal"));
   if (r.error) { $("#goal").innerHTML = emptyBox(esc(r.error), ""); return; }
   if (!r.options.length) {
     $("#goal").innerHTML = data.picks.length ? emptyBox("Objectif impossible avec les matchs actuels",

@@ -37,7 +37,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.8.2"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -892,11 +892,14 @@ def most_probable(selections, cfg, limit=60):
     return pr[:limit]
 
 
-def build_combos(pool, cfg, max_legs=3, min_prob=0.15, limit=40, pool_size=14):
+def build_combos(pool, cfg, max_legs=3, min_prob=0.15, limit=40, pool_size=14, min_legs=2):
     """Combinés de 2..max_legs sélections, matchs différents, au MÊME bookmaker."""
+    max_legs = max(2, min(8, max_legs))
+    if max_legs > 4:
+        pool_size = min(pool_size, 12)
     pool = sorted(pool, key=lambda b: rank_key(b, cfg), reverse=True)[:pool_size]
     combos = []
-    for k in range(2, max_legs + 1):
+    for k in range(max(2, min_legs), max_legs + 1):
         for legs in itertools.combinations(pool, k):
             if len({l["event_id"] for l in legs}) < k:
                 continue
@@ -991,9 +994,13 @@ def stake_plan(budget, mode, selections, cfg, sims=20000, seed=None):
     if rules["n_combos"]:
         cpool = candidates(selections, cfg, max(0.30, rules["min_p"] - 0.05))
         fresh = [s for s in cpool if s["event_id"] not in seen]
-        found = build_combos(fresh, cfg, rules["legs"], rules["combo_p"], limit=rules["n_combos"])
+        legs_max = int(cfg.get("_max_legs") or rules["legs"])
+        legs_min = int(cfg.get("_min_legs") or 2)
+        found = build_combos(fresh, cfg, legs_max, rules["combo_p"] if legs_max <= 3 else 0.02,
+                             limit=rules["n_combos"], min_legs=legs_min)
         if not found:
-            found = build_combos(cpool, cfg, rules["legs"], rules["combo_p"], limit=rules["n_combos"])
+            found = build_combos(cpool, cfg, legs_max, rules["combo_p"] if legs_max <= 3 else 0.02,
+                                 limit=rules["n_combos"], min_legs=legs_min)
         for c in found:
             combos.append(dict(c, _w=_weight(c["p"], c["ev"])))
 
@@ -1094,12 +1101,12 @@ def _trust(s):
     return t
 
 
-def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None, min_leg_p=0.0):
+def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None, min_leg_p=0.0, min_legs=1):
     """Le ticket (simple ou combiné) qui atteint la cote demandée avec la plus grande proba."""
     best = None
     lim = min(max_legs, legs_limit or max_legs)
     by_odds = sorted(o for _, o in items)[::-1]
-    for k in range(1, lim + 1):
+    for k in range(max(1, min_legs), lim + 1):
         top = 1.0
         for o in by_odds[:k]:
             top *= o
@@ -1131,6 +1138,10 @@ def objective_plan(stake, target, selections, cfg):
     """Propose plusieurs façons d'atteindre l'objectif de gain, de la plus sûre à la plus risquée."""
     total_needed = stake + target
     need1 = total_needed / stake
+    lmin = max(1, int(cfg.get("_min_legs") or 1))
+    lmax = max(lmin, min(10, int(cfg.get("_max_legs") or 6)))
+    pool = 22 if lmax <= 6 else (18 if lmax <= 8 else 15)
+    bt = lambda its, need, **kw: best_ticket(its, need, **dict(dict(max_legs=lmax, min_legs=lmin), **kw))
     books = set()
     allowed = {b.strip().lower() for b in cfg.get("bookmakers", "").split(",") if b.strip()}
     for s in selections:
@@ -1149,19 +1160,24 @@ def objective_plan(stake, target, selections, cfg):
                         "tickets": tickets, "p_hit": 1 - miss})
 
     for book in books:
-        items = _book_items(selections, cfg, book)
+        items = _book_items(selections, cfg, book, pool_size=pool)
         if not items:
             continue
         btitle = items[0][0]["playable"][book][1]
         # 1 ticket : le plus sûr
-        t = best_ticket(items, need1)
+        t = bt(items, need1)
+        if t and len(t["legs"]) >= 3:  # à proba quasi égale, on préfère moins de matchs
+            tl = bt(items, need1, legs_limit=len(t["legs"]) - 1)
+            if tl and tl["p"] >= t["p"] * 0.99:
+                tl["_fewer"] = True
+                t = tl
         if t:
             t["stake"] = stake
             add("one", "1 ticket · le plus de chances au total",
                 f"La meilleure probabilité globale pour une cote ≥ {need1:.2f}".replace(".", ","), [t], btitle)
         # 1 ticket : que des favoris (chaque sélection très probable), quitte à mettre plus de matchs
-        fav = _book_items(selections, cfg, book, pool_size=16, min_p=0.62, by_prob=True)
-        tf = best_ticket(fav, need1, max_legs=10, min_leg_p=0.62)
+        fav = _book_items(selections, cfg, book, pool_size=min(16, pool), min_p=0.62, by_prob=True)
+        tf = bt(fav, need1, max_legs=max(lmax, min(10, lmax + 4)) if not cfg.get("_max_legs") else lmax, min_leg_p=0.62)
         if tf:
             tf["stake"] = stake
             add("fav", "1 ticket · que des favoris",
@@ -1169,13 +1185,15 @@ def objective_plan(stake, target, selections, cfg):
         if t:
             # moins de matchs (si le plus sûr en a 3+)
             if len(t["legs"]) >= 3:
-                t2 = best_ticket(items, need1, legs_limit=len(t["legs"]) - 1)
+                t2 = bt(items, need1, legs_limit=len(t["legs"]) - 1)
+                if t2 and t2["p"] >= t["p"]:
+                    t2 = None  # déjà meilleur avec moins de matchs : inutile de le proposer 2 fois
                 if t2:
                     t2["stake"] = stake
                     add("few", "1 ticket · moins de matchs", "Moins de sélections, cote plus élevée par match",
                         [t2], btitle)
         # 1 ticket : gros gain (objectif x2)
-        t3 = best_ticket(items, (stake + 2 * target) / stake)
+        t3 = bt(items, (stake + 2 * target) / stake)
         if t3:
             t3["stake"] = stake
             add("big", "1 ticket · objectif x2", f"Pour viser {2 * target:.0f} € de gain".replace(".", ","),
@@ -1186,7 +1204,7 @@ def objective_plan(stake, target, selections, cfg):
             need = total_needed / st
             used, tickets = set(), []
             for _ in range(n):
-                tk = best_ticket(_book_items(selections, cfg, book, exclude_events=used), need)
+                tk = bt(_book_items(selections, cfg, book, exclude_events=used, pool_size=pool), need)
                 if not tk:
                     tickets = []
                     break
@@ -1406,6 +1424,14 @@ def day_options(events, info):
 def resource_path(rel):
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, rel)
+
+
+def _int_or_none(v):
+    try:
+        v = int(float(str(v).replace(",", ".")))
+        return max(1, min(10, v))
+    except (TypeError, ValueError):
+        return None
 
 
 class Api:
@@ -1677,7 +1703,7 @@ class Api:
             threading.Thread(target=self._do_refresh, daemon=True).start()
         return True
 
-    def compute_plan(self, budget, mode, types=None):
+    def compute_plan(self, budget, mode, types=None, min_legs=None, max_legs=None):
         try:
             budget = float(str(budget).replace(",", ".").replace("€", "").strip())
         except ValueError:
@@ -1690,9 +1716,10 @@ class Api:
             cfg["bookmakers"] = ""
         if types:
             cfg["_types"] = set(types)
+        cfg["_min_legs"], cfg["_max_legs"] = _int_or_none(min_legs), _int_or_none(max_legs)
         return ser_plan(stake_plan(budget, mode, sel, cfg), cfg)
 
-    def compute_objective(self, stake, target, types=None):
+    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None):
         try:
             stake = float(str(stake).replace(",", ".").replace("€", "").strip())
             target = float(str(target).replace(",", ".").replace("€", "").strip())
@@ -1706,6 +1733,9 @@ class Api:
             cfg["bookmakers"] = ""
         if types:
             cfg["_types"] = set(types)
+        cfg["_min_legs"], cfg["_max_legs"] = _int_or_none(min_legs), _int_or_none(max_legs)
+        if cfg["_min_legs"] and cfg["_max_legs"] and cfg["_min_legs"] > cfg["_max_legs"]:
+            cfg["_min_legs"], cfg["_max_legs"] = cfg["_max_legs"], cfg["_min_legs"]
         return ser_objective(objective_plan(stake, target, sel, cfg), cfg)
 
     def reset_settings(self):

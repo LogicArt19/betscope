@@ -38,7 +38,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.9.1"
+APP_VERSION = "1.9.2"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -1815,6 +1815,12 @@ class Api:
             save_config(self._cfg)
         self._reanalyze()
         return True
+
+    def get_bet(self, uid):
+        """Fiche complète d'une sélection (pour un clic sur une ligne de ticket)."""
+        with self._lock:
+            x = next((s for s in self._sel if s["uid"] == uid), None)
+            return ser_bet(x, self._cfg) if x else None
 
     def get_match(self, event_id):
         with self._lock:

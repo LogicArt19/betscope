@@ -234,6 +234,20 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
 .verdict.ok{background:rgba(34,197,94,.12);color:#bbf7d0}
 .verdict.ko{background:rgba(239,68,68,.1);color:#fecaca}
 
+.nt{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+.nt td,.nt th{white-space:nowrap;padding:7px 8px;text-align:center;border-bottom:1px solid var(--line)}
+.nt th{color:var(--dim);font-weight:600;font-size:11px}
+.nt td:first-child,.nt th:first-child{text-align:left;color:var(--muted)}
+.nt tr.fin td{color:var(--green2);font-weight:700}
+.nt td b{color:var(--fg)}
+.srcs div{display:flex;gap:8px;font-size:12.5px;padding:5px 0;border-bottom:1px solid #1d2330}
+.srcs .d{margin-left:auto;color:var(--dim);text-align:right}
+.rel{height:8px;border-radius:8px;background:var(--line);overflow:hidden;margin-top:6px}
+.rel i{display:block;height:100%}
+.adv{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.adv .card{padding:10px 12px;font-size:12.5px;line-height:1.5}
+.adv h4{font-size:13px;margin-bottom:4px}
+
 /* ---------- settings ---------- */
 .set{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .set .card{padding:20px}
@@ -609,8 +623,26 @@ async function openBet(b){
     <div class="l5">${f.last.map(g=>`<span>${fbad(g.res)} ${g.home?"vs":"à"} ${esc(g.opp)} <b style="color:var(--fg)">${g.score}</b> · ${g.date}</span>`).join("")}</div>`:'<div class="r">Pas encore de résultats</div>'}
     ${inj&&inj.length?`<div class="inj">🚑 ${inj.map(i=>`${esc(i.player)}${/question/i.test(i.type)?" (incertain)":""}`).join(", ")}</div>`:""}
   </div>`;
-  const md = m.model;
-  $("#dmatch").innerHTML = `
+  const md = m.model, nv = m.neutral || {};
+  const relc = nv.reliability>=70?"#22c55e":nv.reliability>=45?"#f59e0b":"#ef4444";
+  const best = (nv.rows||[]).length ? (r=>r.p.indexOf(Math.max(...r.p)))(nv.rows[nv.rows.length-1]) : -1;
+  const neutral = `
+    <div class="sec">Analyse neutre du match</div>
+    <div class="card" style="padding:12px 14px">
+      <div style="display:flex;justify-content:space-between;font-size:12.5px"><span>Fiabilité de l'analyse</span><b style="color:${relc}">${nv.reliability||"–"}/100</b></div>
+      <div class="rel"><i style="width:${nv.reliability||0}%;background:${relc}"></i></div>
+      ${(nv.rows||[]).length?`<table class="nt"><tr><th>Source</th>${nv.labels.map(l=>`<th>${esc(l)}</th>`).join("")}</tr>
+        ${nv.rows.map(r=>`<tr class="${r.final?"fin":""}"><td>${esc(r.src)}</td>${r.p.map((x,i)=>`<td>${i===best&&r.final?"<b>":""}${pc(x)}${i===best&&r.final?"</b>":""}</td>`).join("")}</tr>`).join("")}</table>`:""}
+    </div>
+    <div class="adv" style="margin-top:10px">
+      <div class="card"><h4>Pour ${esc(nv.labels?nv.labels[0]:m.home)}</h4>${(nv.adv_home||[]).map(x=>`<div>✔ ${esc(x)}</div>`).join("")||'<div style="color:var(--dim)">Pas d\'argument fort</div>'}</div>
+      <div class="card"><h4>Pour ${esc(nv.labels?nv.labels[2]:m.away)}</h4>${(nv.adv_away||[]).map(x=>`<div>✔ ${esc(x)}</div>`).join("")||'<div style="color:var(--dim)">Pas d\'argument fort</div>'}</div>
+    </div>
+    <div class="sec">Ce qui pourrait faire mentir l'analyse</div>
+    ${(nv.risks||[]).map(x=>`<div class="verdict ko" style="margin-top:6px">⚠ ${esc(x)}</div>`).join("")}
+    <div class="sec">Sources consultées</div>
+    <div class="card srcs" style="padding:8px 14px">${(m.sources||[]).map(x=>`<div><span>${x.ok?"✅":"⬜"}</span><span>${esc(x.name)}</span><span class="d">${esc(x.detail||"")}</span></div>`).join("")||'<div>Aucune source externe (mode démo ou recherche web désactivée)</div>'}</div>`;
+  $("#dmatch").innerHTML = neutral + `
     ${md?`<div class="sec">Modèle forme · buts attendus ${fr(md.xg_home,1)} – ${fr(md.xg_away,1)}</div>
     <div class="pbar"><span style="width:${md.home*100}%;background:#34d399">${pc(md.home)}</span><span style="width:${md.draw*100}%;background:#94a3b8">${pc(md.draw)}</span><span style="width:${md.away*100}%;background:#60a5fa">${pc(md.away)}</span></div>
     <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:4px"><span>${esc(m.home)}</span><span>Nul</span><span>${esc(m.away)}</span></div>`:""}

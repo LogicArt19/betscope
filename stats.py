@@ -450,6 +450,47 @@ class Stats:
                                            "side": r.get("homeAway")})
             except (KeyError, TypeError):
                 continue
+        # forme récente, face-à-face et classement (ESPN, sans clé)
+        out["form"] = {}
+        for blk in ((j.get("boxscore") or {}).get("form") or []):
+            try:
+                side = side_by_team.get(str((blk.get("team") or {}).get("id")))
+                games = []
+                for e in blk.get("events") or []:
+                    g = self._espn_game(e)
+                    if g:
+                        games.append(g)
+                if side in ("home", "away") and games:
+                    out["form"][side] = games
+            except (AttributeError, TypeError):
+                continue
+        out["h2h"] = []
+        for blk in (j.get("headToHeadGames") or [])[:1]:
+            try:
+                tname = (blk.get("team") or {}).get("displayName", "")
+                for e in blk.get("events") or []:
+                    g = self._espn_game(e)
+                    if g:
+                        out["h2h"].append({"date": g["date"], "home": tname if g["home"] else g["opp"],
+                                           "away": g["opp"] if g["home"] else tname,
+                                           "gh": g["gf"] if g["home"] else g["ga"], "ga": g["ga"] if g["home"] else g["gf"],
+                                           "comp": e.get("leagueName") or e.get("leagueAbbreviation") or ""})
+            except (AttributeError, TypeError):
+                continue
+        out["table"] = {}
+        try:
+            groups = (j.get("standings") or {}).get("groups") or []
+            for gr in groups:
+                for ent in ((gr.get("standings") or {}).get("entries") or []):
+                    tid = str(ent.get("id") or (ent.get("team") or {}).get("id") or "")
+                    side = side_by_team.get(tid)
+                    if not side:
+                        continue
+                    st = {x.get("name") or x.get("type"): x.get("value") for x in ent.get("stats") or []}
+                    out["table"][side] = {"rank": int(st.get("rank") or 0) or None,
+                                          "points": int(st.get("points") or 0)}
+        except (AttributeError, TypeError, ValueError):
+            pass
         for a in ((j.get("news") or {}).get("articles") or [])[:6]:
             try:
                 out["news"].append({"title": a.get("headline", ""), "desc": (a.get("description") or "")[:220],
@@ -458,6 +499,25 @@ class Stats:
             except (AttributeError, TypeError):
                 continue
         return out
+
+    @staticmethod
+    def _espn_game(e):
+        res = str(e.get("gameResult") or "").upper()[:1]
+        if res not in ("W", "D", "L"):
+            return None
+        nums = [int(x) for x in re.findall(r"\d+", str(e.get("score") or ""))[:2]]
+        if len(nums) < 2:
+            hs, as_ = e.get("homeTeamScore"), e.get("awayTeamScore")
+            try:
+                nums = [int(hs), int(as_)]
+            except (TypeError, ValueError):
+                return None
+        hi, lo = max(nums), min(nums)
+        gf, ga = (hi, lo) if res == "W" else ((lo, hi) if res == "L" else (nums[0], nums[1]))
+        return {"res": {"W": "V", "D": "N", "L": "D"}[res], "gf": gf, "ga": ga,
+                "opp": (e.get("opponent") or {}).get("displayName", ""),
+                "home": str(e.get("atVs") or "vs").strip().lower() != "@",
+                "date": str(e.get("gameDate") or "")[:10]}
 
     def _match_one(self, ev, cands):
         try:
@@ -769,6 +829,7 @@ class Stats:
                     if not res[eid]["lineups"]:
                         res[eid]["lineups"] = w["lineups"]
                     res[eid]["news"] = w["news"]
+                    self._fill_from_web(res[eid], w)
             # matchs sans stats (pas de clé) : on garde quand même les infos web
             for ev in events:
                 eid = ev.get("id")
@@ -780,7 +841,80 @@ class Stats:
                             "table_home": None, "table_away": None, "inj_home": w["inj_home"],
                             "inj_away": w["inj_away"], "model": None, "pred": None, "h2h": [], "h2h_sum": None,
                             "lineups": w["lineups"], "news": w["news"]}
+                self._fill_from_web(res[eid], w)
+            for eid, r in res.items():
+                r["sources"] = self._sources(eid, r)
         return res
+
+    @staticmethod
+    def _form_from_games(games):
+        if not games:
+            return None
+        games = sorted(games, key=lambda g: g["date"], reverse=True)
+        last = games[:5]
+        pts = lambda gs: sum(3 if g["res"] == "V" else (1 if g["res"] == "N" else 0) for g in gs)
+        first = games[0]["res"]
+        streak = 0
+        for g in games:
+            if g["res"] != first:
+                break
+            streak += 1
+        unbeaten = next((i for i, g in enumerate(games) if g["res"] == "D"), len(games))
+        winless = next((i for i, g in enumerate(games) if g["res"] == "V"), len(games))
+        txt = (f"{streak} victoires de suite" if first == "V" and streak >= 2 else
+               f"{streak} défaites de suite" if first == "D" and streak >= 2 else
+               f"invaincu depuis {unbeaten} matchs" if unbeaten >= 4 else
+               f"aucune victoire depuis {winless} matchs" if winless >= 4 else "")
+        rec = lambda gs: f"{sum(g['res'] == 'V' for g in gs)}V {sum(g['res'] == 'N' for g in gs)}N {sum(g['res'] == 'D' for g in gs)}D"
+        hg, ag = [g for g in games if g["home"]], [g for g in games if not g["home"]]
+        return {"last": [{"res": g["res"], "score": f"{g['gf']}-{g['ga']}", "opp": g["opp"], "home": g["home"],
+                          "date": g["date"][8:10] + "/" + g["date"][5:7]} for g in last],
+                "form": "".join(g["res"] for g in last), "ppg5": round(pts(last) / len(last), 2),
+                "ppg": round(pts(games) / len(games), 2), "gf5": sum(g["gf"] for g in last),
+                "ga5": sum(g["ga"] for g in last), "wins_streak": streak if first == "V" else 0,
+                "loss_streak": streak if first == "D" else 0, "unbeaten": unbeaten, "winless": winless,
+                "streak_txt": txt, "played": len(games), "home_rec": rec(hg), "away_rec": rec(ag),
+                "home_ppg": round(pts(hg) / len(hg), 2) if hg else None,
+                "away_ppg": round(pts(ag) / len(ag), 2) if ag else None, "rest_days": None,
+                "over25": round(sum(g["gf"] + g["ga"] > 2.5 for g in last) / len(last), 2),
+                "btts": round(sum(g["gf"] > 0 and g["ga"] > 0 for g in last) / len(last), 2),
+                "scored_in": round(sum(g["gf"] > 0 for g in last) / len(last), 2), "src": "ESPN"}
+
+    def _fill_from_web(self, r, w):
+        f = w.get("form") or {}
+        if not r.get("form_home") and f.get("home"):
+            r["form_home"] = self._form_from_games(f["home"])
+        if not r.get("form_away") and f.get("away"):
+            r["form_away"] = self._form_from_games(f["away"])
+        if not r.get("h2h") and w.get("h2h"):
+            r["h2h"] = w["h2h"][:10]
+            r["h2h_sum"] = model.h2h_summary(r["h2h"], r["home"], r["away"])
+        t = w.get("table") or {}
+        if not r.get("table_home") and t.get("home"):
+            r["table_home"] = t["home"]
+        if not r.get("table_away") and t.get("away"):
+            r["table_away"] = t["away"]
+
+    def _sources(self, eid, r):
+        """Ce qui a été consulté pour ce match (affiché tel quel, pour la transparence)."""
+        web = (self.data.get("web") or {}).get(eid)
+        when = lambda ts: datetime.fromtimestamp(ts).strftime("%d/%m %H:%M") if ts else ""
+        fsrc = (r.get("form_home") or {}).get("src") or ("football-data.org" if r.get("form_home") else "")
+        n_inj = len(r.get("inj_home") or []) + len(r.get("inj_away") or [])
+        return [
+            {"name": "Forme récente des 2 équipes", "ok": bool(r.get("form_home") and r.get("form_away")),
+             "detail": fsrc or "introuvable"},
+            {"name": "Modèle de buts (saison complète)", "ok": bool(r.get("model")),
+             "detail": "football-data.org" if r.get("model") else "nécessite la clé football-data.org"},
+            {"name": "Classement", "ok": bool(r.get("table_home") and r.get("table_away")), "detail": ""},
+            {"name": "Confrontations directes", "ok": bool(r.get("h2h")), "detail": f"{len(r.get('h2h') or [])} matchs"},
+            {"name": "Absents (blessés / suspendus)", "ok": web is not None,
+             "detail": (f"{n_inj} signalé{'s' if n_inj > 1 else ''}" if web else "pas encore vérifié") +
+                       (f" · ESPN {when(web['ts'])}" if web else "")},
+            {"name": "Compositions officielles", "ok": bool(r.get("lineups")),
+             "detail": "publiées" if r.get("lineups") else "pas encore publiées (~1 h avant le match)"},
+            {"name": "Actualités du match", "ok": bool(r.get("news")), "detail": f"{len(r.get('news') or [])} article(s)"},
+        ]
 
     def status(self):
         with self.lock:

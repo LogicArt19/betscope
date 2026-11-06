@@ -37,7 +37,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.8.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -556,6 +556,9 @@ def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
         elif d <= -0.03:
             cons.append(txt)
         score += 120 * d
+    # objectivité : moins on a de données, plus l'avis reste neutre
+    cov = sum(bool(x) for x in (fh, fa, st.get("model"), th and ta, st.get("h2h_sum"), st.get("sources") is not None))
+    score *= 0.35 + 0.65 * cov / 6
     mdl = st.get("model")
     contra = bool(p_model is not None and p_model < p_market - 0.07) or \
         any(c.startswith("⚠") for c in cons) and score < -6
@@ -563,6 +566,89 @@ def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
             "cons": [c for c in cons if c], "score": score, "contra": contra,
             "xg": [round(mdl["xg_home"], 2), round(mdl["xg_away"], 2)] if mdl else None,
             "form_home": (fh or {}).get("form", ""), "form_away": (fa or {}).get("form", "")}
+
+
+def form_proxy(st, side, mkey, name, point):
+    """Proba approximative à partir de la forme récente (et du face-à-face) quand il n'y a pas de modèle."""
+    fh, fa = st.get("form_home"), st.get("form_away")
+    if not (fh and fa):
+        return None
+    if mkey == "h2h" and side:
+        a, b = fh["ppg5"] + 0.4, fa["ppg5"] + 0.1
+        d = 0.27
+        probs = {"home": (1 - d) * a / (a + b), "draw": d, "away": (1 - d) * b / (a + b)}
+        hs = st.get("h2h_sum")
+        if hs and hs["n"] >= 3:
+            n = hs["n"] + 3
+            hp = {"home": (hs["w"] + 1) / n, "draw": (hs["d"] + 1) / n, "away": (hs["l"] + 1) / n}
+            probs = {k: 0.8 * probs[k] + 0.2 * hp[k] for k in probs}
+        return probs[side]
+    if mkey == "totals" and point is not None and abs(float(point) - 2.5) < 0.01:
+        o = (fh["over25"] + fa["over25"]) / 2
+        o = 0.5 + 0.6 * (o - 0.5)  # 5 matchs : on reste prudent
+        return o if name == "Over" else 1 - o
+    return None
+
+
+def neutral_view(st, sel):
+    """Analyse objective du match : chaque source séparément, arguments des 2 équipes, fiabilité, risques."""
+    h2h = {x["selection"]: x for x in sel if x.get("cat") == "1n2" and not x.get("estimated")}
+    home = st.get("home") or ""
+    away = st.get("away") or ""
+    if sel and not home:
+        home, away = sel[0]["match"].split(" - ", 1) if " - " in sel[0]["match"] else (sel[0]["match"], "")
+    def trio(key):
+        try:
+            return [h2h[f"Victoire {home_o}"][key], h2h["Match nul"][key], h2h[f"Victoire {away_o}"][key]]
+        except KeyError:
+            return None
+    # noms côté cotes (peuvent différer des noms des stats)
+    names = [k[len("Victoire "):] for k in h2h if k.startswith("Victoire ")]
+    m_home = sel[0]["match"].split(" - ")[0] if sel else home
+    home_o = m_home
+    away_o = next((n for n in names if n != home_o), away)
+    rows = []
+    mk_ = trio("p_market")
+    if mk_:
+        rows.append({"src": "Marché (Pinnacle + 9 bookmakers)", "p": mk_})
+    mdl = st.get("model")
+    if mdl:
+        rows.append({"src": "Modèle forme (saison, récent pondéré)", "p": [mdl["home"], mdl["draw"], mdl["away"]]})
+    fh, fa = st.get("form_home"), st.get("form_away")
+    if fh and fa:
+        # forme pure : points par match sur les 5 derniers -> répartition simple
+        a, b = fh["ppg5"] + 0.4, fa["ppg5"] + 0.1
+        d = 0.27
+        rows.append({"src": "Forme des 5 derniers matchs", "p": [(1 - d) * a / (a + b), d, (1 - d) * b / (a + b)]})
+    hs = st.get("h2h_sum")
+    if hs and hs["n"] >= 3:
+        n = hs["n"] + 3
+        rows.append({"src": f"Confrontations directes ({hs['n']})",
+                     "p": [(hs["w"] + 1) / n, (hs["d"] + 1) / n, (hs["l"] + 1) / n]})
+    fin = trio("p")
+    if fin:
+        rows.append({"src": "BetScope (final)", "p": fin, "final": True})
+    # arguments neutres pour chaque équipe
+    adv_h = analyse_points(st, "home", home_o, None, "h2h", 0, None, home_o, away_o)["pros"] if st else []
+    adv_a = analyse_points(st, "away", away_o, None, "h2h", 0, None, home_o, away_o)["pros"] if st else []
+    srcs = st.get("sources") or []
+    ok = sum(1 for x in srcs if x["ok"])
+    rel = 25 + int(75 * ok / max(1, len(srcs))) if srcs else 25
+    risks = []
+    if mk_ and mdl and abs(mk_[0] - mdl["home"]) > 0.12:
+        risks.append("Le marché et la forme ne sont pas d'accord : match plus incertain que d'habitude")
+        rel -= 10
+    if not st.get("lineups"):
+        risks.append("Compos pas encore connues : un titulaire absent peut tout changer")
+    if not (fh and fa):
+        risks.append("Forme récente indisponible pour au moins une équipe")
+    if fh and fh.get("played", 0) < 6 or fa and fa.get("played", 0) < 6:
+        risks.append("Peu de matchs joués cette saison : stats moins fiables")
+    if mk_ and max(mk_) < 0.45:
+        risks.append("Aucun favori net : les 3 issues restent possibles")
+    risks.append("Le football reste imprévisible : même à 70 %, un pari perd 3 fois sur 10")
+    return {"rows": rows, "labels": [home_o, "Nul", away_o], "adv_home": adv_h, "adv_away": adv_a,
+            "reliability": max(10, min(100, rel)), "risks": risks}
 
 
 def analyze(events, cfg, now=None, info=None):
@@ -641,8 +727,13 @@ def analyze(events, cfg, now=None, info=None):
                     elif mkey == "totals" and a["point"] is not None:
                         po = modelmod.p_over(mdl, float(a["point"]))
                         p_model = po if a["name"] == "Over" else (1 - po if po is not None else None)
-                if p_model is not None and 0 < w_stats <= 0.6:
-                    p = (1 - w_stats) * p_market + w_stats * p_model
+                w_eff = w_stats
+                if p_model is None and st:
+                    # pas de modèle saison (pas de clé) : on utilise quand même la forme récente + face-à-face
+                    p_model = form_proxy(st, side, mkey, a["name"], a["point"])
+                    w_eff = w_stats * 0.6
+                if p_model is not None and 0 < w_eff <= 0.6:
+                    p = (1 - w_eff) * p_market + w_eff * p_model
                 stat_sum = analyse_points(st, side, a["name"], a["point"], mkey, p_market, p_model, home, away) \
                     if st else None
                 playable = {k: v for k, v in a["prices"].items()
@@ -1548,6 +1639,11 @@ class Api:
     def get_match(self, event_id):
         with self._lock:
             st = self._info.get(event_id)
+            sel = [x for x in self._sel if x["event_id"] == event_id]
+        if not st and not sel:
+            return None
+        st = dict(st or {})
+        st["neutral"] = neutral_view(st, sel)
         return st
 
     def refresh(self):

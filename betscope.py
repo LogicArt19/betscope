@@ -18,6 +18,7 @@ il est simplement rentable en moyenne sur un grand nombre de paris.
 """
 
 import itertools
+import math
 import json
 import os
 import queue
@@ -37,7 +38,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.8.2"
+APP_VERSION = "1.9.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -432,6 +433,17 @@ def selection_label(mkey, name, point, home, away, sport_key):
     return f"{name} {point if point is not None else ''}".strip()
 
 
+def data_quality(st):
+    """0..1 : part des données disponibles pour ce match (forme x2, modèle, classement, face-à-face, absents vérifiés)."""
+    if not st:
+        return 0.0
+    fh, fa = st.get("form_home"), st.get("form_away")
+    th, ta = st.get("table_home"), st.get("table_away")
+    web_ok = any(x.get("ok") for x in (st.get("sources") or []) if x.get("name", "").startswith("Absents"))
+    items = (fh, fa, st.get("model") or (fh and fa), th and ta, st.get("h2h_sum"), web_ok)
+    return sum(bool(x) for x in items) / len(items)
+
+
 def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
     """Points pour / contre lisibles + score de confiance pour une sélection."""
     pros, cons = [], []
@@ -562,7 +574,8 @@ def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
     mdl = st.get("model")
     contra = bool(p_model is not None and p_model < p_market - 0.07) or \
         any(c.startswith("⚠") for c in cons) and score < -6
-    return {"round": st.get("round_label", ""), "p_model": p_model, "pros": [p for p in pros if p],
+    return {"q": round(data_quality(st), 2), "round": st.get("round_label", ""), "p_model": p_model,
+            "pros": [p for p in pros if p],
             "cons": [c for c in cons if c], "score": score, "contra": contra,
             "xg": [round(mdl["xg_home"], 2), round(mdl["xg_away"], 2)] if mdl else None,
             "form_home": (fh or {}).get("form", ""), "form_away": (fa or {}).get("form", "")}
@@ -814,9 +827,23 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
         p_market = rows_m.get(key, (None, None, None, p))[3]
         odds, min_odds = mk.estimated_odds(cat, p_market)
         ev_ = p * odds - 1
+        dstat, conf = None, 50
+        if st:
+            q = data_quality(st)
+            d = p - p_market  # ce que la forme / les stats ajoutent ou retirent au marché
+            conf = int(max(1, min(99, round(50 + 250 * d * (0.35 + 0.65 * q)))))
+            fh_, fa_ = st.get("form_home") or {}, st.get("form_away") or {}
+            pros_, cons_ = [], []
+            if d >= 0.02:
+                pros_.append(f"Forme et stats : {p * 100:.0f} % contre {p_market * 100:.0f} % pour le marché")
+            elif d <= -0.02:
+                cons_.append(f"Forme et stats : {p * 100:.0f} % contre {p_market * 100:.0f} % pour le marché")
+            dstat = {"q": round(q, 2), "round": st.get("round_label", ""), "p_model": p, "pros": pros_,
+                     "cons": cons_, "score": conf - 50, "contra": d <= -0.05, "xg": None,
+                     "form_home": fh_.get("form", ""), "form_away": fa_.get("form", "")}
         out.append({
             "cat": cat, "estimated": True, "min_odds": min_odds,
-            "p_market": p_market, "stats": None, "conf": 50,
+            "p_market": p_market, "stats": dstat, "conf": conf,
             "uid": f"{eid}|x|{key}", "event_id": eid, "match": match,
             "sport": SPORTS.get(sport_key, ev.get("sport_title", sport_key)), "start": start,
             "market": market, "selection": sel, "p": p, "fair": 1 / p, "odds": odds,
@@ -846,10 +873,29 @@ def is_value(b, cfg):
     return b["ev"] >= float(cfg["min_ev"]) and not b["suspect"] and not b.get("estimated")
 
 
+def objective_ok(s, cfg):
+    """Critères d'objectivité choisis par l'utilisateur (mode « Priorité à l'objectivité »)."""
+    o = cfg.get("_obj")
+    if not o or not o.get("on"):
+        return True
+    st = s.get("stats") or {}
+    if s["p"] < float(o.get("min_p", 0.55)):
+        return False
+    if st.get("contra"):
+        return False
+    if s.get("conf", 50) < float(o.get("min_conf", 50)):
+        return False
+    if o.get("need_data", True) and st.get("q", 0) < 0.5:
+        return False
+    if o.get("no_est") and s.get("estimated"):
+        return False
+    return True
+
+
 def candidates(selections, cfg, min_p=0.0):
     lo, hi = float(cfg["min_odds"]), float(cfg["max_odds"])
     types = cfg.get("_types")
-    return [s for s in selections if (not types or s.get("cat") in types)
+    return [s for s in selections if (not types or s.get("cat") in types) and objective_ok(s, cfg)
             and lo <= s["odds"] <= hi and not s["suspect"] and s["p"] >= min_p
             and (s.get("estimated") or s["ev"] >= WORST_EV)]
 
@@ -1067,7 +1113,7 @@ def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.
         types = cfg.get("_types")
         if types and s.get("cat") not in types:
             continue
-        if s["suspect"] or s["event_id"] in exclude_events or book not in s["playable"]:
+        if s["suspect"] or s["event_id"] in exclude_events or book not in s["playable"] or not objective_ok(s, cfg):
             continue
         o = s["playable"][book][0]
         if o < lo or s["p"] < min_p or (s["ev"] < WORST_EV and not s.get("estimated")):
@@ -1077,15 +1123,7 @@ def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.
         items.sort(key=lambda it: it[0]["p"] * _trust(it[0]), reverse=True)
     else:
         items.sort(key=lambda it: it[0]["p"] * it[1] * _trust(it[0]), reverse=True)
-    per_event, out = {}, []
-    for s, o in items:
-        if per_event.get(s["event_id"], 0) >= 2:
-            continue
-        per_event[s["event_id"]] = per_event.get(s["event_id"], 0) + 1
-        out.append((s, o))
-        if len(out) >= pool_size:
-            break
-    return out
+    return items  # tout est gardé : la recherche passe en revue chaque sélection de chaque match
 
 
 def _trust(s):
@@ -1102,39 +1140,90 @@ def _trust(s):
 
 
 def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None, min_leg_p=0.0, min_legs=1):
-    """Le ticket (simple ou combiné) qui atteint la cote demandée avec la plus grande proba."""
-    best = None
+    """Recherche exhaustive (programmation dynamique) sur TOUTES les sélections de TOUS les matchs :
+    le ticket (1 sélection max par match) qui atteint la cote demandée avec la meilleure probabilité
+    (pondérée par la fiabilité de l'analyse)."""
     lim = min(max_legs, legs_limit or max_legs)
-    by_odds = sorted(o for _, o in items)[::-1]
+    if lim < 1 or need_odds <= 1:
+        return None
+    L = math.log(need_odds)
+    B = 160
+    step = L / B
+    by_ev = {}
+    for s, o in items:
+        if o <= 1.0 or (min_leg_p and s["p"] < min_leg_p):
+            continue
+        by_ev.setdefault(s["event_id"], []).append((s, o, math.log(max(1e-9, s["p"] * _trust(s))), math.log(o)))
+    events = []
+    for ev, opts in by_ev.items():
+        # on ne garde que les options non dominées (pas une autre avec meilleure cote ET meilleure proba)
+        opts.sort(key=lambda x: (-x[3], -x[2]))
+        front, best_sc = [], -1e18
+        for x in opts:
+            if x[2] > best_sc + 1e-12:
+                front.append(x)
+                best_sc = x[2]
+        events.append(front[:14])
+    dp = [dict() for _ in range(lim + 1)]
+    dp[0][0] = (0.0, None)
+    for opts in events:
+        for k in range(lim - 1, -1, -1):
+            if not dp[k]:
+                continue
+            nxt = dp[k + 1]
+            for bkt, (sc, path) in list(dp[k].items()):
+                for x in opts:
+                    nb = min(B, bkt + int(x[3] / step))
+                    nsc = sc + x[2]
+                    cur = nxt.get(nb)
+                    if cur is None or nsc > cur[0]:
+                        nxt[nb] = (nsc, (x, path))
+    best = None
     for k in range(max(1, min_legs), lim + 1):
-        top = 1.0
-        for o in by_odds[:k]:
-            top *= o
-        if top < need_odds:
-            continue  # impossible d'atteindre la cote avec k sélections
-        for combo in itertools.combinations(items, k):
-            if len({s["event_id"] for s, _ in combo}) < k:
-                continue
-            o = 1.0
-            for _, x in combo:
-                o *= x
-            if o < need_odds or (max_odds and o > max_odds):
-                continue
-            if min_leg_p and any(s["p"] < min_leg_p for s, _ in combo):
-                continue
-            p = sc = 1.0
-            for s, _ in combo:
-                p *= s["p"]
-                sc *= s["p"] * _trust(s)
-            if best is None or sc > best[0] + 1e-12 or (abs(sc - best[0]) < 1e-12 and o > best[1]):
-                best = (sc, o, combo, p)
+        cur = dp[k].get(B)
+        if cur and (best is None or cur[0] > best[0] + 1e-12):
+            best = cur
     if not best:
         return None
-    _, o, combo, p = best
-    return {"legs": [s for s, _ in combo], "leg_odds": [x for _, x in combo], "odds": o, "p": p, "ev": p * o - 1}
+    legs, node = [], best[1]
+    while node:
+        legs.append(node[0])
+        node = node[1]
+    legs.reverse()
+    o = math.prod(x[1] for x in legs)
+    if max_odds and o > max_odds:
+        return None
+    p = math.prod(x[0]["p"] for x in legs)
+    return {"legs": [x[0] for x in legs], "leg_odds": [x[1] for x in legs], "odds": o, "p": p, "ev": p * o - 1}
 
 
 def objective_plan(stake, target, selections, cfg):
+    res = _objective_plan(stake, target, selections, cfg)
+    o = cfg.get("_obj") or {}
+    res["strict"] = bool(o.get("on"))
+    if o.get("on"):
+        # ce qui est atteignable en restant objectif
+        ok = [s for s in selections if objective_ok(s, cfg) and not s["suspect"]]
+        res["n_ok"] = len(ok)
+        best = {}
+        for s in ok:
+            if s["event_id"] not in best or s["odds"] > best[s["event_id"]]["odds"]:
+                best[s["event_id"]] = s
+        mx = 1.0
+        lmax = int(cfg.get("_max_legs") or 10)
+        for s in sorted(best.values(), key=lambda x: -x["odds"])[:lmax]:
+            mx *= s["odds"]
+        res["strict_max_gain"] = round(stake * (mx - 1), 2) if best else 0
+        if not res["options"]:
+            relaxed = dict(cfg, _obj=None)
+            r2 = _objective_plan(stake, target, selections, relaxed)
+            for op in r2["options"]:
+                op["relaxed"] = True
+            res["relaxed_options"] = r2["options"][:3]
+    return res
+
+
+def _objective_plan(stake, target, selections, cfg):
     """Propose plusieurs façons d'atteindre l'objectif de gain, de la plus sûre à la plus risquée."""
     total_needed = stake + target
     need1 = total_needed / stake
@@ -1282,9 +1371,9 @@ def ser_combo(c):
 
 
 def ser_objective(res, cfg):
-    out = {k: res[k] for k in ("stake", "target", "need_odds", "max_odds")}
+    out = {k: res.get(k) for k in ("stake", "target", "need_odds", "max_odds", "strict", "n_ok", "strict_max_gain")}
     out["options"] = []
-    for o in res["options"]:
+    for o in res["options"] + res.get("relaxed_options", []):
         tickets = []
         for t in o["tickets"]:
             tickets.append({
@@ -1292,11 +1381,13 @@ def ser_objective(res, cfg):
                 "ret": round(t["stake"] * t["odds"], 2),
                 "value": t["ev"] >= float(cfg["min_ev"]),
                 "legs": [{"uid": l["uid"], "selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
+                          "conf": l.get("conf"), "q": (l.get("stats") or {}).get("q"),
                           "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
                           "min_odds": l.get("min_odds"), "market": l["market"]}
                          for l, lo in zip(t["legs"], t["leg_odds"])],
             })
-        out["options"].append({"kind": o["kind"], "title": o["title"], "desc": o["desc"], "book": o["book"],
+        out["options"].append({"relaxed": bool(o.get("relaxed")), "kind": o["kind"], "title": o["title"],
+                               "desc": o["desc"], "book": o["book"],
                                "p_hit": round(o["p_hit"], 4), "tickets": tickets})
     return out
 
@@ -1424,6 +1515,17 @@ def day_options(events, info):
 def resource_path(rel):
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, rel)
+
+
+def _obj_opts(o):
+    if not isinstance(o, dict):
+        return None
+    try:
+        return {"on": bool(o.get("on")), "min_p": float(str(o.get("min_p", 55)).replace(",", ".")) / 100,
+                "min_conf": float(str(o.get("min_conf", 50)).replace(",", ".")),
+                "need_data": bool(o.get("need_data", True)), "no_est": bool(o.get("no_est"))}
+    except ValueError:
+        return None
 
 
 def _int_or_none(v):
@@ -1703,7 +1805,7 @@ class Api:
             threading.Thread(target=self._do_refresh, daemon=True).start()
         return True
 
-    def compute_plan(self, budget, mode, types=None, min_legs=None, max_legs=None):
+    def compute_plan(self, budget, mode, types=None, min_legs=None, max_legs=None, obj=None):
         try:
             budget = float(str(budget).replace(",", ".").replace("€", "").strip())
         except ValueError:
@@ -1717,9 +1819,10 @@ class Api:
         if types:
             cfg["_types"] = set(types)
         cfg["_min_legs"], cfg["_max_legs"] = _int_or_none(min_legs), _int_or_none(max_legs)
+        cfg["_obj"] = _obj_opts(obj)
         return ser_plan(stake_plan(budget, mode, sel, cfg), cfg)
 
-    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None):
+    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None):
         try:
             stake = float(str(stake).replace(",", ".").replace("€", "").strip())
             target = float(str(target).replace(",", ".").replace("€", "").strip())
@@ -1734,6 +1837,7 @@ class Api:
         if types:
             cfg["_types"] = set(types)
         cfg["_min_legs"], cfg["_max_legs"] = _int_or_none(min_legs), _int_or_none(max_legs)
+        cfg["_obj"] = _obj_opts(obj)
         if cfg["_min_legs"] and cfg["_max_legs"] and cfg["_min_legs"] > cfg["_max_legs"]:
             cfg["_min_legs"], cfg["_max_legs"] = cfg["_max_legs"], cfg["_min_legs"]
         return ser_objective(objective_plan(stake, target, sel, cfg), cfg)

@@ -393,6 +393,16 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
             <div class="k" style="font-weight:650">Je veux gagner au moins</div>
             <div class="money"><input id="g-target" value="200" inputmode="decimal"><span>€</span></div>
             <div class="need" id="g-need"></div>
+            <div class="objp card" style="padding:12px 14px;background:var(--bg2)">
+              <label class="chk" style="background:none;border:0;padding:0"><input type="checkbox" class="o-on" checked><b>Priorité à l'objectivité</b></label>
+              <div style="font-size:11.5px;color:var(--dim);margin:4px 0 8px">Les favoris, la forme, les stats, les absents et l'historique passent avant l'objectif d'argent.</div>
+              <div class="nums">
+                <div class="f" style="margin:0"><label>Proba mini / sélection</label><div style="display:flex;align-items:center;gap:6px"><input class="in o-minp" value="55" style="width:70px"> %</div></div>
+                <div class="f" style="margin:0"><label>Confiance mini analyse</label><div style="display:flex;align-items:center;gap:6px"><input class="in o-conf" value="50" style="width:70px"> /100</div></div>
+              </div>
+              <label class="chk" style="background:none;border:0;padding:6px 0 0"><input type="checkbox" class="o-data" checked>Exiger des données (forme, classement, absents vérifiés)</label>
+              <label class="chk" style="background:none;border:0;padding:4px 0 0"><input type="checkbox" class="o-est">Éviter les cotes estimées (≈)</label>
+            </div>
             <div class="k" style="font-weight:650">Nombre de matchs par ticket</div>
             <div style="display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted)">min <input class="in lgmin" inputmode="numeric" placeholder="1" style="width:64px"> max <input class="in lgmax" inputmode="numeric" placeholder="auto" style="width:72px"><span style="font-size:11.5px">(vide = automatique, 10 max)</span></div>
             <div class="k" style="font-weight:650">Types de paris</div>
@@ -411,7 +421,17 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
               <button data-m="equilibre" class="on"><b>⚖️ Équilibré</b><small>3 simples + 1 combiné de 2 matchs</small></button>
               <button data-m="agressif"><b>🔥 Agressif</b><small>Gros combinés, gains plus gros, plus risqué</small></button>
             </div>
-<div class="k" style="font-weight:650">Nombre de matchs par ticket</div>
+<div class="objp card" style="padding:12px 14px;background:var(--bg2)">
+              <label class="chk" style="background:none;border:0;padding:0"><input type="checkbox" class="o-on" checked><b>Priorité à l'objectivité</b></label>
+              <div style="font-size:11.5px;color:var(--dim);margin:4px 0 8px">Les favoris, la forme, les stats, les absents et l'historique passent avant l'objectif d'argent.</div>
+              <div class="nums">
+                <div class="f" style="margin:0"><label>Proba mini / sélection</label><div style="display:flex;align-items:center;gap:6px"><input class="in o-minp" value="55" style="width:70px"> %</div></div>
+                <div class="f" style="margin:0"><label>Confiance mini analyse</label><div style="display:flex;align-items:center;gap:6px"><input class="in o-conf" value="50" style="width:70px"> /100</div></div>
+              </div>
+              <label class="chk" style="background:none;border:0;padding:6px 0 0"><input type="checkbox" class="o-data" checked>Exiger des données (forme, classement, absents vérifiés)</label>
+              <label class="chk" style="background:none;border:0;padding:4px 0 0"><input type="checkbox" class="o-est">Éviter les cotes estimées (≈)</label>
+            </div>
+            <div class="k" style="font-weight:650">Nombre de matchs par ticket</div>
             <div style="display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted)">min <input class="in lgmin" inputmode="numeric" placeholder="1" style="width:64px"> max <input class="in lgmax" inputmode="numeric" placeholder="auto" style="width:72px"><span style="font-size:11.5px">(vide = automatique, 10 max)</span></div>
             <div class="k" style="font-weight:650">Types de paris</div>
             <div class="chips tsel"><button class="chip on" data-cat="1n2">Résultat 1N2</button><button class="chip on" data-cat="dc">Double chance</button><button class="chip on" data-cat="dnb">Remboursé si nul</button><button class="chip on" data-cat="total">Nombre de buts</button><button class="chip on" data-cat="team">Buts par équipe</button><button class="chip on" data-cat="btts">Les 2 marquent</button><button class="chip on" data-cat="hcp">Handicap</button><button class="chip on" data-cat="exact">Score exact</button><button class="chip on" data-cat="mtft">Mi-temps/Fin</button><button class="chip on" data-cat="scorer">Buteurs</button><button class="chip on" data-cat="decisive">Joueurs décisifs</button></div>
@@ -670,7 +690,7 @@ $("#q-amount").onkeydown = e => { if (e.key==="Enter") $("#q-go").click(); };
 async function makePlan(){
   if (!api) return;
   $("#plan").innerHTML = '<div class="skel" style="height:120px"></div>';
-  const p = await api.compute_plan($("#b-amount").value, mode, selTypes(), ...legsOf("#v-split"));
+  const p = await api.compute_plan($("#b-amount").value, mode, selTypes(), ...legsOf("#v-split"), objOf("#v-split"));
   lastPlan = p;
   if (p.error) { $("#plan").innerHTML = emptyBox(esc(p.error), "Entre un montant, par exemple 10."); return; }
   if (!p.items || !p.items.length) { $("#plan").innerHTML = noData(); return; }
@@ -721,6 +741,7 @@ document.addEventListener("click", e => {
   const a = e.target.closest("[data-allcat]");
   if (a) $$(".tsel .chip").forEach(x=>x.classList.toggle("on", a.dataset.allcat==="1"));
 });
+const objOf = id => { const r=$(id); return {on:r.querySelector(".o-on").checked, min_p:r.querySelector(".o-minp").value, min_conf:r.querySelector(".o-conf").value, need_data:r.querySelector(".o-data").checked, no_est:r.querySelector(".o-est").checked}; };
 const legsOf = id => { const r=$(id); return [r.querySelector(".lgmin").value||null, r.querySelector(".lgmax").value||null]; };
 const selTypes = () => { const t=[...new Set($$(".tsel .chip.on").map(x=>x.dataset.cat))]; return t.length===11?null:t; };
 
@@ -741,15 +762,19 @@ $("#g-go").onclick = makeGoal;
 async function makeGoal(){
   if (!api) return;
   $("#goal").innerHTML = '<div class="skel" style="height:140px"></div>';
-  const r = await api.compute_objective($("#g-stake").value, $("#g-target").value, selTypes(), ...legsOf("#v-goal"));
+  const r = await api.compute_objective($("#g-stake").value, $("#g-target").value, selTypes(), ...legsOf("#v-goal"), objOf("#v-goal"));
   if (r.error) { $("#goal").innerHTML = emptyBox(esc(r.error), ""); return; }
   if (!r.options.length) {
     $("#goal").innerHTML = data.picks.length ? emptyBox("Objectif impossible avec les matchs actuels",
       `Il faudrait une cote de ${fr(r.need_odds)}, mais la plus grosse cote possible en ce moment est ${fr(r.max_odds)}. Baisse ton objectif, augmente ta mise, ou coche plus de championnats.`) : noData();
     return;
   }
-  const best = r.options[0];
-  $("#goal").innerHTML = `
+  const strictOpts = r.options.filter(o=>!o.relaxed);
+  const best = strictOpts[0] || r.options[0];
+  const strictNote = r.strict ? (strictOpts.length
+      ? `<div class="banner upd" style="margin:0 0 12px">🧭 Mode objectivité : seulement des sélections qui respectent tes critères (${r.n_ok} trouvées sur tous les matchs).</div>`
+      : `<div class="banner warn" style="margin:0 0 12px">🧭 Impossible d'atteindre +${eur(r.target)} en restant objectif : seules ${r.n_ok||0} sélections respectent tes critères, et le gain maximum objectif en ce moment est d'environ <b>+${eur(r.strict_max_gain||0)}</b>. Ci-dessous, les options hors critères, à tes risques.</div>`) : "";
+  $("#goal").innerHTML = strictNote + `
     <div class="sumst" style="grid-template-columns:repeat(3,1fr)">
       <div class="card stat"><div class="l">Cote nécessaire</div><div class="v">${fr(r.need_odds)}</div><div class="h">pour ${eur(r.stake)} → +${eur(r.target)}</div></div>
       <div class="card stat"><div class="l">Meilleure chance d'y arriver</div><div class="v" style="color:var(--green2)">${pc(best.p_hit, best.p_hit<0.1?1:0)}</div><div class="h">${esc(best.title)}</div></div>
@@ -757,7 +782,7 @@ async function makeGoal(){
     </div>
     <div class="list">${r.options.map((o,i)=>`
       <div class="card opt ${i===0?"best":""}">
-        <div class="hd"><div class="rank">${i+1}</div><div><b>${esc(o.title)}${i===0?' <span class="tag v" style="margin-left:6px">MEILLEURE OPTION</span>':''}</b><small>${esc(o.desc)} · ${esc(o.book)}</small></div><div class="sp"></div>
+        <div class="hd"><div class="rank">${i+1}</div><div><b>${esc(o.title)}${o.relaxed?' <span class="tag w" style="margin-left:6px">⚠ HORS CRITÈRES</span>':(i===0?' <span class="tag v" style="margin-left:6px">MEILLEURE OPTION</span>':'')}</b><small>${esc(o.desc)} · ${esc(o.book)}</small></div><div class="sp"></div>
           <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances d'atteindre l'objectif</small></div></div>
         ${o.tickets.map((t,j)=>`<div class="tk">
           <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise ${eur(t.stake)}</span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><span>·</span><span>${pc(t.p,1)} de chances</span><div class="sp"></div>${t.value?`<span class="tag v">VALUE ${sg(t.ev)}</span>`:`<span class="tag n">Sans value ${sg(t.ev)}</span>`}</div>

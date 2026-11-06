@@ -198,6 +198,34 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
 .tk .ft{display:flex;justify-content:space-between;margin-top:8px;font-size:13px}
 .tk .ft b{color:var(--green2)}
 
+/* ---------- jours + analyse ---------- */
+.days{display:flex;gap:8px;padding:14px 28px 0;overflow-x:auto;flex:none}
+.days::-webkit-scrollbar{height:0}
+.days .chip{white-space:nowrap;display:flex;gap:7px;align-items:center}
+.days .chip i{font-style:normal;font-size:11px;background:var(--card2);border-radius:20px;padding:0 7px;color:var(--muted)}
+.days .chip.on i{background:var(--green);color:#04220f}
+.fb{display:inline-flex;gap:2px;vertical-align:middle}
+.fb b{width:16px;height:16px;border-radius:4px;font-size:9.5px;display:grid;place-items:center;color:#0a0c11;font-weight:800}
+.fb .V{background:#22c55e}.fb .N{background:#94a3b8}.fb .D{background:#ef4444}
+.bet .mini{display:flex;gap:6px;align-items:center;margin-top:4px;font-size:11px;color:var(--dim);flex-wrap:wrap}
+.conf{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;background:#1d2330;color:var(--muted)}
+.conf.hi{background:rgba(34,197,94,.15);color:var(--green2)}
+.conf.lo{background:rgba(239,68,68,.13);color:#fca5a5}
+.vd{display:flex;flex-direction:column;gap:6px;margin:14px 0}
+.vd div{padding:8px 11px;border-radius:9px;font-size:13px;line-height:1.4}
+.vd .p{background:rgba(34,197,94,.08);color:#bbf7d0}
+.vd .c{background:rgba(239,68,68,.08);color:#fecaca}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.cmp .card{padding:12px}
+.cmp h4{font-size:13.5px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp .r{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:3px 0}
+.cmp .r b{color:var(--fg);font-weight:600}
+.l5{display:flex;flex-direction:column;gap:3px;margin-top:6px;font-size:11.5px;color:var(--muted)}
+.inj{font-size:12px;color:#fecaca;margin-top:6px;line-height:1.5}
+.sec{font-weight:650;margin:18px 0 8px;font-size:13.5px}
+.pbar{display:flex;height:26px;border-radius:8px;overflow:hidden;font-size:11px;font-weight:700}
+.pbar span{display:grid;place-items:center;color:#0a0c11}
+
 /* ---------- settings ---------- */
 .set{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .set .card{padding:20px}
@@ -262,6 +290,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
       <button class="btn primary" id="btn-ref"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>Actualiser</button>
     </div>
     <div id="banners"></div>
+    <div class="days" id="days"></div>
 
     <div class="content" id="content">
       <!-- ACCUEIL -->
@@ -363,6 +392,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
           <div class="card">
             <h3>Connexion aux cotes</h3>
             <div class="f"><label>Clé API The Odds API</label><input class="in" id="c-api_key" type="password" autocomplete="off"><small>Gratuite sur the-odds-api.com. Sans clé, l'appli tourne en mode démo avec des matchs fictifs.</small></div>
+            <div class="f"><label>Clé API-Football (analyse complète)</label><input class="in" id="c-football_key" type="password" autocomplete="off"><small>Gratuite sur dashboard.api-football.com (100 requêtes/jour, l'appli en utilise ~40). Donne la forme, les séries, le classement, les blessés/suspendus, les compos, les confrontations et le numéro de journée.</small></div>
             <div class="f"><label>Mise à jour automatique toutes les (minutes)</label><input class="in" id="c-refresh_minutes"></div>
             <div class="est" id="c-est"></div>
             <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>Par défaut betclic_fr. Tu peux en ajouter : winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr (séparés par des virgules).</small></div>
@@ -383,6 +413,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
               <div class="f"><label>Mise mini (€)</label><input class="in" id="c-min_stake"></div>
               <div class="f"><label>Sélections max / combiné</label><input class="in" id="c-max_legs"></div>
               <div class="f"><label>Nb bookmakers mini</label><input class="in" id="c-min_books"></div>
+              <div class="f"><label>Poids de l'analyse forme</label><input class="in" id="c-stats_weight"><small>0,25 = 25 % modèle forme + 75 % marché</small></div>
             </div>
             <button class="btn primary" id="c-save" style="margin-top:6px">Enregistrer</button>
           </div>
@@ -421,7 +452,7 @@ function tag(b){
 function betRow(b){
   return `<div class="card bet" data-uid="${esc(b.uid)}">
     <div class="d">${esc(b.date)}</div>
-    <div class="mt"><b>${esc(b.match)}</b><small>${esc(b.sport)}</small></div>
+    <div class="mt"><b>${esc(b.match)}</b><small>${esc(b.sport)}${b.stats&&b.stats.round?" · "+esc(b.stats.round):""}</small>${mini(b)}</div>
     <div class="s">${esc(b.selection)}<small>${esc(b.market)} · ${esc(b.book)}</small></div>
     <div class="prob">${pc(b.p)} de chances<div class="t"><i style="width:${Math.round(b.p*100)}%"></i></div></div>
     <div class="odds">${fr(b.odds)}<small>juste ${fr(b.fair)}</small></div>
@@ -433,6 +464,12 @@ function comboCard(c){
     ${c.legs.map((l,i)=>`<div class="leg"><div class="n">${i+1}</div><div class="x"><b>${esc(l.selection)}</b><small>${esc(l.match)} · ${esc(l.date)}</small></div><div class="o">${fr(l.odds)}</div></div>`).join("")}
     <div class="ft"><div class="tot"><span>Cote totale</span><b>${fr(c.odds)}</b></div><div><span>Chances que tout passe</span><b>${pc(c.p)}</b></div><div><span>Pour 10 €</span><b>${eur(10*c.odds)}</b></div></div>
   </div>`;
+}
+const fbad = f => f ? `<span class="fb">${[...f].map(c=>`<b class="${c}">${c}</b>`).join("")}</span>` : "";
+function confTag(b){ if (b.conf==null || !b.stats) return ""; const c=b.conf; return `<span class="conf ${c>=60?"hi":c<40?"lo":""}" title="Indice de confiance (forme, classement, absents, modèle)">${c}/100</span>`; }
+function mini(b){
+  const st=b.stats; if(!st) return "";
+  return `<div class="mini">${fbad(st.form_home)}<span>·</span>${fbad(st.form_away)} ${confTag(b)} ${st.contra?'<span class="conf lo">⚠ contre la forme</span>':""}</div>`;
 }
 const emptyBox = (t, s) => `<div class="card empty"><b>${t}</b>${s}</div>`;
 
@@ -479,22 +516,48 @@ document.addEventListener("click", e => {
   const b = [...data.picks, ...data.probable, ...(lastPlan?lastPlan.items:[])].find(x => x.uid === uid);
   if (b) openBet(b);
 });
-function openBet(b){
+async function openBet(b){
+  const st=b.stats;
+  const verdict = st ? `<div class="sec">Analyse ${confTag(b)}</div><div class="vd">${st.pros.map(x=>`<div class="p">✔ ${esc(x)}</div>`).join("")}${st.cons.map(x=>`<div class="c">✖ ${esc(x)}</div>`).join("")}${!st.pros.length&&!st.cons.length?'<div class="p" style="color:var(--muted);background:var(--card)">Pas de signal fort pour ou contre ce pari.</div>':""}</div>` : "";
   $("#dbody").innerHTML = `
     <div class="tag ${b.value?'v':'n'}" style="display:inline-block">${b.value?'VALUE '+sg(b.ev):'Sans value '+sg(b.ev)}</div>
     <h3>${esc(b.selection)}</h3>
-    <div style="color:var(--muted)">${esc(b.match)} · ${esc(b.sport)} · ${esc(b.date)}</div>
-    <div class="stats" style="grid-template-columns:1fr 1fr;margin:18px 0">
+    <div style="color:var(--muted)">${esc(b.match)} · ${esc(b.sport)}${st&&st.round?" · "+esc(st.round):""} · ${esc(b.date)}</div>
+    <div class="stats" style="grid-template-columns:1fr 1fr 1fr;margin:16px 0 4px">
       <div class="card stat"><div class="l">Cote ${esc(b.book)}</div><div class="v" style="color:var(--green2)">${fr(b.odds)}</div></div>
-      <div class="card stat"><div class="l">Cote juste</div><div class="v">${fr(b.fair)}</div><div class="h">vraie proba ${pc(b.p,1)}</div></div>
+      <div class="card stat"><div class="l">Proba finale</div><div class="v">${pc(b.p)}</div><div class="h">marché ${pc(b.p_market)}${st&&st.p_model!=null?" · modèle "+pc(st.p_model):""}</div></div>
+      <div class="card stat"><div class="l">Cote juste</div><div class="v">${fr(b.fair)}</div></div>
     </div>
-    <p style="color:var(--muted);font-size:13px;line-height:1.55;margin-bottom:16px">${b.value
-      ? `La cote ${esc(b.book)} (${fr(b.odds)}) est plus haute que la cote juste (${fr(b.fair)}) : sur 100 paris comme celui-là, tu gagnerais en moyenne ${fr(b.ev*100,1)} € pour 100 € misés.`
-      : `La cote ${esc(b.book)} est un peu sous la cote juste : c'est la marge du bookmaker. Sur la durée ce type de pari perd en moyenne ${fr(-b.ev*100,1)} € pour 100 € misés.`}
-      ${b.suspect?'<br><b style="color:var(--amber)">⚠ Écart anormal : vérifie la cote sur le site avant de parier.</b>':''}</p>
-    <div style="font-weight:650;margin-bottom:8px">Cotes de tous les bookmakers (${b.n_books})</div>
+    ${verdict}
+    <div id="dmatch">${b.stats?'<div class="skel" style="height:90px"></div>':'<div class="card note" style="margin-top:12px">💡 Ajoute ta clé <b>API-Football</b> (gratuite) dans Paramètres pour voir la forme, le classement, les absents, les confrontations et les compos de ce match.</div>'}</div>
+    <div class="sec">Cotes de tous les bookmakers (${b.n_books})</div>
     ${b.prices.map(x=>`<div class="pr ${x.playable?'me':''}"><span>${esc(x.book)}${x.playable?' ← tu peux parier ici':''}</span><b>${fr(x.odds)}</b></div>`).join("")}`;
   $("#drawer").classList.add("on"); $("#ov").classList.add("on");
+  if (!b.stats || !b.event_id) return;
+  const m = await api.get_match(b.event_id);
+  if (!m) { $("#dmatch").innerHTML=""; return; }
+  const side = (name, f, t, inj) => `<div class="card"><h4>${esc(name)}</h4>
+    ${t&&t.rank?`<div class="r"><span>Classement</span><b>${t.rank}e · ${t.points} pts</b></div>`:""}
+    ${f?`<div class="r"><span>Forme</span>${fbad(f.form)}</div>
+    ${f.streak_txt?`<div class="r"><span>Série</span><b>${esc(f.streak_txt)}</b></div>`:""}
+    <div class="r"><span>Pts/match (5 der.)</span><b>${fr(f.ppg5)}</b></div>
+    <div class="r"><span>Buts 5 der.</span><b>${f.gf5} marqués · ${f.ga5} encaissés</b></div>
+    <div class="r"><span>À domicile</span><b>${esc(f.home_rec)}</b></div>
+    <div class="r"><span>À l'extérieur</span><b>${esc(f.away_rec)}</b></div>
+    <div class="r"><span>+2,5 buts / Les 2 marquent</span><b>${pc(f.over25)} · ${pc(f.btts)}</b></div>
+    <div class="r"><span>Dernier match</span><b>il y a ${Math.round(f.rest_days)} j</b></div>
+    <div class="l5">${f.last.map(g=>`<span>${fbad(g.res)} ${g.home?"vs":"à"} ${esc(g.opp)} <b style="color:var(--fg)">${g.score}</b> · ${g.date}</span>`).join("")}</div>`:'<div class="r">Pas encore de résultats</div>'}
+    ${inj&&inj.length?`<div class="inj">🚑 ${inj.map(i=>`${esc(i.player)}${/question/i.test(i.type)?" (incertain)":""}`).join(", ")}</div>`:'<div class="r"><span>Absents</span><b>aucun signalé</b></div>'}
+  </div>`;
+  const md = m.model;
+  $("#dmatch").innerHTML = `
+    ${md?`<div class="sec">Modèle forme · buts attendus ${fr(md.xg_home,1)} – ${fr(md.xg_away,1)}</div>
+    <div class="pbar"><span style="width:${md.home*100}%;background:#34d399">${pc(md.home)}</span><span style="width:${md.draw*100}%;background:#94a3b8">${pc(md.draw)}</span><span style="width:${md.away*100}%;background:#60a5fa">${pc(md.away)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:4px"><span>${esc(m.home)}</span><span>Nul</span><span>${esc(m.away)}</span></div>`:""}
+    <div class="cmp">${side(m.home,m.form_home,m.table_home,m.inj_home)}${side(m.away,m.form_away,m.table_away,m.inj_away)}</div>
+    ${m.h2h&&m.h2h.length?`<div class="sec">Confrontations directes${m.h2h_sum?` · ${esc(m.home)} ${m.h2h_sum.w}V ${m.h2h_sum.d}N ${m.h2h_sum.l}D · ${fr(m.h2h_sum.avg_goals,1)} buts/match`:""}</div>${m.h2h.map(h=>`<div class="pr"><span>${esc(h.date)} · ${esc(h.home)} – ${esc(h.away)}${h.comp?` <small style="color:var(--dim)">${esc(h.comp)}</small>`:""}</span><b>${h.gh} - ${h.ga}</b></div>`).join("")}`:""}
+    ${m.pred&&m.pred.advice?`<div class="sec">Avis API-Football</div><div class="card note" style="margin:0">${esc(m.pred.advice)}</div>`:""}
+    ${m.lineups&&m.lineups.length?`<div class="sec">Compositions officielles</div>${m.lineups.map(l=>`<div class="card note" style="margin:0 0 8px"><b style="color:var(--fg)">${esc(l.team)}</b> · ${esc(l.formation)}<br>${l.xi.map(esc).join(", ")}</div>`).join("")}`:`<div class="sec">Compositions</div><div style="color:var(--muted);font-size:12.5px">Publiées environ 1 h avant le match (l'appli les récupère toute seule).</div>`}`;
 }
 $("#ov").onclick = $("#dx").onclick = () => { $("#drawer").classList.remove("on"); $("#ov").classList.remove("on"); };
 
@@ -585,8 +648,8 @@ async function makeGoal(){
 }
 
 /* ----- paramètres ----- */
-const NUMS=["refresh_minutes","min_ev","max_ev","min_odds","max_odds","horizon_hours","min_stake","max_legs","min_books"];
-const TXT=["api_key","bookmakers","source_books","markets"];
+const NUMS=["stats_weight","refresh_minutes","min_ev","max_ev","min_odds","max_odds","horizon_hours","min_stake","max_legs","min_books"];
+const TXT=["football_key","api_key","bookmakers","source_books","markets"];
 async function loadCfg(){
   if (!api) return;
   cfg = await api.get_config();
@@ -614,6 +677,7 @@ async function est(){
 $("#c-save").onclick = async () => { const r = await api.save_config(readCfg()); toast(r.ok ? "✓ Paramètres enregistrés" : r.error); };
 
 /* ----- mise à jour, statut ----- */
+document.addEventListener("click", async e => { const d=e.target.closest("[data-day]"); if(d){ $$("#days .chip").forEach(c=>c.classList.toggle("on",c===d)); await api.set_day(d.dataset.day); poll(); } });
 $("#btn-ref").onclick = async () => { await api.refresh(); toast("Actualisation des cotes…"); poll(); };
 $("#btn-upd").onclick = async () => { toast("Recherche de mises à jour…"); const r = await api.check_updates(); if (!r.update) toast(`✓ Tu as la dernière version (${r.version})`); poll(); };
 document.addEventListener("click", async e => { if (e.target.closest("#do-upd")) { await api.install_update(); poll(); } });
@@ -638,15 +702,20 @@ function renderStatus(){
     b += `<div class="banner upd"><span>🚀 <b>Nouvelle version ${esc(status.update.version)} disponible</b> (tu as la ${esc(status.version)})${err?` — échec : ${esc(err)}`:""}</span><div class="sp"></div>${dl ? `<span>Téléchargement…</span><div class="bar"><i style="width:${Math.round(status.dl_progress*100)}%"></i></div>` : `<button class="btn primary" id="do-upd">Mettre à jour</button>`}</div>`;
   }
   if (status.demo && !status.has_key) b += `<div class="banner warn">ℹ️ Mode démo : ajoute ta clé API dans <b style="cursor:pointer;text-decoration:underline" data-goto="settings">Paramètres</b> pour avoir les vrais matchs.</div>`;
+  if (!status.demo && status.has_key && status.stats && !status.stats.enabled) b += `<div class="banner upd"><span>📊 <b>Active l'analyse complète</b> (forme, séries, classement, blessés, compos) avec une clé API-Football gratuite.</span><div class="sp"></div><button class="btn" data-goto="settings">Ajouter la clé</button></div>`;
+  if (status.stats && status.stats.error) b += `<div class="banner err">⚠ ${esc(status.stats.error)}</div>`;
   if (status.warning) b += `<div class="banner warn">ℹ️ ${esc(status.warning)}</div>`;
   if (status.errors && status.errors.length) b += `<div class="banner err">⚠ ${status.errors.map(esc).join(" · ")}</div>`;
   if ($("#banners").innerHTML !== b) $("#banners").innerHTML = b;
+  const dh = (status.days||[]).map(d=>`<button class="chip ${d.v===status.day?"on":""}" data-day="${esc(d.v)}">${esc(d.label)}<i>${d.n}</i></button>`).join("");
+  if ($("#days").innerHTML !== dh) $("#days").innerHTML = dh;
 }
 function tickClock(){
   const left = Math.max(0, Math.round((nextAt - Date.now())/1000));
   const t = status.fetching ? "en cours…" : fmtLeft(left);
   $("#s-nx").textContent = t;
-  $("#meta").innerHTML = status.fetching ? "Mise à jour des cotes…" : `Prochaine mise à jour dans <b>${t}</b>` + (status.last_fetch ? `<br>Cotes du ${esc(status.last_fetch)}` : "");
+  const sx = status.stats && status.stats.enabled ? (status.stats.running ? " · 📊 analyse en cours…" : ` · 📊 ${status.stats.matched} matchs analysés`) : "";
+  $("#meta").innerHTML = status.fetching ? "Mise à jour des cotes…" : `Prochaine mise à jour dans <b>${t}</b>` + (status.last_fetch ? `<br>Cotes du ${esc(status.last_fetch)}${sx}` : "");
 }
 async function poll(){
   try {

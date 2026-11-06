@@ -30,10 +30,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import model as modelmod
+import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -72,18 +75,21 @@ DEFAULT_CONFIG = {
     "markets": "h2h,totals",
     "refresh_minutes": 720,
     "bookmakers": "betclic_fr",   # là où tu paries
-    "cfg_version": 3,
+    "cfg_version": 4,
     "min_ev": 0.02,
     "max_ev": 0.15,
     "min_odds": 1.30,
     "max_odds": 6.00,
     "min_books": 4,
-    "horizon_hours": 72,
+    "horizon_hours": 168,
     "max_legs": 3,
     "min_combo_prob": 0.15,
     "min_stake": 0.50,
     "kelly_fraction": 0.25,
     "demo": False,
+    "football_key": "",      # clé API-Football (blessés, compos, forme, journée)
+    "stats_weight": 0.25,    # part du modèle forme/stats dans la proba finale (0 = cotes seules)
+    "day_filter": "all",
 }
 
 # Bookmakers dont les cotes reflètent le mieux la vraie probabilité
@@ -112,6 +118,9 @@ def load_config():
     if cfg.get("cfg_version", 0) < 3:  # mise à jour : on ne parie que sur Betclic
         cfg["bookmakers"] = "betclic_fr"
         cfg["cfg_version"] = 3
+    if cfg.get("cfg_version", 0) < 4:  # 1.4.0 : on regarde les 7 prochains jours
+        cfg["horizon_hours"] = max(float(cfg.get("horizon_hours", 168)), 168)
+        cfg["cfg_version"] = 4
     cfg["sports"] = [k for k in cfg.get("sports", []) if k.startswith("soccer")] or list(DEFAULT_CONFIG["sports"])
     return cfg
 
@@ -362,7 +371,140 @@ def selection_label(mkey, name, point, home, away, sport_key):
     return f"{name} {point if point is not None else ''}".strip()
 
 
-def analyze(events, cfg, now=None):
+def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
+    """Points pour / contre lisibles + score de confiance pour une sélection."""
+    pros, cons = [], []
+    score = 0.0
+    fh, fa = st.get("form_home") or {}, st.get("form_away") or {}
+    th, ta = st.get("table_home") or {}, st.get("table_away") or {}
+    ih, ia = st.get("inj_home") or [], st.get("inj_away") or []
+    out = lambda l: [i for i in l if "missing" in str(i.get("type", "")).lower()]
+
+    def form_line(team, f):
+        if not f:
+            return None
+        v = f["form"].count("V")
+        return f"{team} : {v} victoire{'s' if v > 1 else ''} sur les {len(f['form'])} derniers ({f['form']})"
+
+    if side in ("home", "away"):
+        me, opp = (home, away) if side == "home" else (away, home)
+        fm, fo = (fh, fa) if side == "home" else (fa, fh)
+        tm, to = (th, ta) if side == "home" else (ta, th)
+        im, io = (out(ih), out(ia)) if side == "home" else (out(ia), out(ih))
+        if fm:
+            d = fm["ppg5"] - (fo or {}).get("ppg5", fm["ppg5"])
+            (pros if d >= 0.4 else cons if d <= -0.4 else pros if fm["ppg5"] >= 2 else cons if fm["ppg5"] <= 1 else []).append(
+                form_line(me, fm)) if (abs(d) >= 0.4 or fm["ppg5"] >= 2 or fm["ppg5"] <= 1) else None
+            score += 8 * d
+            if fm.get("wins_streak", 0) >= 3:
+                pros.append(f"{me} : {fm['wins_streak']} victoires de suite")
+                score += 4
+            if fm.get("loss_streak", 0) >= 2:
+                cons.append(f"{me} : {fm['loss_streak']} défaites de suite")
+                score -= 5
+        if fo:
+            if fo.get("wins_streak", 0) >= 3:
+                cons.append(f"⚠ {opp} reste sur {fo['wins_streak']} victoires de suite")
+                score -= 4 + 2 * min(4, fo["wins_streak"] - 3)
+            elif fo.get("unbeaten", 0) >= 6:
+                cons.append(f"⚠ {opp} invaincu depuis {fo['unbeaten']} matchs")
+                score -= 4
+            if fo.get("loss_streak", 0) >= 2:
+                pros.append(f"{opp} : {fo['loss_streak']} défaites de suite")
+                score += 4
+            elif fo.get("winless", 0) >= 4:
+                pros.append(f"{opp} sans victoire depuis {fo['winless']} matchs")
+                score += 3
+        if tm and to and tm.get("rank") and to.get("rank"):
+            gap = to["rank"] - tm["rank"]
+            if gap >= 6:
+                pros.append(f"Classement : {me} {tm['rank']}e contre {opp} {to['rank']}e")
+            elif gap <= -6:
+                cons.append(f"Classement : {me} {tm['rank']}e contre {opp} {to['rank']}e")
+            score += max(-6, min(6, gap * 0.5))
+        # forme à domicile / à l'extérieur cette saison
+        venue_me = (fm or {}).get("home_ppg" if side == "home" else "away_ppg")
+        venue_opp = (fo or {}).get("away_ppg" if side == "home" else "home_ppg")
+        if venue_me is not None and venue_opp is not None:
+            lab_me = "à domicile" if side == "home" else "à l'extérieur"
+            lab_opp = "à l'extérieur" if side == "home" else "à domicile"
+            rec_me = fm["home_rec" if side == "home" else "away_rec"]
+            rec_opp = fo["away_rec" if side == "home" else "home_rec"]
+            d = venue_me - venue_opp
+            txt = f"{me} {lab_me} : {rec_me} · {opp} {lab_opp} : {rec_opp}"
+            if d >= 0.5:
+                pros.append(txt)
+            elif d <= -0.5:
+                cons.append(txt)
+            score += max(-6, min(6, 5 * d))
+        # fatigue : jours de repos
+        if fm and fo and fm.get("rest_days") is not None and fo.get("rest_days") is not None:
+            if fm["rest_days"] < 3.5 <= fo["rest_days"]:
+                cons.append(f"Fatigue : {me} a joué il y a {fm['rest_days']:.0f} jours, {opp} plus reposé")
+                score -= 3
+            elif fo["rest_days"] < 3.5 <= fm["rest_days"]:
+                pros.append(f"Fatigue : {opp} a joué il y a {fo['rest_days']:.0f} jours, {me} plus reposé")
+                score += 3
+        # confrontations directes
+        hs = st.get("h2h_sum")
+        if hs and hs["n"] >= 3:
+            w, l = (hs["w"], hs["l"]) if side == "home" else (hs["l"], hs["w"])
+            txt = f"Face-à-face : {me} {w}V {hs['d']}N {l}D sur les {hs['n']} derniers"
+            if w - l >= 2:
+                pros.append(txt)
+            elif l - w >= 2:
+                cons.append(txt)
+            score += max(-5, min(5, 1.5 * (w - l)))
+        if im:
+            cons.append(f"{len(im)} absent{'s' if len(im) > 1 else ''} chez {me} : " + ", ".join(i["player"] for i in im[:4]))
+            score -= min(10, 2.5 * len(im))
+        if io:
+            pros.append(f"{len(io)} absent{'s' if len(io) > 1 else ''} chez {opp} : " + ", ".join(i["player"] for i in io[:4]))
+            score += min(10, 2.5 * len(io))
+    elif side == "draw":
+        if fh and fa:
+            gap = abs(fh["ppg5"] - fa["ppg5"])
+            (pros if gap < 0.5 else cons).append(
+                f"Forme {'proche' if gap < 0.5 else 'très différente'} : {home} {fh['form']} / {away} {fa['form']}")
+            score += 4 if gap < 0.5 else -4
+    elif mkey == "totals" and fh and fa:
+        g5 = (fh["gf5"] + fh["ga5"]) / max(1, len(fh["form"])) + (fa["gf5"] + fa["ga5"]) / max(1, len(fa["form"]))
+        g5 /= 2
+        txt = f"Moyenne de buts sur les 5 derniers matchs : {g5:.1f} par match".replace(".", ",")
+        good = (g5 > float(point)) if name == "Over" else (g5 < float(point))
+        (pros if good else cons).append(txt)
+        score += 5 if good else -5
+        if abs(float(point) - 2.5) < 0.01:
+            o = (fh["over25"] + fa["over25"]) / 2
+            txt = f"Plus de 2,5 buts dans {o * 100:.0f} % des 10 derniers matchs des deux équipes"
+            good = o >= 0.55 if name == "Over" else o <= 0.45
+            bad = o <= 0.45 if name == "Over" else o >= 0.55
+            (pros if good else cons if bad else []).append(txt)
+            score += 4 if good else (-4 if bad else 0)
+        hs = st.get("h2h_sum")
+        if hs and hs["n"] >= 3:
+            good = hs["avg_goals"] > float(point) if name == "Over" else hs["avg_goals"] < float(point)
+            (pros if good else cons).append(
+                f"Face-à-face : {hs['avg_goals']:.1f} buts par match en moyenne ({hs['n']} matchs)".replace(".", ","))
+            score += 3 if good else -3
+    if p_model is not None:
+        d = p_model - p_market
+        txt = f"Modèle forme : {p_model * 100:.0f} % contre {p_market * 100:.0f} % pour le marché"
+        if d >= 0.03:
+            pros.append(txt)
+        elif d <= -0.03:
+            cons.append(txt)
+        score += 120 * d
+    mdl = st.get("model")
+    contra = bool(p_model is not None and p_model < p_market - 0.07) or \
+        any(c.startswith("⚠") for c in cons) and score < -6
+    return {"round": st.get("round_label", ""), "p_model": p_model, "pros": [p for p in pros if p],
+            "cons": [c for c in cons if c], "score": score, "contra": contra,
+            "xg": [round(mdl["xg_home"], 2), round(mdl["xg_away"], 2)] if mdl else None,
+            "form_home": (fh or {}).get("form", ""), "form_away": (fa or {}).get("form", "")}
+
+
+def analyze(events, cfg, now=None, info=None):
     """Renvoie la liste de TOUTES les sélections analysées (une par issue)."""
     now = now or datetime.now(timezone.utc)
     horizon = now + timedelta(hours=float(cfg["horizon_hours"]))
@@ -380,6 +522,9 @@ def analyze(events, cfg, now=None):
         home, away = ev.get("home_team") or "", ev.get("away_team") or ""
         sport_key = ev.get("_sport_key") or ev.get("sport_key", "")
         match = f"{home} - {away}" if home else ev.get("sport_title", "?")
+        st = (info or {}).get(ev.get("id"))
+        mdl = (st or {}).get("model")
+        w_stats = float(cfg.get("stats_weight", 0) or 0)
 
         # (marché, ligne) -> liste de cotes par bookmaker
         raw = {}
@@ -423,7 +568,22 @@ def analyze(events, cfg, now=None):
             for oid, a in agg.items():
                 if a["n"] < min_books or a["w"] <= 0:
                     continue
-                p = a["pw"] / a["w"]
+                p_market = a["pw"] / a["w"]
+                p = p_market
+                side = None
+                if mkey == "h2h":
+                    side = "home" if a["name"] == home else ("away" if a["name"] == away else "draw")
+                p_model = None
+                if mdl:
+                    if side:
+                        p_model = mdl.get(side)
+                    elif mkey == "totals" and a["point"] is not None:
+                        po = modelmod.p_over(mdl, float(a["point"]))
+                        p_model = po if a["name"] == "Over" else (1 - po if po is not None else None)
+                if p_model is not None and 0 < w_stats <= 0.6:
+                    p = (1 - w_stats) * p_market + w_stats * p_model
+                stat_sum = analyse_points(st, side, a["name"], a["point"], mkey, p_market, p_model, home, away) \
+                    if st else None
                 playable = {k: v for k, v in a["prices"].items()
                             if (k in allowed if allowed else k not in EXCHANGES)}
                 if not playable:
@@ -432,7 +592,13 @@ def analyze(events, cfg, now=None):
                 odds, book_title = playable[best_key]
                 ev_ = p * odds - 1
                 kelly = ev_ / (odds - 1) if odds > 1 else 0.0
+                conf = 50 + 250 * ev_
+                if stat_sum:
+                    conf += stat_sum["score"]
                 out.append({
+                    "p_market": p_market,
+                    "stats": stat_sum,
+                    "conf": int(max(1, min(99, round(conf)))),
                     "uid": f"{ev.get('id')}|{mkey}|{oid}",
                     "event_id": ev.get("id"),
                     "match": match,
@@ -450,7 +616,7 @@ def analyze(events, cfg, now=None):
                     "n_books": a["n"],
                     "playable": playable,          # {book_key: (cote, nom)}
                     "all_prices": a["prices"],
-                    "suspect": ev_ > float(cfg["max_ev"]),
+                    "suspect": p_market * odds - 1 > float(cfg["max_ev"]),
                 })
     return out
 
@@ -478,12 +644,16 @@ def is_value(b, cfg):
 def candidates(selections, cfg, min_p=0.0):
     lo, hi = float(cfg["min_odds"]), float(cfg["max_odds"])
     return [s for s in selections
-            if lo <= s["odds"] <= hi and not s["suspect"] and s["p"] >= min_p and s["ev"] >= WORST_EV]
+            if lo <= s["odds"] <= hi and not s["suspect"] and s["p"] >= min_p and s["ev"] >= WORST_EV
+            ]
 
 
 def rank_key(b, cfg):
     """Value d'abord (triée par Kelly), puis les autres par espérance."""
-    return (1 if is_value(b, cfg) else 0, b["kelly"] if is_value(b, cfg) else b["ev"])
+    bonus = (b.get("conf", 50) - 50) / 2000  # la forme départage les paris proches
+    if (b.get("stats") or {}).get("contra"):
+        bonus -= 0.06  # tout va contre ce pari : classé tout en bas
+    return (1 if is_value(b, cfg) else 0, (b["kelly"] if is_value(b, cfg) else b["ev"]) + bonus)
 
 
 def top_picks(selections, cfg, limit=40, min_p=0.33):
@@ -664,7 +834,8 @@ def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.
         if o < lo or s["p"] < min_p or s["ev"] < WORST_EV:
             continue
         items.append((s, o))
-    items.sort(key=lambda it: it[0]["p"] * it[1], reverse=True)
+    items.sort(key=lambda it: it[0]["p"] * it[1] * (0.9 if (it[0].get("stats") or {}).get("contra") else 1),
+               reverse=True)
     per_event, out = {}, []
     for s, o in items:
         if per_event.get(s["event_id"], 0) >= 2:
@@ -813,7 +984,8 @@ def ser_bet(b, cfg):
         "ts": b["start"].timestamp(), "selection": b["selection"], "market": b["market"],
         "p": round(b["p"], 4), "fair": round(b["fair"], 2), "odds": b["odds"], "book": b["book"],
         "ev": round(b["ev"], 4), "n_books": b["n_books"], "suspect": b["suspect"],
-        "value": is_value(b, cfg),
+        "value": is_value(b, cfg), "event_id": b["event_id"], "conf": b.get("conf"),
+        "p_market": round(b.get("p_market", b["p"]), 4), "stats": b.get("stats"),
         "prices": [{"book": t, "odds": o, "playable": k in b["playable"]}
                    for k, (o, t) in sorted(b["all_prices"].items(), key=lambda kv: -kv[1][0])],
     }
@@ -864,6 +1036,107 @@ def ser_plan(plan, cfg):
 
 
 # --------------------------------------------------------------------------
+# Filtre par jour / journée
+# --------------------------------------------------------------------------
+
+def _local_date(ev):
+    try:
+        return parse_time(ev["commence_time"]).astimezone().date()
+    except (KeyError, ValueError):
+        return None
+
+
+def next_round_ids(events, info):
+    """Matchs de la prochaine journée de chaque championnat."""
+    now = datetime.now(timezone.utc)
+    by_sport = {}
+    for ev in events:
+        try:
+            t = parse_time(ev["commence_time"])
+        except (KeyError, ValueError):
+            continue
+        if t <= now:
+            continue
+        by_sport.setdefault(ev.get("_sport_key") or ev.get("sport_key"), []).append((t, ev))
+    keep = set()
+    for lst in by_sport.values():
+        lst.sort(key=lambda x: x[0])
+        rounds = [(info.get(ev.get("id")) or {}).get("round") for _, ev in lst]
+        first_round = next((r for r in rounds if r), None)
+        if first_round:  # vraie journée connue grâce à API-Football
+            keep |= {ev.get("id") for (_, ev), r in zip(lst, rounds) if r == first_round or
+                     (r is None and (_ - lst[0][0]).total_seconds() < 4 * 86400)}
+            continue
+        prev = None  # sinon : matchs groupés sans trou de plus de 40 h
+        for t, ev in lst:
+            if prev is not None and (t - prev).total_seconds() > 40 * 3600:
+                break
+            keep.add(ev.get("id"))
+            prev = t
+    return keep
+
+
+def filter_events(events, day, info):
+    if not day or day == "all":
+        return events
+    today = datetime.now().astimezone().date()
+    if day == "today":
+        return [e for e in events if _local_date(e) == today]
+    if day == "tomorrow":
+        return [e for e in events if _local_date(e) == today + timedelta(days=1)]
+    if day == "weekend":  # du vendredi 17 h au lundi soir
+        wd = today.weekday()
+        fri = today - timedelta(days=wd - 4) if wd in (4, 5, 6) else (
+            today - timedelta(days=3) if wd == 0 else today + timedelta(days=4 - wd))
+        start = datetime(fri.year, fri.month, fri.day, 17).astimezone()
+        end = start + timedelta(days=3, hours=7)
+        out = []
+        for e in events:
+            try:
+                t = parse_time(e["commence_time"]).astimezone()
+            except (KeyError, ValueError):
+                continue
+            if start <= t <= end:
+                out.append(e)
+        return out
+    if day == "round":
+        keep = next_round_ids(events, info)
+        return [e for e in events if e.get("id") in keep]
+    if day.startswith("d:"):
+        return [e for e in events if str(_local_date(e)) == day[2:]]
+    return events
+
+
+def day_options(events, info):
+    today = datetime.now().astimezone().date()
+    now = datetime.now(timezone.utc)
+    counts = {}
+    for e in events:
+        try:
+            if parse_time(e["commence_time"]) <= now:
+                continue
+        except (KeyError, ValueError):
+            continue
+        d = _local_date(e)
+        counts[d] = counts.get(d, 0) + 1
+    opts = [{"v": "all", "label": "Tous les matchs", "n": sum(counts.values())}]
+    rid = next_round_ids(events, info)
+    has_rounds = any((info.get(i) or {}).get("round") for i in rid)
+    opts.append({"v": "round", "label": "Prochaine journée" + (" ✓" if has_rounds else ""), "n": len(rid)})
+    wk = filter_events([e for e in events if parse_time(e["commence_time"]) > now], "weekend", info)
+    opts.append({"v": "weekend", "label": "Week-end", "n": len(wk)})
+    for d in sorted(k for k in counts if k):
+        if d == today:
+            lab, v = "Aujourd'hui", "today"
+        elif d == today + timedelta(days=1):
+            lab, v = "Demain", "tomorrow"
+        else:
+            lab, v = f"{JOURS[d.weekday()].capitalize()} {d:%d/%m}", f"d:{d}"
+        opts.append({"v": v, "label": lab, "n": counts[d]})
+    return opts
+
+
+# --------------------------------------------------------------------------
 # Pont Python <-> interface (pywebview)
 # --------------------------------------------------------------------------
 
@@ -887,6 +1160,11 @@ class Api:
         self._update_state = ""      # "", "downloading", "error:..."
         self._dl_progress = 0.0
         self._window = None
+        self._stats = statsmod.Stats(config_dir(), f"{APP_NAME}/{APP_VERSION}")
+        self._info = {}
+        self._stats_dirty = False
+        self._next_stats = time.time() + 5
+        self._days = []
         cache = load_cache()
         if cache and cache.get("events") and self._cfg["api_key"] and not self._cfg["demo"]:
             self._events, self._quota = cache["events"], cache.get("quota")
@@ -903,9 +1181,14 @@ class Api:
             now = time.time()
             if not self._fetching and now >= self._next_refresh:
                 self._do_refresh()
-            if now - last_an > 60:
+            if now - last_an > 60 or (self._stats_dirty and now - last_an > 3):
                 last_an = now
+                self._stats_dirty = False
                 self._reanalyze()
+            if now >= self._next_stats and self._cfg.get("football_key", "").strip() and self._events \
+                    and not self._is_demo and not self._stats.running:
+                self._next_stats = now + 20 * 60
+                threading.Thread(target=self._stats_update, daemon=True).start()
             if now >= next_upd:
                 next_upd = now + 6 * 3600
                 self._check_update()
@@ -936,14 +1219,27 @@ class Api:
                     self._quota = quota
                 if not demo:
                     save_cache(events, self._quota)
+                    self._next_stats = now + 2
             self._next_refresh = now + (15 if demo else float(cfg["refresh_minutes"])) * 60
             self._fetching = False
             self._reanalyze()
+
+    def _stats_update(self):
+        with self._lock:
+            key, sports, events = self._cfg.get("football_key", "").strip(), sports_list(self._cfg), list(self._events)
+
+        def changed():
+            self._stats_dirty = True
+        self._stats.update(key, sports, events, on_change=changed)
 
     def _reanalyze(self):
         with self._lock:
             try:
                 cfg = self._cfg
+                has_key = bool(cfg.get("football_key", "").strip()) and not self._is_demo
+                self._info = self._stats.info_for(self._events) if has_key else {}
+                self._days = day_options(self._events, self._info)
+                events = filter_events(self._events, cfg.get("day_filter", "all"), self._info)
                 present = {bk.get("key") for ev in self._events for bk in ev.get("bookmakers", [])}
                 mine = {b.strip().lower() for b in cfg.get("bookmakers", "").split(",") if b.strip()}
                 self._warning = ""
@@ -951,7 +1247,7 @@ class Api:
                     cfg = dict(cfg, bookmakers="")
                     self._warning = ("Betclic n'a pas encore publié de cotes pour ces matchs : cotes d'autres "
                                      "bookmakers affichées à titre indicatif.")
-                self._sel = analyze(self._events, cfg)
+                self._sel = analyze(events, cfg, info=self._info)
                 self._picks = top_picks(self._sel, cfg)
                 self._prob = most_probable(self._sel, cfg)
                 vpool = [s for s in self._sel if is_value(s, cfg)]
@@ -998,6 +1294,9 @@ class Api:
                 "n_value": sum(1 for s in self._picks if is_value(s, self._cfg)),
                 "has_key": bool(self._cfg["api_key"].strip()),
                 "update": self._update, "update_state": self._update_state,
+                "days": self._days, "day": self._cfg.get("day_filter", "all"),
+                "stats": dict(self._stats.status(), enabled=bool(self._cfg.get("football_key", "").strip()),
+                              matched=len(self._info)),
                 "dl_progress": self._dl_progress, "frozen": bool(getattr(sys, "frozen", False)),
             }
 
@@ -1009,6 +1308,18 @@ class Api:
                 "probable": [ser_bet(b, cfg) for b in self._prob],
                 "combos": [ser_combo(c) for c in self._combos],
             }
+
+    def set_day(self, v):
+        with self._lock:
+            self._cfg["day_filter"] = str(v)
+            save_config(self._cfg)
+        self._reanalyze()
+        return True
+
+    def get_match(self, event_id):
+        with self._lock:
+            st = self._info.get(event_id)
+        return st
 
     def refresh(self):
         if not self._fetching:
@@ -1079,6 +1390,8 @@ class Api:
             cfg[k] = v
         source_changed = any(cfg[k] != self._cfg[k] for k in
                              ("api_key", "source_books", "regions", "markets", "sports", "extra_sports", "demo"))
+        if cfg.get("football_key") != self._cfg.get("football_key"):
+            self._next_stats = time.time() + 1
         with self._lock:
             self._cfg = cfg
             save_config(cfg)

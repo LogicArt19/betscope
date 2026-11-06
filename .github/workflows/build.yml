@@ -1,0 +1,25 @@
+name: Build BetScope.exe
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyinstaller
+      - run: pyinstaller --noconfirm --onefile --windowed --name BetScope betscope.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BetScope
+          path: dist/BetScope.exe
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BetScope.exe

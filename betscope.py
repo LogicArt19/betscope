@@ -33,7 +33,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -650,6 +650,147 @@ def stake_plan(budget, mode, selections, cfg, sims=20000, seed=None):
 
 
 # --------------------------------------------------------------------------
+# Mode objectif : "je mise X €, je veux gagner au moins Y €"
+# --------------------------------------------------------------------------
+
+def _book_items(selections, cfg, book, exclude_events=(), pool_size=22, min_p=0.25):
+    """Sélections jouables chez `book`, max 2 par match, triées par intérêt (p x cote)."""
+    lo = float(cfg["min_odds"])
+    items = []
+    for s in selections:
+        if s["suspect"] or s["event_id"] in exclude_events or book not in s["playable"]:
+            continue
+        o = s["playable"][book][0]
+        if o < lo or s["p"] < min_p or s["ev"] < WORST_EV:
+            continue
+        items.append((s, o))
+    items.sort(key=lambda it: it[0]["p"] * it[1], reverse=True)
+    per_event, out = {}, []
+    for s, o in items:
+        if per_event.get(s["event_id"], 0) >= 2:
+            continue
+        per_event[s["event_id"]] = per_event.get(s["event_id"], 0) + 1
+        out.append((s, o))
+        if len(out) >= pool_size:
+            break
+    return out
+
+
+def best_ticket(items, need_odds, max_legs=6, max_odds=None, legs_limit=None):
+    """Le ticket (simple ou combiné) qui atteint la cote demandée avec la plus grande proba."""
+    best = None
+    lim = min(max_legs, legs_limit or max_legs)
+    by_odds = sorted(o for _, o in items)[::-1]
+    for k in range(1, lim + 1):
+        top = 1.0
+        for o in by_odds[:k]:
+            top *= o
+        if top < need_odds:
+            continue  # impossible d'atteindre la cote avec k sélections
+        for combo in itertools.combinations(items, k):
+            if len({s["event_id"] for s, _ in combo}) < k:
+                continue
+            o = 1.0
+            for _, x in combo:
+                o *= x
+            if o < need_odds or (max_odds and o > max_odds):
+                continue
+            p = 1.0
+            for s, _ in combo:
+                p *= s["p"]
+            if best is None or p > best[0] + 1e-12 or (abs(p - best[0]) < 1e-12 and o > best[1]):
+                best = (p, o, combo)
+    if not best:
+        return None
+    p, o, combo = best
+    return {"legs": [s for s, _ in combo], "leg_odds": [x for _, x in combo], "odds": o, "p": p, "ev": p * o - 1}
+
+
+def objective_plan(stake, target, selections, cfg):
+    """Propose plusieurs façons d'atteindre l'objectif de gain, de la plus sûre à la plus risquée."""
+    total_needed = stake + target
+    need1 = total_needed / stake
+    books = set()
+    allowed = {b.strip().lower() for b in cfg.get("bookmakers", "").split(",") if b.strip()}
+    for s in selections:
+        books |= set(s["playable"])
+    if allowed:
+        books &= allowed | (books if not (books & allowed) else set())
+    options = []
+
+    def add(kind, title, desc, tickets, book_title):
+        if not tickets:
+            return
+        miss = 1.0
+        for t in tickets:
+            miss *= 1 - t["p"]
+        options.append({"kind": kind, "title": title, "desc": desc, "book": book_title,
+                        "tickets": tickets, "p_hit": 1 - miss})
+
+    for book in books:
+        items = _book_items(selections, cfg, book)
+        if not items:
+            continue
+        btitle = items[0][0]["playable"][book][1]
+        # 1 ticket : le plus sûr
+        t = best_ticket(items, need1)
+        if t:
+            t["stake"] = stake
+            add("one", "1 seul ticket · le plus sûr", f"Toute ta mise sur un ticket de cote ≥ {need1:.2f}".replace(".", ","),
+                [t], btitle)
+            # moins de matchs (si le plus sûr en a 3+)
+            if len(t["legs"]) >= 3:
+                t2 = best_ticket(items, need1, legs_limit=len(t["legs"]) - 1)
+                if t2:
+                    t2["stake"] = stake
+                    add("few", "1 ticket · moins de matchs", "Moins de sélections, cote plus élevée par match",
+                        [t2], btitle)
+        # 1 ticket : gros gain (objectif x2)
+        t3 = best_ticket(items, (stake + 2 * target) / stake)
+        if t3:
+            t3["stake"] = stake
+            add("big", "1 ticket · objectif x2", f"Pour viser {2 * target:.0f} € de gain".replace(".", ","),
+                [t3], btitle)
+        # plusieurs tickets sur des matchs différents : il suffit qu'UN passe
+        for n in (2, 3):
+            st = round(stake / n, 2)
+            need = total_needed / st
+            used, tickets = set(), []
+            for _ in range(n):
+                tk = best_ticket(_book_items(selections, cfg, book, exclude_events=used), need)
+                if not tk:
+                    tickets = []
+                    break
+                tk["stake"] = st
+                used |= {l["event_id"] for l in tk["legs"]}
+                tickets.append(tk)
+            add(f"split{n}", f"{n} tickets de {st:.2f} €".replace(".", ","),
+                f"Matchs différents · un seul ticket gagnant suffit (cote ≥ {need:.2f} chacun)".replace(".", ","),
+                tickets, btitle)
+
+    options.sort(key=lambda o: o["p_hit"], reverse=True)
+    seen, uniq = set(), []
+    for o in options:
+        key = tuple(sorted(l["uid"] for t in o["tickets"] for l in t["legs"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(o)
+    # cote max atteignable (info si objectif impossible)
+    max_odds = 0.0
+    for book in books:
+        items = _book_items(selections, cfg, book)
+        evs = {}
+        for s, o in items:
+            evs[s["event_id"]] = max(evs.get(s["event_id"], 0), o)
+        prod = 1.0
+        for o in sorted(evs.values(), reverse=True)[:6]:
+            prod *= o
+        max_odds = max(max_odds, prod)
+    return {"stake": stake, "target": target, "need_odds": need1, "options": uniq[:6], "max_odds": max_odds}
+
+
+# --------------------------------------------------------------------------
 # Formatage / sérialisation pour l'interface
 # --------------------------------------------------------------------------
 
@@ -686,6 +827,25 @@ def ser_combo(c):
                   "sport": l["sport"], "odds": lo, "p": round(l["p"], 4)}
                  for l, lo in zip(c["legs"], c["leg_odds"])],
     }
+
+
+def ser_objective(res, cfg):
+    out = {k: res[k] for k in ("stake", "target", "need_odds", "max_odds")}
+    out["options"] = []
+    for o in res["options"]:
+        tickets = []
+        for t in o["tickets"]:
+            tickets.append({
+                "stake": t["stake"], "odds": round(t["odds"], 2), "p": round(t["p"], 4), "ev": round(t["ev"], 4),
+                "ret": round(t["stake"] * t["odds"], 2),
+                "value": t["ev"] >= float(cfg["min_ev"]),
+                "legs": [{"selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
+                          "sport": l["sport"], "odds": lo, "p": round(l["p"], 4)}
+                         for l, lo in zip(t["legs"], t["leg_odds"])],
+            })
+        out["options"].append({"kind": o["kind"], "title": o["title"], "desc": o["desc"], "book": o["book"],
+                               "p_hit": round(o["p_hit"], 4), "tickets": tickets})
+    return out
 
 
 def ser_plan(plan, cfg):
@@ -867,6 +1027,20 @@ class Api:
         if self._warning:
             cfg["bookmakers"] = ""
         return ser_plan(stake_plan(budget, mode, sel, cfg), cfg)
+
+    def compute_objective(self, stake, target):
+        try:
+            stake = float(str(stake).replace(",", ".").replace("€", "").strip())
+            target = float(str(target).replace(",", ".").replace("€", "").strip())
+        except ValueError:
+            return {"error": "Montant invalide"}
+        if stake <= 0 or target <= 0:
+            return {"error": "Mets une mise et un objectif supérieurs à 0"}
+        with self._lock:
+            sel, cfg = list(self._sel), dict(self._cfg)
+        if self._warning:
+            cfg["bookmakers"] = ""
+        return ser_objective(objective_plan(stake, target, sel, cfg), cfg)
 
     def get_config(self):
         with self._lock:

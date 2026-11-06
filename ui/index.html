@@ -170,6 +170,34 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
 .empty{padding:46px;text-align:center;color:var(--muted)}
 .empty b{display:block;color:var(--fg);font-size:16px;margin-bottom:6px}
 
+/* ---------- objectif ---------- */
+.seg{display:inline-flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:16px}
+.seg button{padding:9px 16px;border-radius:9px;color:var(--muted);font-weight:600}
+.seg button.on{background:var(--card2);color:var(--fg);box-shadow:0 1px 0 rgba(255,255,255,.04)}
+.need{padding:14px;border-radius:12px;background:var(--bg2);border:1px dashed #2c3546;font-size:13px;color:var(--muted);line-height:1.6}
+.need b{color:var(--fg);font-size:18px}
+.opt{padding:18px 20px;display:flex;flex-direction:column;gap:12px}
+.opt .hd{display:flex;align-items:center;gap:12px}
+.opt .rank{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:800;background:var(--card2);color:var(--muted)}
+.opt.best{border-color:rgba(34,197,94,.5);background:radial-gradient(120% 120% at 100% 0%,rgba(52,211,153,.10),transparent 60%),var(--card)}
+.opt.best .rank{background:var(--green);color:#04220f}
+.opt .hd b{font-size:15.5px;display:block}
+.opt .hd small{color:var(--muted);font-size:12.5px}
+.opt .hd .sp{flex:1}
+.gauge{text-align:right}
+.gauge b{font-size:24px;letter-spacing:-.5px}
+.gauge small{display:block;color:var(--muted);font-size:11.5px}
+.tk{background:var(--bg2);border-radius:12px;padding:12px 14px}
+.tk .th{display:flex;gap:10px;align-items:center;font-size:12.5px;color:var(--muted);margin-bottom:8px;flex-wrap:wrap}
+.tk .th b{color:var(--fg);font-size:14px}
+.tk .th .sp{flex:1}
+.tk .ln{display:flex;gap:10px;padding:6px 0;border-top:1px solid #1d2330;font-size:13px}
+.tk .ln:first-of-type{border-top:0}
+.tk .ln span{flex:1;min-width:0}
+.tk .ln small{color:var(--dim)}
+.tk .ft{display:flex;justify-content:space-between;margin-top:8px;font-size:13px}
+.tk .ft b{color:var(--green2)}
+
 /* ---------- settings ---------- */
 .set{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .set .card{padding:20px}
@@ -256,6 +284,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
               <button class="chip" data-m="agressif">Agressif</button>
             </div>
             <button class="btn primary" id="q-go" style="justify-content:center;padding:13px">Trouver le meilleur plan →</button>
+            <button class="btn" id="q-goal" style="justify-content:center">🎯 J'ai un objectif de gain</button>
           </div>
         </div>
         <h2>Top paris <button class="link" data-goto="picks">Tout voir →</button></h2>
@@ -294,7 +323,19 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
 
       <!-- BUDGET -->
       <section class="page" id="p-budget">
-        <div class="bud">
+        <div class="seg" id="seg"><button data-v="split" class="on">💶 Répartir mon budget</button><button data-v="goal">🎯 Atteindre un objectif</button></div>
+        <div class="bud" id="v-goal" style="display:none">
+          <div class="card form">
+            <div class="k" style="font-weight:650">Je mise</div>
+            <div class="money"><input id="g-stake" value="50" inputmode="decimal"><span>€</span></div>
+            <div class="k" style="font-weight:650">Je veux gagner au moins</div>
+            <div class="money"><input id="g-target" value="200" inputmode="decimal"><span>€</span></div>
+            <div class="need" id="g-need"></div>
+            <button class="btn primary" id="g-go" style="justify-content:center;padding:13px">Trouver les meilleures options</button>
+          </div>
+          <div id="goal"><div class="card empty"><b>Tes options s'afficheront ici</b>Choisis ta mise et ton objectif de gain : BetScope cherche les tickets qui l'atteignent avec le plus de chances de passer.</div></div>
+        </div>
+        <div class="bud" id="v-split">
           <div class="card form">
             <div class="k" style="font-weight:650">Je veux miser</div>
             <div class="money"><input id="b-amount" value="10" inputmode="decimal"><span>€</span></div>
@@ -497,6 +538,50 @@ async function makePlan(){
       </div>`).join("")}</div>
     <div class="card note">${p.n_value ? "Les tickets <b style='color:var(--green2)'>VALUE</b> sont rentables en moyenne sur la durée." : "Aucune value aujourd'hui chez Betclic : ce plan prend les meilleurs paris disponibles, mais il reste légèrement perdant en moyenne (marge du bookmaker)."}
       Même un bon plan perd souvent sur une seule journée. Vérifie que la cote n'a pas bougé avant de valider sur Betclic, et ne mise que ce que tu peux perdre.</div>`;
+}
+
+/* ----- objectif ----- */
+function seg(v){ $$("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===v)); $("#v-goal").style.display=v==="goal"?"":"none"; $("#v-split").style.display=v==="split"?"":"none"; }
+$$("#seg button").forEach(b=>b.onclick=()=>seg(b.dataset.v));
+$("#q-goal").onclick = () => { $("#g-stake").value=$("#q-amount").value; go("budget"); seg("goal"); needInfo(); };
+const num = v => parseFloat(String(v).replace(",", ".").replace("€",""));
+function needInfo(){
+  const s=num($("#g-stake").value), t=num($("#g-target").value);
+  $("#g-need").innerHTML = (s>0 && t>0)
+    ? `Cote totale nécessaire : <b>${fr((s+t)/s)}</b><br>Si ça passe, tu touches <b style="font-size:14px">${eur(s+t)}</b> (ta mise + ${eur(t)})`
+    : "Entre une mise et un objectif.";
+}
+$("#g-stake").oninput = $("#g-target").oninput = needInfo; needInfo();
+$("#g-go").onclick = makeGoal;
+["#g-stake","#g-target"].forEach(id=>$(id).onkeydown=e=>{ if(e.key==="Enter") makeGoal(); });
+async function makeGoal(){
+  if (!api) return;
+  $("#goal").innerHTML = '<div class="skel" style="height:140px"></div>';
+  const r = await api.compute_objective($("#g-stake").value, $("#g-target").value);
+  if (r.error) { $("#goal").innerHTML = emptyBox(esc(r.error), ""); return; }
+  if (!r.options.length) {
+    $("#goal").innerHTML = data.picks.length ? emptyBox("Objectif impossible avec les matchs actuels",
+      `Il faudrait une cote de ${fr(r.need_odds)}, mais la plus grosse cote possible en ce moment est ${fr(r.max_odds)}. Baisse ton objectif, augmente ta mise, ou coche plus de championnats.`) : noData();
+    return;
+  }
+  const best = r.options[0];
+  $("#goal").innerHTML = `
+    <div class="sumst" style="grid-template-columns:repeat(3,1fr)">
+      <div class="card stat"><div class="l">Cote nécessaire</div><div class="v">${fr(r.need_odds)}</div><div class="h">pour ${eur(r.stake)} → +${eur(r.target)}</div></div>
+      <div class="card stat"><div class="l">Meilleure chance d'y arriver</div><div class="v" style="color:var(--green2)">${pc(best.p_hit, best.p_hit<0.1?1:0)}</div><div class="h">${esc(best.title)}</div></div>
+      <div class="card stat"><div class="l">En clair</div><div class="v" style="font-size:20px;padding-top:4px">≈ 1 fois sur ${Math.max(1, Math.round(1/best.p_hit))}</div><div class="h">le reste du temps, la mise est perdue</div></div>
+    </div>
+    <div class="list">${r.options.map((o,i)=>`
+      <div class="card opt ${i===0?"best":""}">
+        <div class="hd"><div class="rank">${i+1}</div><div><b>${esc(o.title)}${i===0?' <span class="tag v" style="margin-left:6px">MEILLEURE OPTION</span>':''}</b><small>${esc(o.desc)} · ${esc(o.book)}</small></div><div class="sp"></div>
+          <div class="gauge"><b>${pc(o.p_hit, o.p_hit<0.1?1:0)}</b><small>de chances d'atteindre l'objectif</small></div></div>
+        ${o.tickets.map((t,j)=>`<div class="tk">
+          <div class="th"><b>${o.tickets.length>1?`Ticket ${j+1}`:(t.legs.length>1?`Combiné ×${t.legs.length}`:"Pari simple")}</b><span>mise ${eur(t.stake)}</span><span>·</span><span>cote <b style="font-size:13px">${fr(t.odds)}</b></span><span>·</span><span>${pc(t.p,1)} de chances</span><div class="sp"></div>${t.value?`<span class="tag v">VALUE ${sg(t.ev)}</span>`:`<span class="tag n">Sans value ${sg(t.ev)}</span>`}</div>
+          ${t.legs.map(l=>`<div class="ln"><span><b>${esc(l.selection)}</b> <small>— ${esc(l.match)} · ${esc(l.date)}</small></span><b>${fr(l.odds)}</b></div>`).join("")}
+          <div class="ft"><span>Si ce ticket passe, tu touches</span><b>${eur(t.ret)} (+${eur(t.ret - r.stake)})</b></div>
+        </div>`).join("")}
+      </div>`).join("")}</div>
+    <div class="card note">Plus l'objectif est gros par rapport à la mise, plus la cote nécessaire est haute et moins il y a de chances que ça passe. Les options sont classées de la plus probable à la moins probable. Vérifie les cotes sur Betclic avant de valider.</div>`;
 }
 
 /* ----- paramètres ----- */

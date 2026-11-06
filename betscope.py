@@ -36,7 +36,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -1213,7 +1213,7 @@ class Api:
                 self._next_stats = now + 20 * 60
                 threading.Thread(target=self._stats_update, daemon=True).start()
             if now >= next_upd:
-                next_upd = now + 6 * 3600
+                next_upd = now + 30 * 60  # vérifie les mises à jour toutes les 30 min
                 self._check_update()
             time.sleep(1)
 

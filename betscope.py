@@ -36,7 +36,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.6.2"
+APP_VERSION = "1.6.3"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -70,12 +70,11 @@ DEFAULT_CONFIG = {
     "regions": "eu",
     # Liste de bookmakers demandés à l'API (max 10 = prix d'une seule région).
     # Pinnacle donne la vraie proba, les FR sont ceux où tu peux parier.
-    "source_books": "pinnacle,betclic_fr,winamax_fr,unibet_fr,pmu_fr,parionssport_fr,netbet_fr,"
-                    "marathonbet,onexbet,sport888",
+    "source_books": "",  # optionnel : Pinnacle + 9 bookmakers sont toujours utilisés
     "markets": "h2h,totals",
     "refresh_minutes": 720,
     "bookmakers": "betclic_fr",   # là où tu paries
-    "cfg_version": 4,
+    "cfg_version": 5,
     "min_ev": 0.02,
     "max_ev": 0.15,
     "min_odds": 1.30,
@@ -91,7 +90,8 @@ DEFAULT_CONFIG = {
     "football_key": "",      # clé API-Football (payante pour la saison en cours : blessés, compos)
     "stats_weight": 0.25,    # part du modèle forme/stats dans la proba finale (0 = cotes seules)
     "day_filter": "all",
-    "web_info": True,        # recherche web automatique (ESPN) : absents, compos, actus
+    "web_info": True,
+    "auto_refresh": True,    # l'appli choisit seule la fréquence pour rester dans l'offre gratuite        # recherche web automatique (ESPN) : absents, compos, actus
 }
 
 # Bookmakers dont les cotes reflètent le mieux la vraie probabilité
@@ -120,6 +120,12 @@ def load_config():
     if cfg.get("cfg_version", 0) < 3:  # mise à jour : on ne parie que sur Betclic
         cfg["bookmakers"] = "betclic_fr"
         cfg["cfg_version"] = 3
+    if cfg.get("cfg_version", 0) < 5:  # 1.6.3 : réglages automatiques, rien à configurer
+        cfg["source_books"] = ""
+        cfg["min_books"] = 4
+        cfg["auto_refresh"] = True
+        cfg["bookmakers"] = cfg.get("bookmakers") or "betclic_fr"
+        cfg["cfg_version"] = 5
     if float(cfg.get("min_books", 4)) > 5:
         cfg["min_books"] = 4
     if cfg.get("cfg_version", 0) < 4:  # 1.4.0 : on regarde les 7 prochains jours
@@ -185,6 +191,28 @@ def credits_per_refresh(cfg):
         n_regions = len([r for r in cfg["regions"].split(",") if r.strip()]) or 1
     n_markets = len([m for m in cfg["markets"].split(",") if m.strip()]) or 1
     return len(sports_list(cfg)) * n_regions * n_markets
+
+
+def auto_interval_minutes(cfg, remaining=None):
+    """Intervalle de mise à jour pour ne pas dépasser le quota (500 crédits/mois, 20 gardés en réserve)."""
+    per = max(1, credits_per_refresh(cfg))
+    now = datetime.now()
+    nxt = datetime(now.year + (now.month == 12), now.month % 12 + 1, 1)
+    days_left = max(1.0, (nxt - now).total_seconds() / 86400)
+    try:
+        budget = float(remaining) - 20 if remaining is not None else 480 * days_left / 30
+    except (TypeError, ValueError):
+        budget = 480 * days_left / 30
+    if budget <= per:
+        return 24 * 60  # quota presque vide : 1 fois par jour (les crédits reviennent le 1er du mois)
+    refreshes = budget / per
+    return int(min(72 * 60, max(60, days_left * 24 * 60 / refreshes)))
+
+
+def refresh_minutes(cfg, remaining=None):
+    if cfg.get("auto_refresh", True):
+        return auto_interval_minutes(cfg, remaining)
+    return float(cfg["refresh_minutes"])
 
 
 def credits_per_month(cfg):
@@ -1215,7 +1243,7 @@ class Api:
         if cache and cache.get("events") and self._cfg["api_key"] and not self._cfg["demo"]:
             self._events, self._quota = cache["events"], cache.get("quota")
             self._last_fetch = cache.get("ts", 0)
-            self._next_refresh = self._last_fetch + float(self._cfg["refresh_minutes"]) * 60
+            self._next_refresh = self._last_fetch + refresh_minutes(self._cfg, (self._quota or {}).get("remaining")) * 60
             self._reanalyze()
         if start_loop:
             threading.Thread(target=self._loop, daemon=True).start()
@@ -1277,7 +1305,7 @@ class Api:
                     save_cache(events, self._quota)
                     self._next_stats = now + 2
                     self._next_web = now + 4
-            self._next_refresh = now + (15 if demo else float(cfg["refresh_minutes"])) * 60
+            self._next_refresh = now + (15 if demo else refresh_minutes(cfg, (self._quota or {}).get("remaining"))) * 60
             self._fetching = False
             self._reanalyze()
 
@@ -1424,6 +1452,17 @@ class Api:
             cfg["bookmakers"] = ""
         return ser_objective(objective_plan(stake, target, sel, cfg), cfg)
 
+    def reset_settings(self):
+        """Remet tous les réglages par défaut, en gardant les clés et les championnats."""
+        keep = {k: self._cfg.get(k) for k in ("api_key", "fd_key", "football_key", "sports", "bookmakers")}
+        cfg = dict(DEFAULT_CONFIG)
+        cfg.update({k: v for k, v in keep.items() if v})
+        with self._lock:
+            self._cfg = cfg
+            save_config(cfg)
+        self._reanalyze()
+        return {"ok": True}
+
     def get_config(self):
         with self._lock:
             cfg = dict(self._cfg)
@@ -1435,7 +1474,9 @@ class Api:
         try:
             c = dict(self._cfg)
             c.update({k: v for k, v in cfg.items() if k in DEFAULT_CONFIG})
-            return {"per": credits_per_refresh(c), "month": credits_per_month(c)}
+            iv = refresh_minutes(c, (self._quota or {}).get("remaining"))
+            return {"per": credits_per_refresh(c), "month": credits_per_month(c), "auto": bool(c.get("auto_refresh", True)),
+                    "interval": int(iv), "remaining": (self._quota or {}).get("remaining")}
         except Exception:
             return {"per": 0, "month": 0}
 
@@ -1467,7 +1508,7 @@ class Api:
             self._cfg = cfg
             save_config(cfg)
             if not source_changed:
-                self._next_refresh = self._last_fetch + float(cfg["refresh_minutes"]) * 60
+                self._next_refresh = self._last_fetch + refresh_minutes(cfg, (self._quota or {}).get("remaining")) * 60
         if source_changed:
             self.refresh()
         else:

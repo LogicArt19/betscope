@@ -391,36 +391,47 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
       <section class="page" id="p-settings">
         <div class="set">
           <div class="card">
-            <h3>Connexion aux cotes</h3>
-            <div class="f"><label>Clé API The Odds API</label><input class="in" id="c-api_key" type="password" autocomplete="off"><small>Gratuite sur the-odds-api.com. Sans clé, l'appli tourne en mode démo avec des matchs fictifs.</small></div>
-            <div class="f"><label>Clé football-data.org (analyse complète, gratuite)</label><input class="in" id="c-fd_key" type="password" autocomplete="off"><small>Gratuite à vie sur football-data.org (« Register » → la clé arrive par e-mail). Donne la forme, les séries, domicile/extérieur, le classement, la journée et les confrontations directes pour Ligue 1, Premier League, Liga, Serie A, Bundesliga, Ligue des champions, Eredivisie, Liga Portugal et Championship.</small></div>
-            <div class="f"><label>Clé API-Football (optionnel, offre payante)</label><input class="in" id="c-football_key" type="password" autocomplete="off"><small>Seulement si tu as un abonnement : ajoute les blessés/suspendus et les compos officielles. Le plan gratuit ne couvre pas la saison en cours, laisse vide.</small></div>
-            <div class="f"><label>Mise à jour automatique toutes les (minutes)</label><input class="in" id="c-refresh_minutes"></div>
-            <div class="est" id="c-est"></div>
-            <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>Par défaut betclic_fr. Tu peux en ajouter : winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr (séparés par des virgules).</small></div>
-            <div class="f"><label>Bookmakers en plus pour le calcul (optionnel)</label><input class="in" id="c-source_books"><small>Tu peux laisser vide : l'appli utilise toujours Pinnacle + tes bookmakers + une liste de référence (10 bookmakers = 1 crédit par marché). Ces bookmakers servent seulement à calculer la vraie probabilité, tu ne paries pas chez eux.</small></div>
-            <div class="f"><label>Marchés</label><input class="in" id="c-markets"><small>h2h = 1N2 (victoire / nul), totals = plus/moins de buts.</small></div>
-            <label class="chk" style="margin-top:4px"><input type="checkbox" id="c-web_info">Recherche web automatique : absents, compos officielles, actus (ESPN, sans clé)</label>
-            <label class="chk" style="margin-top:8px"><input type="checkbox" id="c-demo">Forcer le mode démo (données fictives)</label>
+            <h3>L'essentiel</h3>
+            <div class="f"><label>Clé The Odds API (les cotes)</label><input class="in" id="c-api_key" type="password" autocomplete="off"><small>Gratuite sur the-odds-api.com. Sans clé, l'appli tourne en mode démo.</small></div>
+            <div class="f"><label>Clé football-data.org (forme, classement, face-à-face)</label><input class="in" id="c-fd_key" type="password" autocomplete="off"><small>Gratuite à vie sur football-data.org → « Register », la clé arrive par e-mail.</small></div>
+            <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>betclic_fr. Tous les paris proposés se jouent ici.</small></div>
+            <label class="chk"><input type="checkbox" id="c-web_info">Recherche web automatique : absents, compos officielles, actus</label>
+            <div class="est ok" id="c-est" style="margin-top:14px"></div>
+            <button class="btn primary" id="c-save">Enregistrer</button>
           </div>
           <div class="card">
             <h3>Championnats suivis</h3>
             <div class="leagues" id="c-leagues"></div>
-            <h3 style="margin-top:22px">Réglages de l'analyse</h3>
-            <div class="nums">
-              <div class="f"><label>Value mini</label><input class="in" id="c-min_ev"><small>0,02 = 2 %</small></div>
-              <div class="f"><label>Value max avant alerte</label><input class="in" id="c-max_ev"></div>
-              <div class="f"><label>Cote mini</label><input class="in" id="c-min_odds"></div>
-              <div class="f"><label>Cote maxi</label><input class="in" id="c-max_odds"></div>
-              <div class="f"><label>Matchs dans les (heures)</label><input class="in" id="c-horizon_hours"></div>
-              <div class="f"><label>Mise mini (€)</label><input class="in" id="c-min_stake"></div>
-              <div class="f"><label>Sélections max / combiné</label><input class="in" id="c-max_legs"></div>
-              <div class="f"><label>Nb bookmakers mini</label><input class="in" id="c-min_books"></div>
-              <div class="f"><label>Poids de l'analyse forme</label><input class="in" id="c-stats_weight"><small>0,25 = 25 % modèle forme + 75 % marché</small></div>
-            </div>
-            <button class="btn primary" id="c-save" style="margin-top:6px">Enregistrer</button>
+            <small style="color:var(--dim);display:block;margin-top:10px">Plus tu coches de championnats, moins souvent les cotes sont mises à jour (l'appli s'adapte toute seule pour rester gratuite). 4 à 6 championnats, c'est l'idéal.</small>
           </div>
         </div>
+        <details class="card" style="margin-top:16px;padding:16px 20px">
+          <summary style="cursor:pointer;font-weight:650">Réglages avancés (tu n'as pas besoin d'y toucher)</summary>
+          <div class="set" style="margin-top:16px">
+            <div>
+              <label class="chk" style="margin-bottom:10px"><input type="checkbox" id="c-auto_refresh">Fréquence de mise à jour automatique (recommandé)</label>
+              <div class="f"><label>Sinon, mise à jour toutes les (minutes)</label><input class="in" id="c-refresh_minutes"></div>
+              <div class="f"><label>Marchés</label><input class="in" id="c-markets"><small>h2h = 1N2, totals = plus/moins de buts</small></div>
+              <div class="f"><label>Bookmakers en plus pour le calcul</label><input class="in" id="c-source_books"><small>Laisse vide. Pinnacle + 9 bookmakers sont déjà utilisés automatiquement.</small></div>
+              <div class="f"><label>Clé API-Football (offre payante uniquement)</label><input class="in" id="c-football_key" type="password" autocomplete="off"></div>
+              <label class="chk"><input type="checkbox" id="c-demo">Mode démo (matchs fictifs)</label>
+            </div>
+            <div>
+              <div class="nums">
+                <div class="f"><label>Value mini</label><input class="in" id="c-min_ev"></div>
+                <div class="f"><label>Value max avant alerte</label><input class="in" id="c-max_ev"></div>
+                <div class="f"><label>Cote mini</label><input class="in" id="c-min_odds"></div>
+                <div class="f"><label>Cote maxi</label><input class="in" id="c-max_odds"></div>
+                <div class="f"><label>Matchs dans les (heures)</label><input class="in" id="c-horizon_hours"></div>
+                <div class="f"><label>Mise mini (€)</label><input class="in" id="c-min_stake"></div>
+                <div class="f"><label>Sélections max / combiné</label><input class="in" id="c-max_legs"></div>
+                <div class="f"><label>Nb bookmakers mini</label><input class="in" id="c-min_books"></div>
+                <div class="f"><label>Poids de l'analyse forme</label><input class="in" id="c-stats_weight"></div>
+              </div>
+              <button class="btn" id="c-reset" style="margin-top:6px">↺ Remettre les réglages par défaut</button>
+            </div>
+          </div>
+        </details>
       </section>
     </div>
   </main>
@@ -668,6 +679,7 @@ async function loadCfg(){
   TXT.concat(NUMS).forEach(k => { const el=$("#c-"+k); if (el) el.value = NUMS.includes(k) ? String(cfg[k]).replace(".", ",") : cfg[k]; });
   $("#c-demo").checked = !!cfg.demo;
   $("#c-web_info").checked = cfg.web_info !== false;
+  $("#c-auto_refresh").checked = cfg.auto_refresh !== false;
   $("#c-leagues").innerHTML = cfg._sports.map(s=>`<label class="chk"><input type="checkbox" value="${s.key}" ${cfg.sports.includes(s.key)?"checked":""}>${esc(s.label)}</label>`).join("");
   $$("#c-leagues input").forEach(i=>i.onchange=est);
   est();
@@ -677,16 +689,26 @@ function readCfg(){
   TXT.concat(NUMS).forEach(k => o[k] = $("#c-"+k).value);
   o.demo = $("#c-demo").checked;
   o.web_info = $("#c-web_info").checked;
+  o.auto_refresh = $("#c-auto_refresh").checked;
   o.sports = $$("#c-leagues input:checked").map(i=>i.value);
   return o;
 }
 async function est(){
   if (!api) return;
   const r = await api.estimate(readCfg());
-  const ok = r.month <= 500;
-  $("#c-est").className = "est " + (ok?"ok":"ko");
-  $("#c-est").textContent = `${r.per} crédits par mise à jour ≈ ${r.month} crédits / mois. ` + (ok ? "✓ OK avec l'offre gratuite." : "⚠ Trop pour l'offre gratuite (500) : augmente l'intervalle ou décoche des championnats.");
+  const h = r.interval >= 60 ? `${Math.floor(r.interval/60)} h${r.interval%60?String(r.interval%60).padStart(2,"0"):""}` : `${r.interval} min`;
+  if (r.auto) {
+    $("#c-est").className = "est ok";
+    $("#c-est").textContent = `✓ Automatique : cotes mises à jour toutes les ${h} pour rester 100 % gratuit` + (r.remaining!=null?` (${r.remaining} crédits restants ce mois-ci).`:".") + (r.interval > 720 ? " Pour des cotes plus fraîches, décoche quelques championnats." : "");
+    if (r.interval > 720) $("#c-est").className = "est ko";
+  } else {
+    const ok = r.month <= 500;
+    $("#c-est").className = "est " + (ok?"ok":"ko");
+    $("#c-est").textContent = `${r.per} crédits par mise à jour ≈ ${r.month} / mois. ` + (ok ? "✓ OK avec l'offre gratuite." : "⚠ Trop pour l'offre gratuite : active la fréquence automatique.");
+  }
 }
+$("#c-auto_refresh").addEventListener("change", est);
+$("#c-reset").onclick = async () => { await api.reset_settings(); await loadCfg(); toast("✓ Réglages par défaut remis"); };
 ["refresh_minutes","markets","source_books"].forEach(k=>$("#c-"+k).addEventListener("input",est));
 $("#c-save").onclick = async () => { const r = await api.save_config(readCfg()); toast(r.ok ? "✓ Paramètres enregistrés" : r.error); };
 

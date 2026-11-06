@@ -30,7 +30,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 API_BASE = "https://api.the-odds-api.com/v4"
 
 # --------------------------------------------------------------------------
@@ -67,7 +67,8 @@ DEFAULT_CONFIG = {
                     "marathonbet,onexbet,sport888",
     "markets": "h2h,totals",
     "refresh_minutes": 720,
-    "bookmakers": FRENCH_BOOKS,
+    "bookmakers": "betclic_fr",   # là où tu paries
+    "cfg_version": 3,
     "min_ev": 0.02,
     "max_ev": 0.15,
     "min_odds": 1.30,
@@ -104,6 +105,9 @@ def load_config():
             cfg.update(json.load(f))
     except (OSError, ValueError):
         pass
+    if cfg.get("cfg_version", 0) < 3:  # mise à jour : on ne parie que sur Betclic
+        cfg["bookmakers"] = "betclic_fr"
+        cfg["cfg_version"] = 3
     cfg["sports"] = [k for k in cfg.get("sports", []) if k.startswith("soccer")] or list(DEFAULT_CONFIG["sports"])
     return cfg
 
@@ -864,7 +868,7 @@ def run_gui():
             field(left, "extra_sports", "Autres compétitions (clés séparées par des virgules)",
                   hint="Clés commençant par soccer_ (ex : soccer_france_coupe_de_france). Liste sur "
                        "the-odds-api.com/sports-odds-data/sports-apis.html")
-            field(left, "bookmakers", "Mes bookmakers (là où tu as un compte)",
+            field(left, "bookmakers", "Où je parie (par défaut : betclic_fr)",
                   hint="Clés : betclic_fr, winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr… "
                        "Vide = tous. Les autres bookmakers servent quand même au calcul de la proba.")
 
@@ -994,7 +998,8 @@ def run_gui():
             cfg = self.cfg
             if mine and not (mine & present) and present:
                 cfg = dict(self.cfg, bookmakers="")
-                self.warning = "Aucun de tes bookmakers n'a de cotes ici : affichage avec tous les bookmakers."
+                self.warning = ("Betclic n'a pas encore publié de cotes pour ces matchs : les cotes affichées viennent "
+                                "d'autres bookmakers, à titre indicatif seulement.")
             self.selections = analyze(self.events, cfg)
             self.vbets = value_bets(self.selections, self.cfg)
             self.probable = most_probable(self.selections, self.cfg)

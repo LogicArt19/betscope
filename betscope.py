@@ -30,36 +30,35 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 API_BASE = "https://api.the-odds-api.com/v4"
 
 # --------------------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------------------
 
-SPORTS = {
-    "soccer_france_ligue_one": "Foot · Ligue 1",
-    "soccer_france_ligue_two": "Foot · Ligue 2",
-    "soccer_epl": "Foot · Premier League",
-    "soccer_spain_la_liga": "Foot · Liga",
-    "soccer_italy_serie_a": "Foot · Serie A",
-    "soccer_germany_bundesliga": "Foot · Bundesliga",
-    "soccer_uefa_champs_league": "Foot · Ligue des champions",
-    "soccer_uefa_europa_league": "Foot · Ligue Europa",
-    "soccer_uefa_europa_conference_league": "Foot · Conference League",
-    "basketball_nba": "Basket · NBA",
-    "basketball_euroleague": "Basket · Euroleague",
-    "icehockey_nhl": "Hockey · NHL",
-    "americanfootball_nfl": "Foot US · NFL",
-    "rugbyunion_top_14": "Rugby · Top 14",
-    "mma_mixed_martial_arts": "MMA / UFC",
+SPORTS = {  # 100 % foot
+    "soccer_france_ligue_one": "Ligue 1",
+    "soccer_france_ligue_two": "Ligue 2",
+    "soccer_epl": "Premier League",
+    "soccer_spain_la_liga": "Liga",
+    "soccer_italy_serie_a": "Serie A",
+    "soccer_germany_bundesliga": "Bundesliga",
+    "soccer_uefa_champs_league": "Ligue des champions",
+    "soccer_uefa_europa_league": "Ligue Europa",
+    "soccer_uefa_europa_conference_league": "Conference League",
+    "soccer_netherlands_eredivisie": "Eredivisie (Pays-Bas)",
+    "soccer_portugal_primeira_liga": "Liga Portugal",
+    "soccer_belgium_first_div": "Jupiler Pro League (Belgique)",
+    "soccer_turkey_super_league": "Süper Lig (Turquie)",
+    "soccer_efl_champ": "Championship (Angleterre D2)",
 }
 
 FRENCH_BOOKS = "betclic_fr,winamax_fr,unibet_fr,pmu_fr,parionssport_fr,netbet_fr"
 
 DEFAULT_CONFIG = {
     "api_key": "",
-    "sports": ["soccer_france_ligue_one", "soccer_epl", "soccer_uefa_champs_league"],
+    "sports": ["soccer_france_ligue_one", "soccer_epl", "soccer_spain_la_liga", "soccer_uefa_champs_league"],
     "extra_sports": "",
     "regions": "eu",
     # Liste de bookmakers demandés à l'API (max 10 = prix d'une seule région).
@@ -105,6 +104,7 @@ def load_config():
             cfg.update(json.load(f))
     except (OSError, ValueError):
         pass
+    cfg["sports"] = [k for k in cfg.get("sports", []) if k.startswith("soccer")] or list(DEFAULT_CONFIG["sports"])
     return cfg
 
 
@@ -131,7 +131,7 @@ def load_cache():
 
 def sports_list(cfg):
     keys = list(cfg.get("sports", []))
-    keys += [s.strip() for s in cfg.get("extra_sports", "").split(",") if s.strip()]
+    keys += [s.strip() for s in cfg.get("extra_sports", "").split(",") if s.strip().startswith("soccer")]
     seen, out = set(), []
     for k in keys:
         if k not in seen:
@@ -216,8 +216,8 @@ def demo_events(seed=None):
                                                  "Rennes", "Nice", "Nantes", "Strasbourg", "Brest", "Toulouse"]),
         "soccer_epl": ("EPL", ["Arsenal", "Liverpool", "Man City", "Chelsea", "Tottenham", "Newcastle",
                                "Aston Villa", "Brighton"]),
-        "basketball_nba": ("NBA", ["Celtics", "Lakers", "Nuggets", "Bucks", "Warriors", "Knicks",
-                                   "Spurs", "Thunder"]),
+        "soccer_spain_la_liga": ("Liga", ["Real Madrid", "Barcelone", "Atlético", "Bilbao", "Villarreal",
+                                          "Betis", "Séville", "Real Sociedad"]),
     }
     books = [("pinnacle", "Pinnacle"), ("betclic_fr", "Betclic (FR)"), ("winamax_fr", "Winamax (FR)"),
              ("unibet_fr", "Unibet (FR)"), ("pmu_fr", "PMU (FR)"), ("parionssport_fr", "Parions Sport (FR)"),
@@ -852,7 +852,7 @@ def run_gui():
             field(left, "api_key", "Clé API The Odds API (gratuite sur the-odds-api.com)")
             ttk.Label(left, text="Sans clé, l'appli tourne en mode DÉMO avec des matchs fictifs.",
                       style="Muted.TLabel").pack(anchor="w")
-            ttk.Label(left, text="Compétitions suivies", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(12, 2))
+            ttk.Label(left, text="Championnats de foot suivis", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(12, 2))
             grid = ttk.Frame(left)
             grid.pack(anchor="w", fill="x")
             self.sport_vars = {}
@@ -862,7 +862,7 @@ def run_gui():
                     row=i // 2, column=i % 2, sticky="w", padx=(0, 18), pady=1)
                 self.sport_vars[k] = var
             field(left, "extra_sports", "Autres compétitions (clés séparées par des virgules)",
-                  hint="Ex : tennis_atp_paris, soccer_france_coupe_de_france. Liste sur "
+                  hint="Clés commençant par soccer_ (ex : soccer_france_coupe_de_france). Liste sur "
                        "the-odds-api.com/sports-odds-data/sports-apis.html")
             field(left, "bookmakers", "Mes bookmakers (là où tu as un compte)",
                   hint="Clés : betclic_fr, winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr… "
@@ -872,7 +872,7 @@ def run_gui():
                   hint="Servent à calculer la vraie proba. Garde pinnacle dedans. "
                        "Vide = on utilise les régions ci-dessous.")
             field(right, "regions", "Régions (si la liste ci-dessus est vide)", hint="eu, fr, uk…")
-            field(right, "markets", "Marchés", hint="h2h = 1N2 / vainqueur, totals = plus/moins de buts, "
+            field(right, "markets", "Marchés", hint="h2h = 1N2 (victoire / nul), totals = plus/moins de buts, "
                                                      "spreads = handicap.")
             field(right, "refresh_minutes", "Mise à jour automatique toutes les (minutes)")
             nums = ttk.Frame(right)

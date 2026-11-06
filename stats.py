@@ -41,6 +41,22 @@ LEAGUE_IDS = {
     "soccer_turkey_super_league": 203,
 }
 
+# clé The Odds API -> code de compétition football-data.org (gratuit, saison en cours)
+FD_BASE = "https://api.football-data.org/v4"
+FD_CODES = {
+    "soccer_france_ligue_one": "FL1",
+    "soccer_epl": "PL",
+    "soccer_efl_champ": "ELC",
+    "soccer_spain_la_liga": "PD",
+    "soccer_italy_serie_a": "SA",
+    "soccer_germany_bundesliga": "BL1",
+    "soccer_uefa_champs_league": "CL",
+    "soccer_netherlands_eredivisie": "DED",
+    "soccer_portugal_primeira_liga": "PPL",
+}
+FD_STAGES = {"LAST_16": "Round of 16", "QUARTER_FINALS": "Quarter-finals", "SEMI_FINALS": "Semi-finals",
+             "FINAL": "Final", "PLAYOFFS": "Knockout Round Play-offs", "PLAYOFF_ROUND": "Knockout Round Play-offs"}
+
 DAILY_BUDGET = 100
 KEEP_SPARE = 4            # requêtes gardées en réserve
 MIN_GAP = 6.5             # secondes entre 2 requêtes (≈ 9 / minute)
@@ -168,6 +184,120 @@ class Stats:
             self._save()
         if on_change:
             on_change()
+
+    def _fd_get(self, key, path, params=None):
+        wait = MIN_GAP - (time.time() - self.last_call)
+        if wait > 0:
+            time.sleep(wait)
+        url = f"{FD_BASE}{path}" + (f"?{urllib.parse.urlencode(params)}" if params else "")
+        req = urllib.request.Request(url, headers={"X-Auth-Token": key, "User-Agent": self.ua})
+        self.last_call = time.time()
+        try:
+            with urllib.request.urlopen(req, timeout=25) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            msg = ""
+            try:
+                msg = json.loads(e.read().decode("utf-8")).get("message", "")
+            except Exception:
+                pass
+            if e.code in (401, 403):
+                raise RuntimeError(msg or "clé football-data.org refusée")
+            if e.code == 429:
+                time.sleep(30)
+                raise RuntimeError("trop de requêtes, nouvel essai dans quelques minutes")
+            raise RuntimeError(f"erreur HTTP {e.code} {msg}"[:160])
+
+    def update_fd(self, key, sports, events, on_change=None):
+        """Source gratuite football-data.org : calendrier, résultats, classements, journées, face-à-face."""
+        if not key or self.running:
+            return
+        self.running = True
+        self.last_error = ""
+        try:
+            now = datetime.now(timezone.utc)
+            codes = [FD_CODES[s] for s in sports if s in FD_CODES]
+            for code in codes:
+                # 1 seule requête = tous les matchs de la saison (joués + à venir)
+                if not self._fresh("results", code, 3 * 3600):
+                    body = self._fd_get(key, f"/competitions/{code}/matches")
+                    res, fx = [], []
+                    for m in body.get("matches", []):
+                        try:
+                            h, a = m["homeTeam"], m["awayTeam"]
+                            if not h.get("id") or not a.get("id"):
+                                continue
+                            stage = m.get("stage") or ""
+                            if stage in FD_STAGES:
+                                rnd = FD_STAGES[stage]
+                            elif m.get("matchday"):
+                                rnd = ("League Stage - " if code == "CL" else "Regular Season - ") + str(m["matchday"])
+                            else:
+                                rnd = ""
+                            ft = (m.get("score") or {}).get("fullTime") or {}
+                            row = {"date": m["utcDate"], "home_id": h["id"], "away_id": a["id"],
+                                   "home": h.get("name") or "", "away": a.get("name") or "",
+                                   "home_short": h.get("shortName") or "", "away_short": a.get("shortName") or ""}
+                            if m.get("status") == "FINISHED" and ft.get("home") is not None:
+                                res.append(dict(row, gh=ft["home"], ga=ft["away"]))
+                            elif m.get("status") in ("SCHEDULED", "TIMED", "POSTPONED"):
+                                fx.append(dict(row, id=m["id"], round=rnd, league=code))
+                        except (KeyError, TypeError):
+                            continue
+                    with self.lock:
+                        self.data["fixtures"][code] = {"ts": time.time(), "list": fx}
+                    self._put("results", code, res, on_change)
+                if code != "CL" and not self._fresh("standings", code, 6 * 3600):
+                    body = self._fd_get(key, f"/competitions/{code}/standings")
+                    table = {}
+                    for grp in body.get("standings", []):
+                        if grp.get("type") != "TOTAL":
+                            continue
+                        for t in grp.get("table", []):
+                            try:
+                                table[str(t["team"]["id"])] = {
+                                    "rank": t.get("position"), "points": t.get("points"),
+                                    "gd": t.get("goalDifference"), "played": t.get("playedGames"),
+                                    "form": (t.get("form") or "").replace(",", ""), "desc": "", "group": ""}
+                            except (KeyError, TypeError):
+                                continue
+                    self._put("standings", code, table, on_change)
+            # face-à-face (10 derniers, toutes compétitions) pour les matchs des 4 prochains jours
+            mapping = self.match_all(events)
+            soon = []
+            for fx in mapping.values():
+                try:
+                    st = datetime.fromisoformat(fx["date"].replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if now < st < now + timedelta(days=4):
+                    soon.append((st, fx))
+            for st, fx in sorted(soon, key=lambda x: x[0]):
+                k = f"{min(fx['home_id'], fx['away_id'])}-{max(fx['home_id'], fx['away_id'])}"
+                if self._fresh("h2h", k, 7 * 86400):
+                    continue
+                body = self._fd_get(key, f"/matches/{fx['id']}/head2head", {"limit": 10})
+                lst = []
+                for m in body.get("matches", []):
+                    try:
+                        ft = m["score"]["fullTime"]
+                        if ft.get("home") is None:
+                            continue
+                        lst.append({"date": m["utcDate"][:10], "home": m["homeTeam"]["name"],
+                                    "away": m["awayTeam"]["name"], "gh": ft["home"], "ga": ft["away"],
+                                    "comp": (m.get("competition") or {}).get("name", "")})
+                    except (KeyError, TypeError):
+                        continue
+                lst.sort(key=lambda m: m["date"], reverse=True)
+                self._put("h2h", k, lst, on_change)
+        except Exception as e:
+            self.last_error = f"football-data.org : {e}"
+        finally:
+            self.running = False
+            with self.lock:
+                self._save()
+            if on_change:
+                on_change()
 
     def update(self, key, sports, events, on_change=None, lineup_window_min=75):
         """Récupère ce qui manque en respectant le quota (≈ 30-45 requêtes / jour). À lancer dans un thread."""
@@ -376,7 +506,9 @@ class Stats:
                     continue
                 if abs((ft - t).total_seconds()) > 3 * 3600:
                     continue
-                sc = (_sim(ev.get("home_team", ""), fx["home"]) + _sim(ev.get("away_team", ""), fx["away"])) / 2
+                sh = max(_sim(ev.get("home_team", ""), fx["home"]), _sim(ev.get("home_team", ""), fx.get("home_short", "")))
+                sa = max(_sim(ev.get("away_team", ""), fx["away"]), _sim(ev.get("away_team", ""), fx.get("away_short", "")))
+                sc = (sh + sa) / 2
                 if sc > score:
                     best, score = fx, sc
             if best and score >= 0.55:

@@ -36,7 +36,7 @@ import stats as statsmod
 from datetime import datetime, timedelta, timezone
 
 APP_NAME = "BetScope"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.5.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 
@@ -87,7 +87,8 @@ DEFAULT_CONFIG = {
     "min_stake": 0.50,
     "kelly_fraction": 0.25,
     "demo": False,
-    "football_key": "",      # clé API-Football (blessés, compos, forme, journée)
+    "fd_key": "",            # clé football-data.org (gratuite : forme, classement, journée, face-à-face)
+    "football_key": "",      # clé API-Football (payante pour la saison en cours : blessés, compos)
     "stats_weight": 0.25,    # part du modèle forme/stats dans la proba finale (0 = cotes seules)
     "day_filter": "all",
 }
@@ -1208,7 +1209,7 @@ class Api:
                 last_an = now
                 self._stats_dirty = False
                 self._reanalyze()
-            if now >= self._next_stats and self._cfg.get("football_key", "").strip() and self._events \
+            if now >= self._next_stats and self._stats_key() and self._events \
                     and not self._is_demo and not self._stats.running:
                 self._next_stats = now + 20 * 60
                 threading.Thread(target=self._stats_update, daemon=True).start()
@@ -1247,19 +1248,29 @@ class Api:
             self._fetching = False
             self._reanalyze()
 
+    def _stats_key(self):
+        return self._cfg.get("fd_key", "").strip() or self._cfg.get("football_key", "").strip()
+
     def _stats_update(self):
         with self._lock:
-            key, sports, events = self._cfg.get("football_key", "").strip(), sports_list(self._cfg), list(self._events)
+            fd, af = self._cfg.get("fd_key", "").strip(), self._cfg.get("football_key", "").strip()
+            sports, events = sports_list(self._cfg), list(self._events)
 
         def changed():
             self._stats_dirty = True
-        self._stats.update(key, sports, events, on_change=changed)
+        if fd:
+            self._stats.update_fd(fd, sports, events, on_change=changed)
+        if af:  # optionnel (offre payante) : blessés, compos
+            err = self._stats.last_error
+            self._stats.update(af, sports, events, on_change=changed)
+            if err and not self._stats.last_error:
+                self._stats.last_error = err
 
     def _reanalyze(self):
         with self._lock:
             try:
                 cfg = self._cfg
-                has_key = bool(cfg.get("football_key", "").strip()) and not self._is_demo
+                has_key = bool(self._stats_key()) and not self._is_demo
                 self._info = self._stats.info_for(self._events) if has_key else {}
                 self._days = day_options(self._events, self._info)
                 events = filter_events(self._events, cfg.get("day_filter", "all"), self._info)
@@ -1318,7 +1329,7 @@ class Api:
                 "has_key": bool(self._cfg["api_key"].strip()),
                 "update": self._update, "update_state": self._update_state,
                 "days": self._days, "day": self._cfg.get("day_filter", "all"),
-                "stats": dict(self._stats.status(), enabled=bool(self._cfg.get("football_key", "").strip()),
+                "stats": dict(self._stats.status(), enabled=bool(self._stats_key()),
                               matched=len(self._info)),
                 "dl_progress": self._dl_progress, "frozen": bool(getattr(sys, "frozen", False)),
             }
@@ -1413,7 +1424,7 @@ class Api:
             cfg[k] = v
         source_changed = any(cfg[k] != self._cfg[k] for k in
                              ("api_key", "source_books", "regions", "markets", "sports", "extra_sports", "demo"))
-        if cfg.get("football_key") != self._cfg.get("football_key"):
+        if cfg.get("football_key") != self._cfg.get("football_key") or cfg.get("fd_key") != self._cfg.get("fd_key"):
             self._next_stats = time.time() + 1
         with self._lock:
             self._cfg = cfg

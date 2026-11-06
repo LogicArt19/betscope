@@ -393,7 +393,8 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
           <div class="card">
             <h3>Connexion aux cotes</h3>
             <div class="f"><label>Clé API The Odds API</label><input class="in" id="c-api_key" type="password" autocomplete="off"><small>Gratuite sur the-odds-api.com. Sans clé, l'appli tourne en mode démo avec des matchs fictifs.</small></div>
-            <div class="f"><label>Clé API-Football (analyse complète)</label><input class="in" id="c-football_key" type="password" autocomplete="off"><small>Gratuite sur dashboard.api-football.com (100 requêtes/jour, l'appli en utilise ~40). Donne la forme, les séries, le classement, les blessés/suspendus, les compos, les confrontations et le numéro de journée.</small></div>
+            <div class="f"><label>Clé football-data.org (analyse complète, gratuite)</label><input class="in" id="c-fd_key" type="password" autocomplete="off"><small>Gratuite à vie sur football-data.org (« Register » → la clé arrive par e-mail). Donne la forme, les séries, domicile/extérieur, le classement, la journée et les confrontations directes pour Ligue 1, Premier League, Liga, Serie A, Bundesliga, Ligue des champions, Eredivisie, Liga Portugal et Championship.</small></div>
+            <div class="f"><label>Clé API-Football (optionnel, offre payante)</label><input class="in" id="c-football_key" type="password" autocomplete="off"><small>Seulement si tu as un abonnement : ajoute les blessés/suspendus et les compos officielles. Le plan gratuit ne couvre pas la saison en cours, laisse vide.</small></div>
             <div class="f"><label>Mise à jour automatique toutes les (minutes)</label><input class="in" id="c-refresh_minutes"></div>
             <div class="est" id="c-est"></div>
             <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>Par défaut betclic_fr. Tu peux en ajouter : winamax_fr, unibet_fr, pmu_fr, parionssport_fr, netbet_fr (séparés par des virgules).</small></div>
@@ -536,7 +537,7 @@ async function openBet(b){
       <div class="card stat"><div class="l">Cote juste</div><div class="v">${fr(b.fair)}</div></div>
     </div>
     ${verdict}
-    <div id="dmatch">${b.stats?'<div class="skel" style="height:90px"></div>':'<div class="card note" style="margin-top:12px">💡 Ajoute ta clé <b>API-Football</b> (gratuite) dans Paramètres pour voir la forme, le classement, les absents, les confrontations et les compos de ce match.</div>'}</div>
+    <div id="dmatch">${b.stats?'<div class="skel" style="height:90px"></div>':'<div class="card note" style="margin-top:12px">💡 Ajoute ta clé <b>football-data.org</b> (gratuite) dans Paramètres pour voir la forme, les séries, le classement et les confrontations directes de ce match.</div>'}</div>
     <div class="sec">Cotes de tous les bookmakers (${b.n_books})</div>
     ${b.prices.map(x=>`<div class="pr ${x.playable?'me':''}"><span>${esc(x.book)}${x.playable?' ← tu peux parier ici':''}</span><b>${fr(x.odds)}</b></div>`).join("")}`;
   $("#drawer").classList.add("on"); $("#ov").classList.add("on");
@@ -554,7 +555,7 @@ async function openBet(b){
     <div class="r"><span>+2,5 buts / Les 2 marquent</span><b>${pc(f.over25)} · ${pc(f.btts)}</b></div>
     <div class="r"><span>Dernier match</span><b>il y a ${Math.round(f.rest_days)} j</b></div>
     <div class="l5">${f.last.map(g=>`<span>${fbad(g.res)} ${g.home?"vs":"à"} ${esc(g.opp)} <b style="color:var(--fg)">${g.score}</b> · ${g.date}</span>`).join("")}</div>`:'<div class="r">Pas encore de résultats</div>'}
-    ${inj&&inj.length?`<div class="inj">🚑 ${inj.map(i=>`${esc(i.player)}${/question/i.test(i.type)?" (incertain)":""}`).join(", ")}</div>`:'<div class="r"><span>Absents</span><b>aucun signalé</b></div>'}
+    ${inj&&inj.length?`<div class="inj">🚑 ${inj.map(i=>`${esc(i.player)}${/question/i.test(i.type)?" (incertain)":""}`).join(", ")}</div>`:""}
   </div>`;
   const md = m.model;
   $("#dmatch").innerHTML = `
@@ -564,7 +565,7 @@ async function openBet(b){
     <div class="cmp">${side(m.home,m.form_home,m.table_home,m.inj_home)}${side(m.away,m.form_away,m.table_away,m.inj_away)}</div>
     ${m.h2h&&m.h2h.length?`<div class="sec">Confrontations directes${m.h2h_sum?` · ${esc(m.home)} ${m.h2h_sum.w}V ${m.h2h_sum.d}N ${m.h2h_sum.l}D · ${fr(m.h2h_sum.avg_goals,1)} buts/match`:""}</div>${m.h2h.map(h=>`<div class="pr"><span>${esc(h.date)} · ${esc(h.home)} – ${esc(h.away)}${h.comp?` <small style="color:var(--dim)">${esc(h.comp)}</small>`:""}</span><b>${h.gh} - ${h.ga}</b></div>`).join("")}`:""}
     ${m.pred&&m.pred.advice?`<div class="sec">Avis API-Football</div><div class="card note" style="margin:0">${esc(m.pred.advice)}</div>`:""}
-    ${m.lineups&&m.lineups.length?`<div class="sec">Compositions officielles</div>${m.lineups.map(l=>`<div class="card note" style="margin:0 0 8px"><b style="color:var(--fg)">${esc(l.team)}</b> · ${esc(l.formation)}<br>${l.xi.map(esc).join(", ")}</div>`).join("")}`:`<div class="sec">Compositions</div><div style="color:var(--muted);font-size:12.5px">Publiées environ 1 h avant le match (l'appli les récupère toute seule).</div>`}`;
+    ${m.lineups&&m.lineups.length?`<div class="sec">Compositions officielles</div>${m.lineups.map(l=>`<div class="card note" style="margin:0 0 8px"><b style="color:var(--fg)">${esc(l.team)}</b> · ${esc(l.formation)}<br>${l.xi.map(esc).join(", ")}</div>`).join("")}`:""}`;
 }
 $("#ov").onclick = $("#dx").onclick = () => { $("#drawer").classList.remove("on"); $("#ov").classList.remove("on"); };
 
@@ -656,7 +657,7 @@ async function makeGoal(){
 
 /* ----- paramètres ----- */
 const NUMS=["stats_weight","refresh_minutes","min_ev","max_ev","min_odds","max_odds","horizon_hours","min_stake","max_legs","min_books"];
-const TXT=["football_key","api_key","bookmakers","source_books","markets"];
+const TXT=["fd_key","football_key","api_key","bookmakers","source_books","markets"];
 async function loadCfg(){
   if (!api) return;
   cfg = await api.get_config();
@@ -709,7 +710,7 @@ function renderStatus(){
     b += `<div class="banner upd"><span>🚀 <b>Nouvelle version ${esc(status.update.version)} disponible</b> (tu as la ${esc(status.version)})${err?` — échec : ${esc(err)}`:""}</span><div class="sp"></div>${dl ? `<span>Téléchargement…</span><div class="bar"><i style="width:${Math.round(status.dl_progress*100)}%"></i></div>` : `<button class="btn primary" id="do-upd">Mettre à jour</button>`}</div>`;
   }
   if (status.demo && !status.has_key) b += `<div class="banner warn">ℹ️ Mode démo : ajoute ta clé API dans <b style="cursor:pointer;text-decoration:underline" data-goto="settings">Paramètres</b> pour avoir les vrais matchs.</div>`;
-  if (!status.demo && status.has_key && status.stats && !status.stats.enabled) b += `<div class="banner upd"><span>📊 <b>Active l'analyse complète</b> (forme, séries, classement, blessés, compos) avec une clé API-Football gratuite.</span><div class="sp"></div><button class="btn" data-goto="settings">Ajouter la clé</button></div>`;
+  if (!status.demo && status.has_key && status.stats && !status.stats.enabled) b += `<div class="banner upd"><span>📊 <b>Active l'analyse complète</b> (forme, séries, classement, journée, face-à-face) avec une clé football-data.org gratuite.</span><div class="sp"></div><button class="btn" data-goto="settings">Ajouter la clé</button></div>`;
   if (status.stats && status.stats.error) b += `<div class="banner err">⚠ ${esc(status.stats.error)}</div>`;
   if (status.warning) b += `<div class="banner warn">ℹ️ ${esc(status.warning)}</div>`;
   if (status.errors && status.errors.length) b += `<div class="banner err">⚠ ${status.errors.map(esc).join(" · ")}</div>`;

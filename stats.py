@@ -335,6 +335,7 @@ class Stats:
         self.web_error = ""
         web = self.data.setdefault("web", {})
         board = self.data.setdefault("web_board", {})
+        errors, n_ok = [], 0
         try:
             now = datetime.now(timezone.utc)
             by_sport = {}
@@ -352,25 +353,30 @@ class Stats:
                 # calendrier ESPN sur la période (1 requête / ligue / 3 h)
                 c = board.get(slug)
                 if not c or time.time() - c["ts"] > 3 * 3600:
-                    d1 = (now - timedelta(days=1)).strftime("%Y%m%d")
-                    d2 = (now + timedelta(days=5)).strftime("%Y%m%d")
-                    try:
-                        body = self._web_get(f"{ESPN_BASE}/{slug}/scoreboard?dates={d1}-{d2}&limit=200")
-                    except Exception as e:
-                        self.web_error = f"recherche web : {e}"
-                        continue
-                    evs = []
-                    for e in body.get("events", []):
+                    # ESPN n'accepte qu'un jour par requête -> 1 requête par jour de match
+                    days = sorted({(t.astimezone(timezone.utc)).strftime("%Y%m%d") for t, _ in lst})
+                    evs, ok = [], False
+                    for day in days:
                         try:
-                            comp = e["competitions"][0]
-                            teams = {c["homeAway"]: c["team"] for c in comp["competitors"]}
-                            evs.append({"id": e["id"], "date": e["date"],
-                                        "home": teams["home"].get("displayName", ""),
-                                        "home_short": teams["home"].get("shortDisplayName", ""),
-                                        "away": teams["away"].get("displayName", ""),
-                                        "away_short": teams["away"].get("shortDisplayName", "")})
-                        except (KeyError, IndexError, TypeError):
+                            body = self._web_get(f"{ESPN_BASE}/{slug}/scoreboard?dates={day}")
+                            ok = True
+                        except Exception as e:
+                            err = f"recherche web ({slug}) : {e}"
                             continue
+                        for e in body.get("events", []):
+                            try:
+                                comp = e["competitions"][0]
+                                teams = {c2["homeAway"]: c2["team"] for c2 in comp["competitors"]}
+                                evs.append({"id": e["id"], "date": e["date"],
+                                            "home": teams["home"].get("displayName", ""),
+                                            "home_short": teams["home"].get("shortDisplayName", ""),
+                                            "away": teams["away"].get("displayName", ""),
+                                            "away_short": teams["away"].get("shortDisplayName", "")})
+                            except (KeyError, IndexError, TypeError):
+                                continue
+                    if not ok:
+                        errors.append(err)
+                        continue
                     board[slug] = c = {"ts": time.time(), "list": evs}
                 # détail de chaque match : plus souvent quand le match approche (compos ~1 h avant)
                 for t, ev in sorted(lst, key=lambda x: x[0]):
@@ -384,8 +390,9 @@ class Stats:
                         continue
                     try:
                         j = self._web_get(f"{ESPN_BASE}/{slug}/summary?event={m['id']}")
+                        n_ok += 1
                     except Exception as e:
-                        self.web_error = f"recherche web : {e}"
+                        errors.append(f"recherche web : {e}")
                         continue
                     with self.lock:
                         web[ev["id"]] = {"ts": time.time(), "v": self._parse_summary(j)}
@@ -393,8 +400,10 @@ class Stats:
                     if on_change:
                         on_change()
         except Exception as e:
-            self.web_error = f"recherche web : {e}"
+            errors.append(f"recherche web : {e}")
         finally:
+            # erreur affichée seulement si rien n'a marché (un championnat absent d'ESPN n'est pas grave)
+            self.web_error = errors[0] if errors and not n_ok and not web else ""
             self.web_running = False
             with self.lock:
                 self._save()

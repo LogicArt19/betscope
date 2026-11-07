@@ -1492,7 +1492,7 @@ def _objective_plan(stake, target, selections, cfg):
     total_needed = stake + target
     need1 = total_needed / stake
     lmin = max(1, int(cfg.get("_min_legs") or 1))
-    lmax = max(lmin, min(10, int(cfg.get("_max_legs") or 10)))
+    lmax = max(lmin, min(20, int(cfg.get("_max_legs") or 12)))
     pool = 22 if lmax <= 6 else (18 if lmax <= 8 else 15)
     bt = lambda its, need, **kw: best_ticket(its, need, **dict(dict(max_legs=lmax, min_legs=lmin), **kw))
     books = set()
@@ -1596,7 +1596,7 @@ def _objective_plan(stake, target, selections, cfg):
         for s, o in items:
             evs[s["event_id"]] = max(evs.get(s["event_id"], 0), o)
         prod = 1.0
-        for o in sorted(evs.values(), reverse=True)[:6]:
+        for o in sorted(evs.values(), reverse=True)[:lmax]:
             prod *= o
         max_odds = max(max_odds, prod)
     return {"stake": stake, "target": target, "need_odds": need1, "options": uniq[:12], "max_odds": max_odds}
@@ -1646,6 +1646,29 @@ def ser_combo(c):
     }
 
 
+def ticket_risks(legs, p_hit):
+    """Ce qui peut faire perdre le ticket, en clair."""
+    out = []
+    low = [l for l in legs if l["p"] < 0.5]
+    if low:
+        out.append(f"{len(low)} sélection{'s' if len(low) > 1 else ''} à moins d'une chance sur deux : "
+                   + ", ".join(l["selection"] for l in low[:3]))
+    contra = [l for l in legs if (l.get("stats") or {}).get("contra")]
+    if contra:
+        out.append(f"{len(contra)} pari{'s' if len(contra) > 1 else ''} contre la forme des équipes")
+    est = [l for l in legs if l.get("estimated") and not l.get("user_odds")]
+    if est:
+        out.append(f"{len(est)} cote{'s' if len(est) > 1 else ''} estimée{'s' if len(est) > 1 else ''} : vérifie-les chez ton bookmaker")
+    thin = [l for l in legs if (l.get("stats") or {}).get("q", 1) < 0.5]
+    if thin:
+        out.append(f"Données incomplètes sur {len(thin)} match{'s' if len(thin) > 1 else ''} (forme ou absents)")
+    if len(legs) >= 6:
+        out.append(f"{len(legs)} matchs : une seule surprise suffit à tout perdre")
+    if p_hit < 0.10:
+        out.append(f"Environ 1 chance sur {max(2, round(1 / max(p_hit, 1e-3)))} : à jouer petit")
+    return out
+
+
 def ser_objective(res, cfg):
     out = {k: res.get(k) for k in ("stake", "target", "need_odds", "max_odds", "strict", "n_ok", "strict_max_gain", "why")}
     out["options"] = []
@@ -1669,7 +1692,8 @@ def ser_objective(res, cfg):
             })
         out["options"].append({"relaxed": bool(o.get("relaxed")), "kind": o["kind"], "title": o["title"],
                                "desc": o["desc"], "book": o["book"],
-                               "p_hit": round(o["p_hit"], 4), "tickets": tickets})
+                               "p_hit": round(o["p_hit"], 4), "tickets": tickets,
+                               "risks": ticket_risks([l for t in o["tickets"] for l in t["legs"]], o["p_hit"])})
     return out
 
 
@@ -1812,7 +1836,7 @@ def _obj_opts(o):
 def _int_or_none(v):
     try:
         v = int(float(str(v).replace(",", ".")))
-        return max(1, min(10, v))
+        return max(1, min(20, v))
     except (TypeError, ValueError):
         return None
 
@@ -2529,7 +2553,9 @@ class Api:
         out["bank"] = self.get_bank()
         return out
 
-    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None):
+    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None, leagues=None):
+        if not tier_ok("essentiel"):
+            return {"locked": "essentiel"}
         try:
             stake = float(str(stake).replace(",", ".").replace("€", "").strip())
             target = float(str(target).replace(",", ".").replace("€", "").strip())
@@ -2539,6 +2565,9 @@ class Api:
             return {"error": "Mets une mise et un objectif supérieurs à 0"}
         with self._lock:
             sel, cfg = list(self._sel), dict(self._cfg)
+        if leagues:
+            keep = set(leagues)
+            sel = [x for x in sel if x.get("sport_key") in keep]
         if self._warning:
             cfg["bookmakers"] = ""
         if types:
@@ -2547,7 +2576,25 @@ class Api:
         cfg["_obj"] = _obj_opts(obj)
         if cfg["_min_legs"] and cfg["_max_legs"] and cfg["_min_legs"] > cfg["_max_legs"]:
             cfg["_min_legs"], cfg["_max_legs"] = cfg["_max_legs"], cfg["_min_legs"]
-        out = ser_objective(objective_plan(stake, target, sel, cfg), cfg)
+        res = objective_plan(stake, target, sel, cfg)
+        note = ""
+        if not res["options"] and cfg.get("bookmakers"):
+            # rien chez tes bookmakers : on élargit aux cotes de tous les bookmakers suivis
+            r2 = objective_plan(stake, target, sel, dict(cfg, bookmakers=""))
+            if r2["options"]:
+                res, note = r2, "Pas assez de cotes chez tes bookmakers pour cet objectif : ces tickets utilisent les cotes d'autres bookmakers, vérifie-les chez toi."
+        closest = None
+        if not res["options"] and res.get("max_odds", 0) > 1.05:
+            # objectif hors d'atteinte aujourd'hui : les meilleurs tickets pour s'en approcher le plus possible
+            best_odds = res["max_odds"] * 0.97
+            gain = round(stake * (best_odds - 1), 2)
+            r3 = objective_plan(stake, gain, sel, dict(cfg, bookmakers="") if note else cfg)
+            if r3["options"]:
+                closest = {"odds": round(best_odds, 2), "gain": gain}
+                need = res["need_odds"]
+                res = dict(r3, need_odds=need, max_odds=res["max_odds"])
+        out = ser_objective(res, cfg)
+        out["note"], out["closest"] = note, closest
         out["bank"] = self.get_bank()
         return out
 

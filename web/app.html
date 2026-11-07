@@ -203,6 +203,10 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .tot{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:12px;border-top:1px dashed var(--rim2)}
 .tot b{font-family:var(--disp);font-size:18px;color:var(--home)}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.tgl{display:flex;flex-wrap:wrap;gap:6px}
+.tgl .chip{padding:6px 10px;font-size:12.5px}
+.risks{margin-top:12px;padding:12px 14px;border-radius:11px;background:rgba(255,107,122,.05);border:1px solid rgba(255,107,122,.2);display:grid;gap:4px;font-size:13px;color:#F3C4CA}
+.risks b{color:var(--bad);font-size:12.5px}
 .stat{padding:16px 18px}
 .stat small{color:var(--fog);font-size:12.5px;font-weight:600}
 .stat b{display:block;font-family:var(--disp);font-size:26px;font-weight:700;margin-top:2px}
@@ -657,36 +661,62 @@ document.addEventListener("click", e => { const t = e.target.closest("[data-ptab
 /* ======================================================================
    Vue : Objectif
    ====================================================================== */
-let GOAL = {stake:"10", target:"40", res:null};
+let GOAL = {stake:"10", target:"40", res:null, leagues:null, types:null, min:"", max:""};
+const CATS = [["1n2","Résultat"],["dc","Double chance"],["dnb","Remboursé si nul"],["total","Nombre de buts"],["team","Buts par équipe"],["btts","Les 2 marquent"],["hcp","Handicap"],["exact","Score exact"],["mtft","Mi-temps / fin"],["scorer","Buteurs"],["decisive","Joueurs décisifs"]];
+const CAT_TIER = {essentiel:["1n2","dc","total","btts"]};
 function vGoal(){
-  const need = (parseFloat(String(GOAL.target).replace(",", ".")) + parseFloat(String(GOAL.stake).replace(",", "."))) / parseFloat(String(GOAL.stake).replace(",", "."));
+  if (rank() < 1) return `<h1 class="t">Objectif</h1><p class="lead">« Je mise 10 €, je veux gagner 40 € » : Cotescope cherche parmi tous les paris de tous les matchs le ticket le plus sûr pour y arriver.</p>` + lockBox("essentiel", "Le mode Objectif", "Donne ta mise et ce que tu veux gagner, Cotescope te construit les meilleurs tickets avec leurs risques.");
+  const num = v => parseFloat(String(v).replace(",", "."));
+  const need = (num(GOAL.target) + num(GOAL.stake)) / num(GOAL.stake);
+  const leagues = [...new Map(MATCHES.map(m => [m.sport_key, m.league])).entries()];
+  const okCats = rank() >= 2 ? CATS.map(c => c[0]) : CAT_TIER.essentiel;
+  const selL = new Set(GOAL.leagues || leagues.map(l => l[0])), selT = new Set(GOAL.types || okCats);
   const r = GOAL.res;
   let out = "";
   if (r) {
-    if (r.error) out = `<div class="panel empty"><b>${esc(r.error)}</b></div>`;
-    else if (!r.options.length) out = `<div class="panel empty"><b>Objectif impossible avec les matchs actuels</b>Il faudrait une cote de ${fr(r.need_odds)}, la plus grosse possible aujourd'hui est ${fr(r.max_odds)}. Baisse ton objectif ou augmente ta mise.</div>`;
-    else out = r.options.map((o, i) => `<div class="panel opt ${i===0?"best":""}">
+    if (r.locked) out = lockBox("essentiel", "Le mode Objectif", "Disponible avec tous les forfaits payants.");
+    else if (r.error) out = `<div class="panel empty"><b>${esc(r.error)}</b></div>`;
+    else if (!r.options.length) out = `<div class="panel empty"><b>Aucun ticket possible avec ces réglages</b>Coche plus de championnats ou de types de paris, ou laisse le nombre de matchs libre.</div>`;
+    else out = (r.closest ? `<div class="warn">Ton objectif demande une cote de <b>${fr(r.need_odds)}</b>, impossible à atteindre avec les matchs actuels. Voici les tickets qui s'en approchent le plus : cote ${fr(r.closest.odds)}, gain d'environ ${eur(r.closest.gain)}.</div>` : "")
+      + (r.note ? `<div class="warn">${esc(r.note)}</div>` : "")
+      + r.options.map((o, i) => `<div class="panel opt ${i===0?"best":""}">
         <div class="oh"><div style="flex:1"><b>${i===0?"Le ticket le plus sûr":esc(o.title)}</b><small>${esc(o.desc)}</small></div><div class="ring"><b>${pc(o.p_hit, o.p_hit<.1?1:0)}</b><small>de chances</small></div></div>
         ${o.tickets.map(t => `${t.legs.map(l => `<div class="leg"><div>${esc(l.selection)} <small>· ${esc(l.match)} · ${esc(l.date)} · ${pc(l.p)}</small></div><span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`).join("")}
           <div class="tot"><span class="note">Mise ${eur(t.stake)} · cote ${fr(t.odds)}</span><div class="sp"></div><b>${eur(t.ret)}</b><button class="btn sm" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}">Je le joue</button></div>`).join("")}
+        ${(o.risks||[]).length ? `<div class="risks"><b>Les risques</b>${o.risks.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}
       </div>`).join("") + (r.locked_more ? lockBox("pro", `${r.locked_more} autre${r.locked_more>1?"s":""} ticket${r.locked_more>1?"s":""} possible${r.locked_more>1?"s":""}`, "Toutes les alternatives classées pour ton objectif.") : "");
-  } else out = `<div class="panel empty"><b>Donne ta mise et ce que tu veux gagner</b>Cotescope cherche parmi tous les paris de tous les matchs le ticket qui a le plus de chances d'y arriver.</div>`;
+  } else out = `<div class="panel empty"><b>Donne ta mise et ce que tu veux gagner</b>Cotescope cherche parmi tous les paris de tous les matchs les tickets qui ont le plus de chances d'y arriver, avec leurs risques.</div>`;
   return `<h1 class="t">Objectif</h1><p class="lead">« Je mise 10 €, je veux gagner 40 € » : Cotescope te sort le ticket le plus sûr pour y arriver.</p>
     <div class="goal">
       <div class="panel goalf">
         <label class="f" for="gl-s">Je mise</label><div class="money"><input class="in" id="gl-s" inputmode="decimal" value="${esc(GOAL.stake)}"><span>€</span></div>
         <label class="f" for="gl-t" style="margin-top:14px">Je veux gagner</label><div class="money"><input class="in" id="gl-t" inputmode="decimal" value="${esc(GOAL.target)}"><span>€</span></div>
         <div class="need">Cote à atteindre : <b>${isFinite(need)?fr(need):"–"}</b></div>
-        <button class="btn go" id="gl-go" style="width:100%">Trouver le meilleur ticket</button>
+        <label class="f">Nombre de matchs</label>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px"><input class="in" id="gl-min" inputmode="numeric" placeholder="min" value="${esc(GOAL.min)}" style="width:70px"><span class="note">à</span><input class="in" id="gl-max" inputmode="numeric" placeholder="max" value="${esc(GOAL.max)}" style="width:70px"><span class="note">vide = libre</span></div>
+        <label class="f">Championnats</label>
+        <div class="tgl" id="gl-lg">${leagues.map(([k,l]) => `<button class="chip ${selL.has(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("")}</div>
+        <label class="f" style="margin-top:12px">Types de paris</label>
+        <div class="tgl" id="gl-ty">${CATS.map(([k,l]) => okCats.includes(k) ? `<button class="chip ${selT.has(k)?"on":""}" data-k="${k}">${l}</button>` : `<button class="chip lk" data-plans title="Inclus dans Pro">🔒 ${l}</button>`).join("")}</div>
+        <button class="btn go" id="gl-go" style="width:100%;margin-top:16px">Trouver les meilleurs tickets</button>
       </div>
       <div id="g-out">${out}</div>
     </div>`;
 }
 document.addEventListener("click", e => {
+  const c = e.target.closest(".tgl .chip:not(.lk)"); if (!c) return;
+  c.classList.toggle("on");
+});
+const readGoal = () => {
+  GOAL.stake = $("#gl-s").value; GOAL.target = $("#gl-t").value; GOAL.min = $("#gl-min").value.trim(); GOAL.max = $("#gl-max").value.trim();
+  GOAL.leagues = $$("#gl-lg .chip.on").map(x => x.dataset.k); GOAL.types = $$("#gl-ty .chip.on").map(x => x.dataset.k);
+};
+document.addEventListener("click", e => {
   if (e.target.closest("#gl-go")) {
-    GOAL.stake = $("#gl-s").value; GOAL.target = $("#gl-t").value;
+    readGoal();
+    if (!GOAL.leagues.length || !GOAL.types.length) { toast("Coche au moins un championnat et un type de pari"); return; }
     $("#g-out").innerHTML = `<div class="panel loader" style="padding:40px"><div class="scan">${spec([.45,.27,.28])}</div>Recherche parmi tous les paris…</div>`;
-    setTimeout(() => { GOAL.res = call("compute_objective", GOAL.stake, GOAL.target, null, null, null, null); render(); }, 30);
+    setTimeout(() => { GOAL.res = call("compute_objective", GOAL.stake, GOAL.target, GOAL.types, GOAL.min || null, GOAL.max || null, null, GOAL.leagues); render(); }, 30);
   }
   const p = e.target.closest("[data-play]");
   if (p) { const r = call("log_ticket", p.dataset.play.split("~"), p.dataset.stake, ""); toast(r.ok ? "Ticket ajouté à ton bilan" : (r.error || "Erreur")); if (r.ok) { p.textContent = "Enregistré"; p.disabled = true; } }

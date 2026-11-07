@@ -1615,12 +1615,43 @@ def _solve(evs, L, k=None, lmin=1, lmax=12, banned=(), keep=None):
     return {"legs": [x[2] for x in legs], "leg_odds": [x[3] for x in legs], "odds": o, "p": p, "ev": p * o - 1}
 
 
+def backed_side(s):
+    """Quelle équipe ce pari soutient : home, away, draw ou None (buts, les 2 marquent…)."""
+    sel, home, away = s.get("selection", ""), s.get("home") or "", s.get("away") or ""
+    cat = s.get("cat")
+    if cat in ("1n2", "dnb"):
+        if home and home in sel:
+            return "home"
+        if away and away in sel:
+            return "away"
+        return "draw" if "nul" in sel.lower() else None
+    if cat == "dc":
+        return "home" if "(1N)" in sel else ("away" if "(N2)" in sel else None)
+    return None
+
+
+def bad_form(f):
+    """Série inquiétante sur les 5 derniers matchs : 3 défaites ou plus, ou aucune victoire avec 2 défaites."""
+    f = (f or "")[:5]
+    return len(f) >= 4 and (f.count("D") >= 3 or (f.count("V") == 0 and f.count("D") >= 2))
+
+
 def _reasonable(s, floor):
-    """Un pari « raisonnable » pour un ticket : assez probable, et pas contredit par nos analyses."""
+    """Un pari « raisonnable » pour un ticket : assez probable, pas contredit par nos analyses,
+    et jamais sur une équipe en mauvaise série (même si les bookmakers la donnent favorite)."""
     if floor <= 0:
         return True
     st = s.get("stats") or {}
     if s["p"] < floor or st.get("contra"):
+        return False
+    side = backed_side(s)
+    if side in ("home", "away") and bad_form(st.get("form_" + side)):
+        return False
+    if side == "home" and bad_form(st.get("form_home")) is False and len((st.get("form_away") or "")) >= 4 \
+            and (st.get("form_away") or "")[:5].count("V") >= 4 and s.get("cat") == "1n2":
+        return False  # on ne parie pas la victoire contre une équipe qui gagne tout
+    if side == "away" and len((st.get("form_home") or "")) >= 4 and (st.get("form_home") or "")[:5].count("V") >= 4 \
+            and s.get("cat") == "1n2":
         return False
     pm = st.get("p_model")
     return pm is None or pm >= floor - 0.05
@@ -1658,7 +1689,9 @@ def _objective_plan(stake, target, selections, cfg):
             return
         o = {"book": btitle, "tickets": tickets, "p_hit": 1 - miss, "_odds": odds, "_tags": tags,
              "unsafe": any(l["p"] < 0.5 for t in tickets for l in t["legs"]),
-             "est": sum(1 for t in tickets for l in t["legs"] if l.get("estimated") and not l.get("user_odds"))}
+             "est": sum(1 for t in tickets for l in t["legs"] if l.get("estimated") and not l.get("user_odds")),
+             "badform": sum(1 for t in tickets for l in t["legs"]
+                            if backed_side(l) in ("home", "away") and bad_form(((l.get("stats") or {}).get("form_" + backed_side(l))) or ""))}
         found[key] = dict(o, **(extra or {}))
 
     ranked_books = sorted(books, key=lambda bk: -sum(1 for s in selections if bk in s["playable"]))
@@ -1670,7 +1703,7 @@ def _objective_plan(stake, target, selections, cfg):
         # paris raisonnables d'abord : au moins 1 chance sur 2, et nos analyses ne disent pas le contraire
         best, relaxed = None, False
         # 1) vraies cotes uniquement (pas de cote estimée) et paris raisonnables ; puis on élargit si besoin
-        for floor, real in ((0.5, True), (0.4, True), (0.5, False), (0.4, False), (0.0, False)):
+        for floor, real in ((0.5, True), (0.4, True), (0.5, False), (0.4, False), (0.3, False), (0.0, False)):
             items = [(x, o) for x, o in items_all if _reasonable(x, floor) and (not real or not x.get("estimated") or x.get("user_odds"))]
             evs = _fronts(items)
             solve = lambda evs=evs, **kw: _solve(evs, L, **dict(dict(lmin=lmin, lmax=lmax), **kw))
@@ -1751,7 +1784,7 @@ def _objective_plan(stake, target, selections, cfg):
         o["fiab"] = sum(_q(l) for l in legs) / max(1, len(legs))
     # 1) paris raisonnables d'abord ; 2) chances de passer, pondérées par la fiabilité des analyses
     #    (à chances égales, le ticket dont les matchs sont le mieux analysés passe devant)
-    options = sorted(found.values(), key=lambda o: (o["est"] > 0, o["unsafe"], -o["p_hit"] * (0.7 + 0.3 * o["fiab"]),
+    options = sorted(found.values(), key=lambda o: (o["badform"] > 0, o["est"] > 0, o["unsafe"], -o["p_hit"] * (0.7 + 0.3 * o["fiab"]),
                                                      sum(len(t["legs"]) for t in o["tickets"])))
     for o in options:
         o.pop("_odds", None)
@@ -1867,12 +1900,14 @@ def ser_objective(res, cfg):
                           "league": l.get("sport"), "event_id": l["event_id"],
                           "p_market": round(l.get("p_market", l["p"]), 4),
                           "p_model": round((l.get("stats") or {}).get("p_model"), 4) if (l.get("stats") or {}).get("p_model") is not None else None,
-                          "contra": bool((l.get("stats") or {}).get("contra"))}
+                          "contra": bool((l.get("stats") or {}).get("contra")),
+                          "side": backed_side(l), "form_h": ((l.get("stats") or {}).get("form_home") or "")[:5],
+                          "form_a": ((l.get("stats") or {}).get("form_away") or "")[:5]}
                          for l, lo in zip(t["legs"], t["leg_odds"])],
             })
         legs_all = [l for t in o["tickets"] for l in t["legs"]]
         ends = max(l["start"] for l in legs_all)
-        out["options"].append({"relaxed": bool(o.get("relaxed")), "unsafe": bool(o.get("unsafe")), "fiab": round(o.get("fiab", 0), 2), "est": o.get("est", 0), "kind": o["kind"], "title": o["title"],
+        out["options"].append({"relaxed": bool(o.get("relaxed")), "unsafe": bool(o.get("unsafe")), "fiab": round(o.get("fiab", 0), 2), "est": o.get("est", 0), "badform": o.get("badform", 0), "kind": o["kind"], "title": o["title"],
                                "desc": o["desc"], "book": o["book"], "n_legs": len(legs_all),
                                "ends": fmt_date(ends), "ends_ts": ends.timestamp(),
                                "odds": round(sum(t["stake"] * t["odds"] for t in o["tickets"]) / max(0.01, sum(t["stake"] for t in o["tickets"])), 2),

@@ -283,6 +283,9 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .gleg .why{display:block;margin-top:2px;color:var(--fog)}
 .gleg .why b{color:var(--home)}
 .gleg u{color:var(--home);text-decoration:none;font-weight:600}
+.ff{font-style:normal;font-family:var(--disp);font-weight:700;font-size:11px;padding:0 3px;border-radius:4px;margin-right:2px}
+.ff.V{color:var(--home);background:rgba(38,224,184,.12)} .ff.N{color:var(--draw);background:rgba(242,184,75,.12)} .ff.D{color:var(--bad);background:rgba(255,107,122,.12)}
+.fb{outline:1px solid rgba(255,255,255,.25);border-radius:5px;padding:1px 2px}
 .tgl{display:flex;flex-wrap:wrap;gap:6px}
 .tgl .chip{padding:6px 10px;font-size:12.5px}
 .risks{margin-top:12px;padding:12px 14px;border-radius:11px;background:rgba(255,107,122,.05);border:1px solid rgba(255,107,122,.2);display:grid;gap:4px;font-size:13px;color:#F3C4CA}
@@ -1064,12 +1067,15 @@ function vGoal(){
 }
 let GSORT = "p", GLEGS = "all", GOPEN = new Set([0]), GMORE = 15;
 // une sélection d'un ticket : clic = page du match avec toutes les analyses
+const formHtml = f => (f || "").split("").map(c => `<i class="ff ${c}">${c}</i>`).join("");
+const badF = f => { f = (f || "").slice(0, 5); return f.length >= 4 && ((f.match(/D/g) || []).length >= 3 || (!/V/.test(f) && (f.match(/D/g) || []).length >= 2)); };
 function goalLeg(l){
   const src = l.p_model != null
     ? `Nos analyses ${pc(l.p_model)} · cotes ${pc(l.p_market)}`
     : `Cotes ${pc(l.p_market)} · analyses incomplètes`;
   return `<div class="leg gleg" data-go="match" data-arg="${esc(l.event_id)}" title="Voir toutes les analyses du match">
     <div>${esc(l.selection)} <small>· ${esc(l.match)} · ${esc(l.date)}</small>
+      ${(l.form_h || l.form_a) ? `<small class="why">Forme 5 derniers : <span class="${l.side==="home"?"fb":""}">${formHtml(l.form_h)}</span> / <span class="${l.side==="away"?"fb":""}">${formHtml(l.form_a)}</span>${(l.side==="home"&&badF(l.form_h))||(l.side==="away"&&badF(l.form_a)) ? ' <span class="pill bad">équipe en mauvaise série</span>' : ""}</small>` : ""}
       <small class="why"><b>${pc(l.p)}</b> de chances · ${src}${l.contra?' · <span class="pill bad">contre la forme</span>':""}${l.p<.5?' · <span class="pill warn">moins d\'1 chance sur 2</span>':""} · <u>voir l'analyse ›</u></small></div>
     <span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`;
 }
@@ -1085,14 +1091,14 @@ function goalList(r){
     + (r.note ? `<div class="warn">${esc(r.note)}</div>` : "")
     + `<div class="gsum"><span><b>${r.n_found || r.options.length}</b> <span class="note">tickets trouvés pour une cote ≥ ${fr(r.closest ? r.closest.odds : r.need_odds)}</span></span>
        <span class="note">Le meilleur : <b style="font-size:16px;color:var(--home)">${pc(top.p_hit, top.p_hit < .1 ? 1 : 0)}</b> de chances</span></div>
-      <div class="gfair">Classement objectif : les chances de chaque pari viennent de nos analyses (forme, absents, classement, face-à-face, modèle de buts) croisées avec les cotes des bookmakers professionnels, sans leur marge. Plus les données d'un match sont complètes, plus nos analyses pèsent. Ordre : d'abord les tickets avec de vraies cotes (pas d'estimation ≈) et dont chaque pari a au moins 1 chance sur 2, puis les plus probables, en favorisant les matchs les mieux analysés (la note « analyse » indique la part des données trouvées : forme, absents, classement, face-à-face). Touche un match pour voir toute son analyse.</div>
+      <div class="gfair">Classement objectif : les chances de chaque pari viennent de nos analyses (forme, absents, classement, face-à-face, modèle de buts) croisées avec les cotes des bookmakers professionnels, sans leur marge. Plus les données d'un match sont complètes, plus nos analyses pèsent. Jamais d'équipe en mauvaise série (3 défaites sur les 5 derniers matchs) ni de pari contre une équipe qui gagne tout. Ordre : d'abord les tickets avec de vraies cotes (pas d'estimation ≈) et dont chaque pari a au moins 1 chance sur 2, puis les plus probables, en favorisant les matchs les mieux analysés (la note « analyse » indique la part des données trouvées : forme, absents, classement, face-à-face). Touche un match pour voir toute son analyse.</div>
       <div class="gbar">${[["p","Plus de chances"],["legs","Moins de matchs"],["soon","Fini le plus tôt"],["gain","Plus gros gain"]].map(([k,l]) => `<button class="chip ${GSORT===k?"on":""}" data-gsort="${k}">${l}</button>`).join("")}</div>
       <div class="gbar" style="margin-bottom:14px"><button class="chip ${GLEGS==="all"?"on":""}" data-glegs="all">Tous</button>${counts.map(c => `<button class="chip ${GLEGS===String(c)?"on":""}" data-glegs="${c}">${c} match${c>1?"s":""}</button>`).join("")}</div>`;
   const card = o => {
     const open = GOPEN.has(o.rank - 1);
     return `<div class="panel opt sm ${o.rank===1?"best":""}">
       <div class="orow" data-gopen="${o.rank - 1}"><span class="n">#${o.rank}</span>
-        <div class="t"><b>${o.rank===1?"Le plus de chances":esc(o.kind==="alt" ? o.tickets[0].legs.map(l => l.selection).join(" + ") : o.title)}</b><small>${esc(o.desc)} · fini ${esc(o.ends)}${o.tags && o.tags.length ? " · " + o.tags.map(esc).join(" · ") : ""}${o.unsafe?' · <span class="pill warn">contient un pari à moins de 50 %</span>':""}${o.est?` · <span class="pill bad">${o.est} cote${o.est>1?"s":""} estimée${o.est>1?"s":""}</span>`:""} · <span class="pill ${o.fiab>=.67?"ok":o.fiab>=.34?"warn":"bad"}">analyse ${Math.round((o.fiab||0)*100)} %</span></small></div>
+        <div class="t"><b>${o.rank===1?"Le plus de chances":esc(o.kind==="alt" ? o.tickets[0].legs.map(l => l.selection).join(" + ") : o.title)}</b><small>${esc(o.desc)} · fini ${esc(o.ends)}${o.tags && o.tags.length ? " · " + o.tags.map(esc).join(" · ") : ""}${o.unsafe?' · <span class="pill warn">contient un pari à moins de 50 %</span>':""}${o.badform?` · <span class="pill bad">${o.badform} équipe${o.badform>1?"s":""} en mauvaise série</span>`:""}${o.est?` · <span class="pill bad">${o.est} cote${o.est>1?"s":""} estimée${o.est>1?"s":""}</span>`:""} · <span class="pill ${o.fiab>=.67?"ok":o.fiab>=.34?"warn":"bad"}">analyse ${Math.round((o.fiab||0)*100)} %</span></small></div>
         <div class="k"><b>${pc(o.p_hit, o.p_hit < .1 ? 1 : 0)}</b><small>cote ${fr(o.odds)} · ${eur(o.ret)}</small></div></div>
       ${open ? `<div class="body">${o.tickets.map(t => `${t.legs.map(goalLeg).join("")}
           <div class="tot"><span class="note">Mise ${eur(t.stake)} · cote ${fr(t.odds)} · ${pc(t.p, t.p < .1 ? 1 : 0)}</span><div class="sp"></div><b>${eur(t.ret)}</b><button class="btn sm" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}">Je le joue</button></div>`).join("")}

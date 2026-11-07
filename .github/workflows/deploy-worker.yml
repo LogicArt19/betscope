@@ -1,0 +1,70 @@
+name: Déploiement du serveur
+on:
+  push:
+    branches: [main]
+    paths: ["worker/**", ".github/workflows/deploy-worker.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CONFIGURED: ${{ secrets.CF_API_TOKEN != '' && secrets.CF_ACCOUNT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.CONFIGURED == 'true'
+      - uses: actions/setup-node@v4
+        if: env.CONFIGURED == 'true'
+        with:
+          node-version: "22"
+      - name: Espace de stockage
+        if: env.CONFIGURED == 'true'
+        id: kv
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: echo "id=$(python3 ci/kv_id.py)" >> "$GITHUB_OUTPUT"
+      - name: Déploiement
+        if: env.CONFIGURED == 'true'
+        id: dep
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          sed -i "s/__KV_ID__/${{ steps.kv.outputs.id }}/" wrangler.toml
+          npx --yes wrangler@3.114.0 deploy 2>&1 | tee deploy.log
+          url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          if [ -n "${{ secrets.WHOP_API_KEY }}" ]; then echo "${{ secrets.WHOP_API_KEY }}" | npx --yes wrangler@3.114.0 secret put WHOP_API_KEY; fi
+          if [ -n "${{ secrets.OWNER_KEYS }}" ]; then echo "${{ secrets.OWNER_KEYS }}" | npx --yes wrangler@3.114.0 secret put OWNER_KEYS; fi
+      - name: Adresse du serveur publiée sur le site (config.json)
+        if: env.CONFIGURED == 'true' && steps.dep.outputs.url != ''
+        env:
+          TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/LogicArt19/cotescope.git" site
+          cd site
+          python3 - <<PY
+          import json
+          try:
+              c = json.load(open("config.json"))
+          except Exception:
+              c = {}
+          c["api"] = "${{ steps.dep.outputs.url }}"
+          json.dump(c, open("config.json", "w"), indent=2)
+          PY
+          git config user.name "Cotescope bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add config.json
+          git commit -m "Adresse du serveur" || echo "inchangé"
+          git push
+      - name: Lancer la collecte et la publication du logiciel
+        if: env.CONFIGURED == 'true' && steps.dep.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run collect.yml --repo "$GITHUB_REPOSITORY" || true
+          gh workflow run build.yml --repo "$GITHUB_REPOSITORY" || true

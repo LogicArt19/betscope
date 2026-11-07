@@ -34,8 +34,16 @@ jobs:
           echo "ver=$(grep -oP 'APP_VERSION = "\K[^"]+' betscope.py)" >> "$GITHUB_OUTPUT"
           echo "sha=$(sha256sum dist/Cotescope.exe | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "size=$(stat -c%s dist/Cotescope.exe)" >> "$GITHUB_OUTPUT"
+      # Le logiciel 3.x exige le serveur Cotescope : on ne publie le .exe que quand le serveur est en ligne
+      - name: Serveur Cotescope en ligne ?
+        id: live
+        shell: bash
+        run: |
+          api=$(curl -fsSL "https://logicart19.github.io/cotescope/config.json" 2>/dev/null | python -c "import sys,json; print(json.load(sys.stdin).get('api',''))" 2>/dev/null || true)
+          if [ -n "$api" ] && curl -fsS "$api/api/health" >/dev/null 2>&1; then echo "ok=true" >> "$GITHUB_OUTPUT"; echo "Serveur OK : $api"; else echo "ok=false" >> "$GITHUB_OUTPUT"; echo "Serveur pas encore en ligne : publication du .exe reportée"; fi
       # Release dans ce dépôt (privé) : archive + transition des anciennes versions
       - uses: softprops/action-gh-release@v2
+        if: steps.live.outputs.ok == 'true'
         with:
           tag_name: v${{ steps.v.outputs.ver }}
           name: Cotescope v${{ steps.v.outputs.ver }}
@@ -43,6 +51,7 @@ jobs:
           make_latest: true
       # Publication publique : le .exe dans le dépôt du site (sans le code)
       - uses: softprops/action-gh-release@v2
+        if: steps.live.outputs.ok == 'true'
         with:
           repository: LogicArt19/cotescope
           token: ${{ secrets.PUBLISH_TOKEN }}
@@ -51,13 +60,17 @@ jobs:
           body: "Télécharge Cotescope.exe ci-dessous. SHA-256 : ${{ steps.v.outputs.sha }}"
           files: dist/Cotescope.exe
           make_latest: true
-      - name: Annonce de la version sur le site (version.json)
+      - name: Publication sur le site (appli web + version.json)
         shell: bash
         env:
           TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+          LIVE: ${{ steps.live.outputs.ok }}
         run: |
           git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/LogicArt19/cotescope.git" site
           cd site
+          python ../ci/build_web.py app
+          git add app/index.html
+          if [ "$LIVE" = "true" ]; then
           cat > version.json <<JSON
           {"version": "${{ steps.v.outputs.ver }}",
            "url": "https://github.com/LogicArt19/cotescope/releases/download/v${{ steps.v.outputs.ver }}/Cotescope.exe",
@@ -65,8 +78,9 @@ jobs:
            "size": ${{ steps.v.outputs.size }},
            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
           JSON
+          git add version.json
+          fi
           git config user.name "Cotescope bot"
           git config user.email "actions@users.noreply.github.com"
-          git add version.json
           git commit -m "Version ${{ steps.v.outputs.ver }}" || echo "rien à publier"
           git push

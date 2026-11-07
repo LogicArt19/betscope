@@ -1,0 +1,7 @@
+name = "cotescope-api"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "__KV_ID__"

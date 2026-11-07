@@ -479,8 +479,12 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
         <div class="set">
           <div class="card">
             <h3>L'essentiel</h3>
-            <div class="f"><label>Clé The Odds API (les cotes)</label><input class="in" id="c-api_key" type="password" autocomplete="off"><small>Gratuite sur the-odds-api.com. Sans clé, l'appli tourne en mode démo.</small></div>
-            <div class="f"><label>Clé football-data.org (forme, classement, face-à-face)</label><input class="in" id="c-fd_key" type="password" autocomplete="off"><small>Gratuite à vie sur football-data.org → « Register », la clé arrive par e-mail.</small></div>
+            <div class="f"><label>Ma licence Cotescope</label>
+              <div id="lic-state" style="font-size:13px;margin:2px 0 6px"></div>
+              <div style="display:flex;gap:8px"><input class="in" id="lic-key" placeholder="Colle ta clé de licence" autocomplete="off"><button class="btn primary" id="lic-go">Activer</button></div>
+              <small>La clé t'est envoyée par e-mail après ton inscription. Toutes les données (cotes, stats, absents, météo) sont fournies par Cotescope, tu n'as aucune clé API à mettre.</small>
+              <div style="display:flex;gap:8px;margin-top:8px"><button class="btn" data-subscribe>Démarrer l'essai gratuit (7 jours)</button><button class="btn" id="lic-out" hidden>Se déconnecter</button></div>
+            </div>
             <div class="f"><label>Où je parie</label><input class="in" id="c-bookmakers"><small>betclic_fr. Tous les paris proposés se jouent ici.</small></div>
             <label class="chk"><input type="checkbox" id="c-web_info">Recherche web automatique : absents, compos officielles, actus, météo</label>
             <h3 style="margin-top:18px">Ma bankroll (optionnel)</h3>
@@ -506,7 +510,6 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
               <div class="f"><label>Sinon, mise à jour toutes les (minutes)</label><input class="in" id="c-refresh_minutes"></div>
               <div class="f"><label>Marchés</label><input class="in" id="c-markets"><small>h2h = 1N2, totals = plus/moins de buts</small></div>
               <div class="f"><label>Bookmakers en plus pour le calcul</label><input class="in" id="c-source_books"><small>Laisse vide. Pinnacle + 9 bookmakers sont déjà utilisés automatiquement.</small></div>
-              <div class="f"><label>Clé API-Football (offre payante uniquement)</label><input class="in" id="c-football_key" type="password" autocomplete="off"></div>
               <label class="chk"><input type="checkbox" id="c-demo">Mode démo (matchs fictifs)</label>
             </div>
             <div>
@@ -533,6 +536,17 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
 <div class="ov" id="ov"></div>
 <aside class="drawer" id="drawer"><button class="x" id="dx">✕</button><div id="dbody"></div></aside>
 <div class="toast" id="toast"></div>
+<div id="licov" style="position:fixed;inset:0;z-index:90;background:rgba(5,8,12,.82);backdrop-filter:blur(6px);display:none;place-items:center">
+  <div class="card" style="width:min(460px,92vw);padding:28px;text-align:center">
+    <h3 style="font-size:20px;margin-bottom:6px">Active Cotescope</h3>
+    <p style="color:var(--muted);font-size:13.5px;margin-bottom:16px">Analyse complète, tous les matchs, toutes les données. <b style="color:var(--fg)">7 jours gratuits</b>, puis 10 €/mois, sans engagement.</p>
+    <button class="btn primary" data-subscribe style="width:100%;justify-content:center;padding:13px">Démarrer l'essai gratuit</button>
+    <div style="color:var(--dim);font-size:12px;margin:14px 0 8px">J'ai déjà ma clé de licence</div>
+    <div style="display:flex;gap:8px"><input class="in" id="lo-key" placeholder="Colle ta clé ici" autocomplete="off"><button class="btn" id="lo-go">Activer</button></div>
+    <div id="lo-msg" style="font-size:12.5px;color:#fca5a5;min-height:18px;margin-top:6px"></div>
+    <button class="link" id="lo-skip" style="font-size:12.5px;color:var(--muted);margin-top:4px">Continuer en mode démo</button>
+  </div>
+</div>
 
 <script>
 const $ = s => document.querySelector(s);
@@ -929,7 +943,7 @@ const bankWarn = (bk, amount) => !bk || !bk.enabled ? "" :
 
 /* ----- paramètres ----- */
 const NUMS=["bankroll","daily_max_pct","stop_loss","stats_weight","refresh_minutes","min_ev","max_ev","min_odds","max_odds","horizon_hours","min_stake","max_legs","min_books"];
-const TXT=["fd_key","football_key","api_key","bookmakers","source_books","markets"];
+const TXT=["bookmakers","source_books","markets"];
 async function loadCfg(){
   if (!api) return;
   cfg = await api.get_config();
@@ -995,8 +1009,8 @@ function renderStatus(){
     const err = (status.update_state||"").startsWith("error:") ? status.update_state.slice(6) : "";
     b += `<div class="banner upd"><span>🚀 <b>Nouvelle version ${esc(status.update.version)} disponible</b> (tu as la ${esc(status.version)})${err?` — échec : ${esc(err)}`:""}</span><div class="sp"></div>${dl ? `<span>Téléchargement…</span><div class="bar"><i style="width:${Math.round(status.dl_progress*100)}%"></i></div>` : `<button class="btn primary" id="do-upd">Mettre à jour</button>`}</div>`;
   }
-  if (status.demo && !status.has_key) b += `<div class="banner warn">ℹ️ Mode démo : ajoute ta clé API dans <b style="cursor:pointer;text-decoration:underline" data-goto="settings">Paramètres</b> pour avoir les vrais matchs.</div>`;
-  if (!status.demo && status.has_key && status.stats && !status.stats.enabled) b += `<div class="banner upd"><span>📊 <b>Active l'analyse complète</b> (forme, séries, classement, journée, face-à-face) avec une clé football-data.org gratuite.</span><div class="sp"></div><button class="btn" data-goto="settings">Ajouter la clé</button></div>`;
+  if (status.demo) b += `<div class="banner warn"><span>ℹ️ <b>Mode démo</b> (matchs fictifs)${status.license_state&&status.license_state!=="ok"?" · "+esc(licMsg(status.license_state)):""}. Active Cotescope pour les vrais matchs.</span><div class="sp"></div><button class="btn primary" data-openlic>Activer / essai gratuit</button></div>`;
+  renderLic();
   if (status.stats && status.stats.error && !/api-football/i.test(status.stats.error) || (status.stats && status.stats.error && status.stats.af_set)) b += `<div class="banner err">⚠ ${esc(status.stats.error)}</div>`;
   if (status.warning) b += `<div class="banner warn">ℹ️ ${esc(status.warning)}</div>`;
   if (status.errors && status.errors.length) b += `<div class="banner err">⚠ ${status.errors.map(esc).join(" · ")}</div>`;
@@ -1019,8 +1033,42 @@ async function poll(){
     if (status.rev !== rev) { rev = status.rev; data = await api.get_data(); renderHome(); renderPicks(); }
   } catch (e) { console.error(e); }
 }
-function start(a){ api = a; poll(); setTimeout(refreshB, 300); setInterval(poll, 1500); setInterval(tickClock, 500); }
+/* ----- licence ----- */
+const LIC_MSG = {invalid:"clé invalide", unknown_key:"clé inconnue", inactive:"abonnement expiré ou annulé",
+  whop_unreachable:"serveur de paiement injoignable, réessaie", server_not_configured:"serveur pas encore prêt"};
+const licMsg = r => LIC_MSG[r] || r;
+function renderLic(){
+  const el = $("#lic-state"); if (!el) return;
+  el.innerHTML = status.license && status.license_state==="ok" ? '<span style="color:var(--green2)">✔ Licence active</span>'
+    : status.license ? `<span style="color:#fca5a5">✖ ${esc(licMsg(status.license_state)||"vérification…")}</span>` : '<span style="color:var(--muted)">Aucune licence : mode démo</span>';
+  $("#lic-out").hidden = !status.license;
+}
+async function doActivate(key, out){
+  if (!key) { out.textContent = "Colle ta clé de licence."; return; }
+  out.textContent = "Vérification…";
+  const r = await api.activate(key.trim());
+  if (r && r.ok) { out.textContent = ""; toast("✔ Cotescope activé"); closeLic(); rev=-1; poll(); }
+  else out.textContent = "✖ " + licMsg((r&&r.reason)||"erreur");
+}
+function openSub(){ const u = status.subscribe_url || (window.__COTESCOPE_CFG__||{}).whop; if (u) api.open_url(u); else toast("Lien d'inscription bientôt disponible"); }
+function openLic(){ $("#licov").style.display="grid"; setTimeout(()=>$("#lo-key").focus(),50); }
+function closeLic(){ $("#licov").style.display="none"; sessionStorage.setItem("licSkip","1"); }
+document.addEventListener("click", e => {
+  if (e.target.closest("[data-subscribe]")) openSub();
+  if (e.target.closest("[data-openlic]")) openLic();
+});
+$("#lic-go").onclick = () => doActivate($("#lic-key").value, $("#lic-state"));
+$("#lic-out").onclick = async () => { await api.deactivate(); toast("Déconnecté"); rev=-1; poll(); };
+$("#lo-go").onclick = () => doActivate($("#lo-key").value, $("#lo-msg"));
+$("#lo-key").onkeydown = e => { if (e.key==="Enter") $("#lo-go").click(); };
+$("#lo-skip").onclick = closeLic;
+let licShown = false;
+function maybeLic(){ if (licShown) return; licShown = true; let skip=false; try{skip=sessionStorage.getItem("licSkip")}catch(e){} if (!status.license && !skip) openLic(); }
+if (window.__WEB__) { const u=$("#btn-upd"); if (u) u.style.display="none"; $("#lo-skip").style.display="none"; }
+
+function start(a){ api = a; setTimeout(maybeLic, 1200); poll(); setTimeout(refreshB, 300); setInterval(poll, 1500); setInterval(tickClock, 500); }
 window.addEventListener("pywebviewready", () => start(window.pywebview.api));
+window.addEventListener("cotescope-api-ready", e => start(e.detail));
 if (window.pywebview && window.pywebview.api) start(window.pywebview.api);
 if (window.__MOCK_API__) start(window.__MOCK_API__);
 </script>

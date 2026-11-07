@@ -40,12 +40,54 @@ from datetime import datetime, timedelta, timezone
 
 APP_NAME = "Cotescope"
 OLD_APP_NAME = "BetScope"
-APP_VERSION = "2.3.0"
+APP_VERSION = "3.0.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
 # Mises à jour : fichier publié sur le site (le code source reste privé)
 UPDATE_URLS = ["https://logicart19.github.io/cotescope/version.json"]
 SITE_URL = "https://logicart19.github.io/cotescope/"
+CONFIG_URLS = ["https://cotescope.fr/config.json", "https://logicart19.github.io/cotescope/config.json"]
+_REMOTE_CFG = {"ts": 0, "v": {}}
+
+
+def remote_config():
+    """Adresse du serveur et lien d'abonnement, publiés sur le site (mis en cache 1 h)."""
+    if time.time() - _REMOTE_CFG["ts"] < 3600 and _REMOTE_CFG["v"]:
+        return _REMOTE_CFG["v"]
+    for u in CONFIG_URLS:
+        try:
+            data, _ = http_get_json(f"{u}?t={int(time.time())}", timeout=12)
+            if isinstance(data, dict) and data.get("api"):
+                _REMOTE_CFG.update(ts=time.time(), v=data)
+                return data
+        except Exception:
+            continue
+    return _REMOTE_CFG["v"]
+
+
+class LicenseError(Exception):
+    pass
+
+
+def server_call(path, license_key, method="GET", body=None, timeout=40):
+    api = (remote_config() or {}).get("api")
+    if not api:
+        raise RuntimeError("serveur Cotescope introuvable (site injoignable ?)")
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(api.rstrip("/") + path, data=data, method=method, headers={
+        "Authorization": f"Bearer {license_key}", "Content-Type": "application/json",
+        "User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            info = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            info = {}
+        if e.code == 403:
+            raise LicenseError(info.get("reason") or "refusée")
+        raise RuntimeError(f"serveur : erreur {e.code} {info.get('reason', '')}".strip())
 
 # --------------------------------------------------------------------------
 # Configuration
@@ -97,6 +139,7 @@ DEFAULT_CONFIG = {
     "football_key": "",      # clé API-Football (payante pour la saison en cours : blessés, compos)
     "stats_weight": 0.25,    # part du modèle forme/stats dans la proba finale (0 = cotes seules)
     "day_filter": "all",
+    "license": "",           # clé de licence Cotescope (abonnement)
     "web_info": True,
     "auto_refresh": True,
     "bankroll": 0.0,         # capital de départ (0 = pas de suivi)
@@ -132,7 +175,7 @@ def config_dir():
 # Clés API chiffrées (Windows DPAPI : lisibles seulement par ta session Windows)
 # --------------------------------------------------------------------------
 
-SECRET_KEYS = ("api_key", "fd_key", "football_key")
+SECRET_KEYS = ("api_key", "fd_key", "football_key", "license")
 
 
 def _dpapi(data, encrypt):
@@ -1742,6 +1785,8 @@ class Api:
         self._next_stats = time.time() + 5
         self._next_web = time.time() + 8
         self._days = []
+        self._remote = False          # données fournies par le serveur Cotescope
+        self._license_state = ""      # "", "ok", ou raison du refus
         self._hist = History(config_dir())
         self._next_settle = time.time() + 20
         self._odds_hist = {}
@@ -1763,7 +1808,7 @@ class Api:
         except (OSError, ValueError):
             pass
         cache = load_cache()
-        if cache and cache.get("events") and self._cfg["api_key"] and not self._cfg["demo"]:
+        if False and cache:
             self._events, self._quota = cache["events"], cache.get("quota")
             self._last_fetch = cache.get("ts", 0)
             self._next_refresh = self._last_fetch + refresh_minutes(self._cfg, (self._quota or {}).get("remaining")) * 60
@@ -1774,6 +1819,7 @@ class Api:
     # ---- boucle de fond ----
     def _loop(self):
         last_an, next_upd = time.time(), time.time() + 4
+        next_cfg = 0
         while True:
             now = time.time()
             if not self._fetching and now >= self._next_refresh:
@@ -1782,10 +1828,14 @@ class Api:
                 last_an = now
                 self._stats_dirty = False
                 self._reanalyze()
+            if now >= next_cfg:
+                next_cfg = now + 600
+                threading.Thread(target=remote_config, daemon=True).start()
             if now >= self._next_settle:
                 self._next_settle = now + 20 * 60
                 threading.Thread(target=self._hist.settle_all, args=(statsmod.ESPN_SLUGS,), daemon=True).start()
-            if now >= self._next_web and self._cfg.get("web_info", True) and self._events and not self._is_demo:
+            if now >= self._next_web and self._cfg.get("web_info", True) and self._events and not self._is_demo \
+                    and not self._remote:
                 self._next_web = now + 5 * 60
                 with self._lock:
                     sports, events = sports_list(self._cfg), list(self._events)
@@ -1795,7 +1845,7 @@ class Api:
                         self._stats_dirty = True
                     self._stats.update_web(sports, events, on_change=changed)
                 threading.Thread(target=web_job, daemon=True).start()
-            if now >= self._next_stats and self._stats_key() and self._events \
+            if now >= self._next_stats and self._stats_key() and self._events and not self._remote \
                     and not self._is_demo and not self._stats.running:
                 self._next_stats = now + 20 * 60
                 threading.Thread(target=self._stats_update, daemon=True).start()
@@ -1811,27 +1861,32 @@ class Api:
             self._fetching = True
             self._rev += 1
             cfg = dict(self._cfg)
-        demo = cfg["demo"] or not cfg["api_key"].strip()
+        lic = cfg.get("license", "").strip()
+        demo = cfg["demo"] or not lic
+        snap = None
         try:
             if demo:
-                time.sleep(0.5)
+                time.sleep(0.3)
                 events, quota, errors = demo_events(), None, []
             else:
-                events, quota, errors = fetch_odds(cfg)
+                snap = server_call("/api/snapshot", lic)
+                events, quota, errors = snap.get("events", []), None, []
+                self._license_state = "ok"
+        except LicenseError as e:
+            self._license_state = str(e)
+            events, quota, errors = demo_events(), None, []
+            demo = True
         except Exception as e:
             events, quota, errors = None, None, [str(e)]
         with self._lock:
             now = time.time()
             self._errors = errors
             if events is not None and (events or not errors):
-                self._events, self._is_demo, self._last_fetch = events, demo, now
-                if quota:
-                    self._quota = quota
-                if not demo:
-                    save_cache(events, self._quota)
-                    self._next_stats = now + 2
-                    self._next_web = now + 4
-            self._next_refresh = now + (15 if demo else refresh_minutes(cfg, (self._quota or {}).get("remaining"))) * 60
+                self._events, self._is_demo = events, demo
+                self._last_fetch = (snap or {}).get("ts") or now
+                if snap:
+                    self.load_snapshot(snap, reanalyze=False)
+            self._next_refresh = now + (15 if demo else 20) * 60
             self._fetching = False
             self._reanalyze()
 
@@ -2064,6 +2119,46 @@ class Api:
         out["user_odds"] = o > 1
         return out
 
+    def load_snapshot(self, snap, reanalyze=True):
+        """Données collectées par le serveur (cotes + stats + web + scores)."""
+        with self._lock:
+            self._remote = True
+            self._events = snap.get("events", [])
+            self._is_demo = False
+            self._last_fetch = snap.get("ts") or time.time()
+            self._quota = None
+            for k, v in (snap.get("stats") or {}).items():
+                self._stats.data[k] = v
+            self._scores = snap.get("scores") or {}
+            if self._scores:
+                self._hist.data["results"].update(self._scores)
+        if reanalyze:
+            self._reanalyze()
+
+    def activate(self, key):
+        key = str(key or "").strip()
+        try:
+            r = server_call("/api/check", key, "POST", {"license": key})
+        except LicenseError as e:
+            return {"ok": False, "reason": str(e)}
+        except Exception as e:
+            return {"ok": False, "reason": str(e)}
+        with self._lock:
+            self._cfg["license"] = key
+            self._cfg["demo"] = False
+            save_config(self._cfg)
+            self._license_state = "ok"
+        self.refresh()
+        return {"ok": True, "status": r.get("status")}
+
+    def deactivate(self):
+        with self._lock:
+            self._cfg["license"] = ""
+            save_config(self._cfg)
+            self._license_state = ""
+        self.refresh()
+        return True
+
     def _stats_key(self):
         return self._cfg.get("fd_key", "").strip() or self._cfg.get("football_key", "").strip()
 
@@ -2087,7 +2182,7 @@ class Api:
         with self._lock:
             try:
                 cfg = self._cfg
-                use = (bool(self._stats_key()) or cfg.get("web_info", True)) and not self._is_demo
+                use = (self._remote or bool(self._stats_key()) or cfg.get("web_info", True)) and not self._is_demo
                 self._info = self._stats.info_for(self._events) if use else {}
                 self._days = day_options(self._events, self._info)
                 events = filter_events(self._events, cfg.get("day_filter", "all"), self._info)
@@ -2139,6 +2234,8 @@ class Api:
                     pass
             return {
                 "rev": self._rev, "version": APP_VERSION, "demo": self._is_demo, "builder_n": len(self._builder),
+                "license": bool(self._cfg.get("license")), "license_state": self._license_state,
+                "subscribe_url": (_REMOTE_CFG["v"] or {}).get("whop", ""),
                 "fetching": self._fetching,
                 "last_fetch": datetime.fromtimestamp(self._last_fetch).strftime("%d/%m à %H:%M")
                 if self._last_fetch else None,
@@ -2150,10 +2247,10 @@ class Api:
                 "max_books": max((len(e.get("bookmakers", [])) for e in self._events), default=0),
                 "min_books": int(self._cfg.get("min_books", 4)),
                 "n_value": sum(1 for s in self._picks if is_value(s, self._cfg)),
-                "has_key": bool(self._cfg["api_key"].strip()),
+                "has_key": bool(self._cfg.get("license", "").strip()),
                 "update": self._update, "update_state": self._update_state,
                 "days": self._days, "day": self._cfg.get("day_filter", "all"),
-                "stats": dict(self._stats.status(), enabled=bool(self._stats_key()),
+                "stats": dict(self._stats.status(), enabled=bool(self._stats_key()) or self._remote,
                               af_set=bool(self._cfg.get("football_key", "").strip()),
                               matched=len(self._info)),
                 "dl_progress": self._dl_progress, "frozen": bool(getattr(sys, "frozen", False)),

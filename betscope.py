@@ -2834,6 +2834,12 @@ class Api:
         cfg["_few"] = not tier_ok("pro")
         if cfg["_min_legs"] and cfg["_max_legs"] and cfg["_min_legs"] > cfg["_max_legs"]:
             cfg["_min_legs"], cfg["_max_legs"] = cfg["_max_legs"], cfg["_min_legs"]
+        # combien de paris utilisables (vraie cote chez tes bookmakers, cote ≥ 1,15) après tes filtres : pour expliquer un « 0 ticket »
+        allowed = {x.strip() for x in str(cfg.get("bookmakers", "")).split(",") if x.strip()}
+        pool = [x for x in sel if (not x.get("estimated") or x.get("user_odds")) and x["odds"] >= 1.15
+                and (not cfg.get("_types") or x.get("cat") in cfg["_types"])]
+        diag = {"n_sel": len(sel), "n_real": len(pool), "n_matches": len({x["event_id"] for x in pool}),
+                "books": [BOOK_NAMES.get(b_, b_) for b_ in sorted(allowed)]}
         res = objective_plan(stake, target, sel, cfg)
         note = ""
         if not res["options"] and cfg.get("bookmakers"):
@@ -2853,6 +2859,7 @@ class Api:
                 res = dict(r3, need_odds=need, max_odds=res["max_odds"])
         out = ser_objective(res, cfg)
         out["note"], out["closest"] = note, closest
+        out["diag"] = diag
         if free and out.get("options"):
             out["locked_more"] = max(0, (out.get("n_found") or len(out["options"])) - 1)
             out["options"] = out["options"][:1]

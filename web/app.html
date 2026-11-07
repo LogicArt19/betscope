@@ -1054,7 +1054,11 @@ function vGoal(){
   if (r) {
     if (r.locked) out = r.daily_used ? lockBox("pro", "Ton ticket gratuit du jour est utilisé", "La version gratuite donne 1 ticket Objectif par jour. Avec Essentiel : des dizaines de tickets, sans limite.") : lockBox("pro", "Le mode Objectif", "Disponible avec Essentiel et Pro.");
     else if (r.error) out = `<div class="panel empty"><b>${esc(r.error)}</b></div>`;
-    else if (!r.options.length) out = `<div class="panel empty"><b>Aucun ticket possible avec ces réglages</b>Coche plus de championnats ou de types de paris, ou laisse le nombre de matchs libre.</div>`;
+    else if (!r.options.length) { const d = r.diag || {};
+      out = `<div class="panel empty"><b>Aucun ticket possible avec ces réglages</b>
+        ${d.n_real != null ? `Avec tes filtres, il n'y a que <b>${d.n_real} pari${d.n_real>1?"s":""}</b> avec une vraie cote${d.books && d.books.length ? " chez " + esc(d.books.join(", ")) : ""}, sur ${d.n_matches || 0} match${d.n_matches>1?"s":""}. Cotescope n'utilise jamais de cote estimée.<br><br>` : ""}
+        Pour trouver des tickets : coche d'autres bookmakers dans Mon compte (Bet365 publie le plus de cotes), coche plus de jours, de championnats ou de types de paris, ou laisse le nombre de matchs libre.
+        <div style="margin-top:12px"><button class="btn sm" id="gl-reset">Remettre tous les filtres</button> <button class="btn sm" data-go="compte">Mes bookmakers</button></div></div>`; }
     else out = goalList(r);
   } else out = `<div class="panel empty"><b>Donne ta mise et ce que tu veux gagner</b>Cotescope cherche parmi tous les paris de tous les matchs les tickets qui ont le plus de chances d'y arriver, avec leurs risques.</div>`;
   return `<h1 class="t">Objectif</h1><p class="lead">Tu donnes ta mise et ce que tu veux gagner. Cotescope passe en revue tous les paris de tous les matchs et te sort des dizaines de tickets qui y arrivent, classés par leurs vraies chances de passer.</p>
@@ -1154,6 +1158,7 @@ document.addEventListener("click", e => {
   if (p) { const r = call("log_ticket", p.dataset.play.split("~"), p.dataset.stake, ""); toast(r.ok ? "Ticket ajouté à ton bilan" : (r.error || "Erreur")); if (r.ok) { p.textContent = "Enregistré"; p.disabled = true; } }
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && (e.target.id === "gl-s" || e.target.id === "gl-t")) $("#gl-go").click(); });
+document.addEventListener("click", e => { if (e.target.closest("#gl-reset")) { Object.assign(GOAL, {leagues:null, types:null, min:"", max:"", days:null, res:null}); saveGoal(); render(); toast("Filtres remis à zéro"); } });
 // combiné express : « cote 3,50 en 3 matchs » -> l'Objectif avec une mise de 10 € et exactement N matchs
 document.addEventListener("click", e => {
   if (!e.target.closest("#ex-go")) return;

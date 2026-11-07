@@ -500,6 +500,11 @@ def self_test(snap):
                     legs.append(f"{l['selection']} @{l['odds']} ({round(l['p'] * 100)} %, {l.get('book')}){tag}")
                 log(f"   #{opts.index(o) + 1} {round(o['p_hit'] * 100, 1)} % : " + " | ".join(legs))
         log(f"AUTO-TEST : victoires choisies : {fav} favoris, {und} outsiders (cote ≥ 2,6)")
+        for books in (["betclic_fr"], ["winamax_fr"], ["parionssport_fr", "unibet_fr"], ["bet365"]):
+            api.set_books(books)
+            r = api.compute_objective(10, 40)
+            log(f"AUTO-TEST bookmakers {'+'.join(books)} : {len(r.get('options') or [])} tickets, "
+                f"{(r.get('diag') or {}).get('n_real')} paris à vraie cote sur {(r.get('diag') or {}).get('n_matches')} matchs")
     finally:
         b.config_dir = old_dir
 

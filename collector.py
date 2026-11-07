@@ -15,6 +15,7 @@ Variables d'environnement : ODDS_KEY, FD_KEY (optionnelle), CF_ACCOUNT_ID, CF_AP
 
 import gzip
 import json
+import re
 import os
 import sys
 import time
@@ -283,6 +284,95 @@ def public_record(events, st):
     cf_put("public_stats", pub)
 
 
+import unicodedata as _ud
+
+_TEAM_ALIAS = {"paris sg": "paris saint germain", "psg": "paris saint germain", "nottm forest": "nottingham forest",
+               "wolves": "wolverhampton wanderers", "spurs": "tottenham", "athletic madrid": "atletico madrid",
+               "athletic club": "athletic bilbao", "inter": "inter milan", "milan": "milan", "m gladbach": "borussia monchengladbach",
+               "ein frankfurt": "eintracht frankfurt", "dortmund": "borussia dortmund", "leverkusen": "bayer leverkusen",
+               "newcastle": "newcastle united", "brighton": "brighton and hove albion", "west ham": "west ham united",
+               "espanol": "espanyol", "vallecano": "rayo vallecano", "alaves": "alaves", "celta": "celta vigo",
+               "sociedad": "sociedad", "betis": "betis", "st etienne": "saint etienne"}
+
+
+def _norm_team(t):
+    t = _ud.normalize("NFD", str(t or "")).encode("ascii", "ignore").decode().lower()
+    t = re.sub(r"\b(fc|cf|ac|afc|sc|as|ss|ssc|us|rc|sv|vfb|vfl|tsg|ogc|stade|club|de|real|the|calcio|cd|ud|sd|rcd|ca)\b", " ", t)
+    t = re.sub(r"\bman\b", "manchester", t)
+    t = re.sub(r"\butd\b", "united", t)
+    t = re.sub(r"\bst\b", "saint", t)
+    t = re.sub(r"\bath\b", "athletic", t)
+    t = re.sub(r"[^a-z0-9 ]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return _norm_team(_TEAM_ALIAS[t]) if t in _TEAM_ALIAS and _TEAM_ALIAS[t] != t else t
+
+
+def _best_team(name, candidates):
+    n0 = _norm_team(name)
+    best, bs = None, 0.0
+    A = set(n0.split())
+    for c in candidates:
+        n1 = _norm_team(c)
+        if n1 == n0:
+            return c
+        B = n1.split()
+        hit = sum(1 for w in B if w in A or any(len(a) > 3 and (a.startswith(w) or w.startswith(a)) for a in A))
+        sc = hit / max(len(B), len(A), 1)
+        if sc > bs:
+            best, bs = c, sc
+    return best if bs >= 0.5 else None
+
+
+def add_fd_h2h(events, st):
+    """Les 5 dernières confrontations en championnat (football-data.co.uk, gratuit, sans clé) pour chaque match
+    qui a une fiche, quand ESPN ne les donne pas."""
+    sys.path.insert(0, os.path.join(HERE, "ci"))
+    import history_data as H
+    code_of = {v[1]: k for k, v in H.LEAGUES.items()}
+    cdir = os.path.join(CACHE, "fd_csv")
+    os.makedirs(cdir, exist_ok=True)
+    seas = H.seasons()[-5:]
+    games_by_code = {}
+    web = st.data.get("web") or {}
+    n = 0
+    for ev in events:
+        eid, code = ev.get("id"), code_of.get(ev.get("sport_key"))
+        w = (web.get(eid) or {}).get("v")
+        if not code or w is None or len(w.get("h2h") or []) >= 5:
+            continue
+        if code not in games_by_code:
+            rows = []
+            for se in seas:
+                fp = os.path.join(cdir, f"{se}_{code}.csv")
+                fresh = os.path.exists(fp) and (se != seas[-1] or time.time() - os.path.getmtime(fp) < 2 * 86400)
+                if not fresh:
+                    raw = H.fetch(code, se)
+                    if raw:
+                        open(fp, "wb").write(raw)
+                if os.path.exists(fp):
+                    rows += H.read_rows(open(fp, "rb").read())
+            games_by_code[code] = rows
+        rows = games_by_code[code]
+        if not rows:
+            continue
+        teams = {r["h"] for r in rows[-400:]} | {r["a"] for r in rows[-400:]}
+        hn, an = _best_team(ev.get("home_team"), teams), _best_team(ev.get("away_team"), teams)
+        if not hn or not an or hn == an:
+            continue
+        meet = [r for r in rows if {r["h"], r["a"]} == {hn, an}]
+        meet.sort(key=lambda r: r["d"], reverse=True)
+        if not meet:
+            continue
+        lname = H.LEAGUES[code][0]
+        w["h2h"] = [{"date": r["d"].isoformat(), "home": ev.get("home_team") if r["h"] == hn else ev.get("away_team"),
+                     "away": ev.get("away_team") if r["h"] == hn else ev.get("home_team"),
+                     "gh": r["hg"], "ga": r["ag"], "comp": lname} for r in meet[:5]]
+        n += 1
+    if n:
+        st._save()
+    return n
+
+
 def main():
     state = load_state()
     cfg = dict(b.DEFAULT_CONFIG, api_key=os.environ.get("ODDS_KEY", ""), sports=SPORTS, demo=False)
@@ -313,6 +403,11 @@ def main():
         add_espn_odds(events, st)
     except Exception as e:
         log("cotes ESPN :", e)
+    try:
+        n = add_fd_h2h(events, st)
+        log("face-à-face (football-data.co.uk) :", n, "matchs complétés")
+    except Exception as e:
+        log("face-à-face :", e)
 
     # 3) scores pour l'historique
     state["scores"] = collect_scores(state, sorted({S.ESPN_SLUGS[s] for s in SPORTS if s in S.ESPN_SLUGS}))

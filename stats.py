@@ -363,7 +363,7 @@ class Stats:
                     t = datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00"))
                 except (KeyError, ValueError):
                     continue
-                if now - timedelta(hours=2) < t < now + timedelta(days=4):
+                if now - timedelta(hours=2) < t < now + timedelta(days=7):
                     by_sport.setdefault(ev.get("_sport_key") or ev.get("sport_key"), []).append((t, ev))
             for sk, lst in by_sport.items():
                 slug = ESPN_SLUGS.get(sk)
@@ -405,7 +405,7 @@ class Stats:
                     mins = (t - now).total_seconds() / 60
                     ttl = 10 * 60 if mins < 120 else (45 * 60 if mins < 24 * 60 else 3 * 3600)
                     cur = web.get(ev["id"])
-                    if cur and time.time() - cur["ts"] < ttl:
+                    if cur and time.time() - cur["ts"] < ttl and (cur.get("v") or {}).get("fmt") == 2:
                         continue
                     try:
                         j = self._web_get(f"{ESPN_BASE}/{slug}/summary?event={m['id']}")
@@ -414,6 +414,7 @@ class Stats:
                         errors.append(f"recherche web : {e}")
                         continue
                     parsed = self._parse_summary(j)
+                    parsed["fmt"] = 2  # format ESPN « lastFiveGames » : les anciennes fiches sont refaites
                     try:
                         parsed["weather"] = self._weather(parsed.get("venue") or {}, t)
                     except Exception:
@@ -528,12 +529,14 @@ class Stats:
         out["lineups"] = self._rosters(j)
         # forme récente, face-à-face et classement (ESPN, sans clé)
         out["form"] = {}
-        for blk in ((j.get("boxscore") or {}).get("form") or []):
+        bx = j.get("boxscore") or {}
+        for blk in (bx.get("lastFiveGames") or bx.get("form") or []):  # ESPN : « lastFiveGames » (ancien nom : « form »)
             try:
-                side = side_by_team.get(str((blk.get("team") or {}).get("id")))
+                tid_ = str((blk.get("team") or {}).get("id"))
+                side = side_by_team.get(tid_)
                 games = []
                 for e in blk.get("events") or []:
-                    g = self._espn_game(e)
+                    g = self._espn_game(e, tid_)
                     if g:
                         games.append(g)
                 if side in ("home", "away") and games:
@@ -608,23 +611,30 @@ class Stats:
         return out
 
     @staticmethod
-    def _espn_game(e):
+    def _espn_game(e, team_id=None):
         res = str(e.get("gameResult") or "").upper()[:1]
         if res not in ("W", "D", "L"):
             return None
-        nums = [int(x) for x in re.findall(r"\d+", str(e.get("score") or ""))[:2]]
-        if len(nums) < 2:
-            hs, as_ = e.get("homeTeamScore"), e.get("awayTeamScore")
-            try:
-                nums = [int(hs), int(as_)]
-            except (TypeError, ValueError):
+        home = str(e.get("atVs") or "vs").strip().lower() != "@"
+        if team_id and str(e.get("homeTeamId") or "") in (str(team_id),) :
+            home = True
+        elif team_id and str(e.get("awayTeamId") or "") == str(team_id):
+            home = False
+        try:
+            hs, as_ = int(e.get("homeTeamScore")), int(e.get("awayTeamScore"))
+            gf, ga = (hs, as_) if home else (as_, hs)
+        except (TypeError, ValueError):
+            nums = [int(x) for x in re.findall(r"\d+", str(e.get("score") or ""))[:2]]
+            if len(nums) < 2:
                 return None
-        hi, lo = max(nums), min(nums)
-        gf, ga = (hi, lo) if res == "W" else ((lo, hi) if res == "L" else (nums[0], nums[1]))
+            hi, lo = max(nums), min(nums)
+            gf, ga = (hi, lo) if res == "W" else ((lo, hi) if res == "L" else (nums[0], nums[1]))
+        comp = e.get("leagueAbbreviation") or e.get("leagueName") or e.get("competitionName") or ""
+        if e.get("roundName"):
+            comp = f"{comp} · {e['roundName']}" if comp else e["roundName"]
         return {"res": {"W": "V", "D": "N", "L": "D"}[res], "gf": gf, "ga": ga,
-                "opp": (e.get("opponent") or {}).get("displayName", ""),
-                "home": str(e.get("atVs") or "vs").strip().lower() != "@",
-                "date": str(e.get("gameDate") or "")[:10], "id": str(e.get("id") or "")}
+                "opp": (e.get("opponent") or {}).get("displayName", ""), "home": home,
+                "date": str(e.get("gameDate") or "")[:10], "id": str(e.get("id") or ""), "comp": str(comp)[:40]}
 
     def _match_one(self, ev, cands):
         try:
@@ -1049,7 +1059,7 @@ class Stats:
         rec = lambda gs: f"{sum(g['res'] == 'V' for g in gs)}V {sum(g['res'] == 'N' for g in gs)}N {sum(g['res'] == 'D' for g in gs)}D"
         hg, ag = [g for g in games if g["home"]], [g for g in games if not g["home"]]
         return {"last": [{"res": g["res"], "score": f"{g['gf']}-{g['ga']}", "opp": g["opp"], "home": g["home"],
-                          "date": g["date"][8:10] + "/" + g["date"][5:7]} for g in last],
+                          "date": g["date"][8:10] + "/" + g["date"][5:7], "comp": g.get("comp", "")} for g in last],
                 "form": "".join(g["res"] for g in last), "ppg5": round(pts(last) / len(last), 2),
                 "ppg": round(pts(games) / len(games), 2), "gf5": sum(g["gf"] for g in last),
                 "ga5": sum(g["ga"] for g in last), "wins_streak": streak if first == "V" else 0,

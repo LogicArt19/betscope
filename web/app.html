@@ -218,6 +218,11 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .opt.sm{padding:13px 16px;margin-bottom:8px}
 .opt .body{margin-top:10px}
 .avg{font-size:12.5px;color:var(--fog);margin-top:8px}
+.flist{display:grid;gap:6px}
+.fg{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:center}
+.fg .fr{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-family:var(--disp);font-weight:700;font-size:13px}
+.fg .fr.V{background:rgba(38,224,184,.15);color:var(--home)} .fg .fr.N{background:rgba(242,184,75,.15);color:var(--draw)} .fg .fr.D{background:rgba(255,107,122,.14);color:var(--bad)}
+.fg .fm{font-size:13.5px} .fg .fm small{display:block;color:var(--fog);font-size:12px}
 .lab{display:grid;grid-template-columns:minmax(300px,380px) minmax(0,1fr);gap:18px;align-items:start}
 .lab .rule{padding:18px}
 .cond{display:grid;grid-template-columns:70px minmax(0,1fr) 34px;gap:6px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed var(--rim)}
@@ -685,7 +690,7 @@ function tabParis(e){
 function formBox(name, f, tbl){
   if (!f) return `<div class="panel box"><h3>${esc(name)}</h3><p class="note">Forme indisponible.</p></div>`;
   return `<div class="panel box"><h3>${esc(name)}${tbl&&tbl.rank?` <span class="pill">${tbl.rank}e · ${tbl.points} pts</span>`:""}</h3>
-    <div class="lastg">${(f.last||[]).map(g => `<span class="${g.res}">${g.res} ${esc(g.score)} ${g.home?"vs":"à"} ${esc(g.opp)}</span>`).join("")}</div>
+    <div class="flist">${(f.last||[]).map(g => `<div class="fg"><span class="fr ${g.res}">${g.res}</span><div class="fm"><b>${{V:"Victoire",N:"Nul",D:"Défaite"}[g.res]||""} ${esc(g.score)}</b> ${g.home?"contre":"chez"} ${esc(g.opp)}<small>${esc(g.date||"")}${g.comp?" · "+esc(g.comp):""} · ${g.home?"domicile":"extérieur"}</small></div></div>`).join("")}</div>
     <p class="note" style="margin-top:10px">${esc(f.streak_txt||"")}${f.home_rec?` · domicile ${esc(f.home_rec)} · extérieur ${esc(f.away_rec)}`:""}</p></div>`;
 }
 const injList = l => (l && l.length) ? `<ul class="args">${l.map(i => `<li>${esc(i.player)} <span class="pill ${i.type==="out"?"bad":"warn"}">${esc(i.status||i.type||"")}</span> <span class="note">${esc(i.reason||"")}</span></li>`).join("")}</ul>` : `<p class="note">Aucun absent signalé.</p>`;
@@ -790,11 +795,12 @@ function tabEquipes(e, i){
     <div class="panel box"><h3>${esc(e.away)}</h3>${injList(i.inj_away)}</div></div>`;
 }
 function tabH2H(e, i){
-  if (rank() < 2) return lockBox("pro", "Face-à-face", "Les 10 dernières confrontations, toutes compétitions, et leur moyenne de buts.");
+  if (rank() < 2) return lockBox("pro", "Face-à-face", "Les dernières confrontations en championnat, leurs scores et la moyenne de buts.");
   const h = i.h2h || [], s = i.h2h_sum;
   if (!h.length) return `<div class="panel empty"><b>Pas de confrontation récente trouvée</b>Les deux équipes ne se sont pas affrontées ces dernières saisons.</div>`;
   return `${s?`<div class="stats" style="margin-bottom:14px"><div class="panel stat"><small>Victoires ${esc(e.home)}</small><b>${s.w}</b></div><div class="panel stat"><small>Nuls</small><b>${s.d}</b></div><div class="panel stat"><small>Victoires ${esc(e.away)}</small><b>${s.l}</b></div><div class="panel stat"><small>Buts par match</small><b>${fr(s.avg_goals,1)}</b></div></div>`:""}
-    <div class="panel">${h.map(g => `<div class="bet" style="grid-template-columns:90px 1fr auto"><span class="note">${esc(g.date)}</span><span>${esc(g.home)} – ${esc(g.away)}</span><b class="num">${g.gh} – ${g.ga}</b></div>`).join("")}</div>`;
+    <div class="panel">${h.slice(0, 10).map(g => `<div class="bet" style="grid-template-columns:96px minmax(0,1fr) auto"><span class="note">${esc(String(g.date||"").split("-").reverse().join("/"))}</span><div class="sel">${esc(g.home)} – ${esc(g.away)}<small>${esc(g.comp||"")}</small></div><b class="num">${g.gh} – ${g.ga}</b></div>`).join("")}</div>
+    <p class="note" style="margin-top:8px">Confrontations en championnat depuis 2020 (source : football-data.co.uk).</p>`;
 }
 function tabInfos(e, i){
   const w = i.weather;

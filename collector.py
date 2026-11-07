@@ -169,6 +169,10 @@ def public_record(events, st):
     cfg = dict(b.DEFAULT_CONFIG, sports=SPORTS, bookmakers="betclic_fr,winamax_fr,unibet_fr,pmu_fr,parionssport_fr,netbet_fr")
     sel = b.analyze(events, cfg, info=st.info_for(events))
     picks = [x for x in b.top_picks(sel, cfg) if b.would_bet(x, cfg)]
+    # + la « sélection du jour » : les 3 paris les plus sûrs (vraies cotes) des matchs des 30 prochaines heures
+    soon = datetime.now(timezone.utc) + timedelta(hours=30)
+    safe = [x for x in b.most_probable(sel, cfg) if not x.get("estimated") and x["start"] <= soon and x["p"] >= 0.6]
+    picks += safe[:3]
     h.log_app(picks)
     h.settle_all(S.ESPN_SLUGS)
     summ = h.summary()["app"]

@@ -355,7 +355,8 @@ def collect_oddspapi(events, state):
     soon = {e.get("sport_key") for e in events if now < b.parse_time(e["commence_time"]) < now + timedelta(hours=48)}
     tids = [OP_TOURNAMENTS[k] for k in OP_TOURNAMENTS if k in soon]
     # on n'attend 8 h entre deux appels que si on a déjà des cotes (un appel raté se retente à l'heure suivante)
-    fresh = bool(op.get("boards")) and time.time() - op.get("last", 0) < OP_EVERY_H * 3600
+    fresh = bool(op.get("boards")) and all("extra" in k for k in op["boards"]) \
+        and time.time() - op.get("last", 0) < OP_EVERY_H * 3600
     calls = []
     if tids and not fresh:
         calls = [tids[i:i + 3] for i in range(0, len(tids), 3)]

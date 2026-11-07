@@ -46,3 +46,19 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_KV_ID: ${{ steps.kv.outputs.id }}
         run: python collector.py
+      - name: Registre public certifié (dépôt GitHub du site)
+        if: env.CONFIGURED == 'true' && hashFiles('public_ledger.json') != ''
+        env:
+          TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::notice::PUBLISH_TOKEN absent : registre non publié"; exit 0; fi
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/LogicArt19/cotescope.git" site
+          mkdir -p site/bilan
+          cp public_ledger.json site/bilan/registre.json
+          cd site
+          git config user.name "Cotescope (registre automatique)"
+          git config user.email "registre@cotescope.fr"
+          git add bilan/registre.json
+          if git diff --cached --quiet; then echo "registre inchangé"; exit 0; fi
+          git commit -m "Registre : mise à jour automatique $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do git push && break; git pull --rebase; done

@@ -3,3 +3,4 @@ __pycache__/
 build/
 dist/
 .collect_cache/
+public_ledger.json

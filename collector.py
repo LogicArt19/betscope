@@ -282,6 +282,71 @@ def public_record(events, st):
     }
     log(f"bilan public : {summ['n']} paris vérifiés, {summ['pending']} en attente")
     cf_put("public_stats", pub)
+    try:
+        n_new = write_ledger(h)
+        log("registre public certifié :", n_new, "nouveau(x) pronostic(s)")
+    except Exception as e:
+        log("registre public :", e)
+
+
+LEDGER_URL = "https://raw.githubusercontent.com/LogicArt19/cotescope/main/bilan/registre.json"
+
+
+def write_ledger(h):
+    """Registre public inaltérable : chaque pronostic est ajouté AVANT le match avec une empreinte SHA-256
+    chaînée à la précédente. Le fichier est publié dans le dépôt GitHub public du site : l'historique de
+    GitHub date chaque ajout, et toute modification d'une ligne passée casserait la chaîne d'empreintes."""
+    import hashlib
+    path = os.path.join(CACHE, "public", "registre.json")
+    led = None
+    if os.path.exists(path):
+        led = json.load(open(path, encoding="utf-8"))
+    else:
+        try:  # la source de vérité est le dépôt public
+            with urllib.request.urlopen(LEDGER_URL, timeout=20) as r:
+                led = json.loads(r.read().decode())
+        except Exception:
+            led = None
+    led = led or {"about": "Registre public des pronostics Cotescope. Chaque ligne est ajoutée avant le coup d'envoi ; "
+                           "hash = SHA-256(hash précédent + champs du pronostic). Résultats vérifiés automatiquement.",
+                  "entries": []}
+    E = led["entries"]
+    known = {e["uid"]: e for e in E}
+    fields = ("uid", "recorded", "match", "selection", "odds", "p", "start")
+    now = datetime.now(timezone.utc)
+    n_new = 0
+    for a in sorted(h.data["app"], key=lambda x: x.get("created", 0)):
+        e = known.get(a["uid"])
+        if e is None:
+            try:
+                st_ = datetime.fromisoformat(a["start"])
+                if st_.tzinfo is None:
+                    st_ = st_.replace(tzinfo=timezone.utc)
+            except (KeyError, ValueError, TypeError):
+                continue
+            if st_ <= now:  # jamais d'ajout après le coup d'envoi
+                continue
+            e = {"n": len(E) + 1, "uid": a["uid"], "recorded": now.isoformat(timespec="seconds"),
+                 "match": a.get("match"), "selection": a.get("selection"), "odds": a.get("odds"),
+                 "p": a.get("p"), "start": a.get("start")}
+            prev = E[-1]["hash"] if E else "0" * 64
+            e["hash"] = hashlib.sha256((prev + json.dumps({k: e[k] for k in fields}, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()
+            E.append(e)
+            known[e["uid"]] = e
+            n_new += 1
+        # le résultat est ajouté ensuite (hors empreinte : il se vérifie avec le score officiel)
+        if a["status"] in ("won", "lost", "void") and e.get("status") != a["status"]:
+            e["status"], e["score"] = a["status"], a.get("score")
+    done = [e for e in E if e.get("status") in ("won", "lost")]
+    prof = sum((e["odds"] - 1) if e["status"] == "won" else -1 for e in done)
+    led["summary"] = {"updated": now.isoformat(timespec="seconds"), "n": len(done),
+                      "wins": sum(e["status"] == "won" for e in done),
+                      "roi": round(prof / len(done), 4) if done else None, "pending": sum(1 for e in E if "status" not in e)}
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    json.dump(led, open(path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    # copie pour l'étape de publication du workflow
+    json.dump(led, open(os.path.join(HERE, "public_ledger.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    return n_new
 
 
 import unicodedata as _ud

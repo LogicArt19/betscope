@@ -1487,119 +1487,230 @@ def objective_plan(stake, target, selections, cfg):
     return res
 
 
+FAMILIES = {"res": ({"1n2", "dc", "dnb"}, "uniquement des résultats (1N2, double chance)"),
+            "goals": ({"total", "team", "btts"}, "uniquement des paris sur les buts")}
+
+
+def _fronts(items):
+    """Par match : les options non dominées (aucune autre n'a à la fois meilleure cote et meilleures chances)."""
+    by_ev = {}
+    for s, o in items:
+        if o <= 1.01:
+            continue
+        by_ev.setdefault(s["event_id"], []).append((math.log(max(1e-9, s["p"] * _trust(s))), math.log(o), s, o))
+    out = []
+    for ev, opts in by_ev.items():
+        opts.sort(key=lambda x: (-x[1], -x[0]))
+        front, best = [], -1e18
+        for x in opts:
+            if x[0] > best + 1e-12:
+                front.append(x)
+                best = x[0]
+        out.append((ev, front[:12]))
+    return out
+
+
+def _solve(evs, L, k=None, lmin=1, lmax=12, banned=(), keep=None):
+    """Le ticket (1 sélection max par match) qui atteint la cote demandée avec le plus de chances.
+    Relaxation de Lagrange (rapide) puis amélioration locale : tient en quelques millisecondes,
+    ce qui permet de construire des dizaines de tickets différents."""
+    cand = [(e, o if keep is None else [x for x in o if keep(x[2])]) for e, o in evs if e not in banned]
+    cand = [(e, o) for e, o in cand if o]
+    lo_k, hi_k = (k, k) if k else (lmin, lmax)
+    if len(cand) < lo_k:
+        return None
+    top = sorted((max(x[1] for x in o) for e, o in cand), reverse=True)
+    if sum(top[:hi_k]) < L - 1e-9:
+        return None
+
+    def pick(lam):
+        vals = []
+        for e, o in cand:
+            x = max(o, key=lambda x: x[0] + lam * x[1])
+            vals.append((x[0] + lam * x[1], e, x))
+        vals.sort(key=lambda t: -t[0])
+        if k:
+            n = k
+        else:
+            n = sum(1 for v in vals if v[0] > 0)
+            n = max(lo_k, min(hi_k, n))
+        return {e: x for _, e, x in vals[:n]}
+
+    lo, hi = 0.0, 1.0
+    while sum(x[1] for x in pick(hi).values()) < L - 1e-9:
+        hi *= 2
+        if hi > 1e4:
+            return None
+    for _ in range(26):
+        mid = (lo + hi) / 2
+        if sum(x[1] for x in pick(mid).values()) >= L - 1e-9:
+            hi = mid
+        else:
+            lo = mid
+    ch = pick(hi)
+    # amélioration locale : remplacer une sélection par une plus sûre (même match ou autre match libre),
+    # ajouter une sélection très sûre qui permet d'en alléger d'autres, ou retirer une sélection inutile
+    tot = sum(x[1] for x in ch.values())
+    for _ in range(40):
+        best, move = 1e-9, None
+        for ei, xi in ch.items():
+            base = tot - xi[1]
+            if not k and len(ch) > lo_k and base >= L - 1e-9 and -xi[0] > best:
+                best, move = -xi[0], (ei, None, None)
+            for e, o in cand:
+                if e != ei and e in ch:
+                    continue
+                for x in o:
+                    g = x[0] - xi[0]
+                    if g > best and base + x[1] >= L - 1e-9:
+                        best, move = g, (ei, e, x)
+        if not move:
+            break
+        ei, e, x = move
+        tot -= ch.pop(ei)[1]
+        if e is not None:
+            ch[e] = x
+            tot += x[1]
+    if tot < L - 1e-9 or not (lo_k <= len(ch) <= hi_k):
+        return None
+    legs = sorted(ch.values(), key=lambda x: x[2]["start"])
+    o = math.prod(x[3] for x in legs)
+    p = math.prod(x[2]["p"] for x in legs)
+    return {"legs": [x[2] for x in legs], "leg_odds": [x[3] for x in legs], "odds": o, "p": p, "ev": p * o - 1}
+
+
 def _objective_plan(stake, target, selections, cfg):
-    """Propose plusieurs façons d'atteindre l'objectif de gain, de la plus sûre à la plus risquée."""
+    """Des dizaines de tickets différents qui atteignent l'objectif, classés uniquement par leurs
+    vraies chances de passer."""
     total_needed = stake + target
     need1 = total_needed / stake
+    L = math.log(need1)
     lmin = max(1, int(cfg.get("_min_legs") or 1))
     lmax = max(lmin, min(20, int(cfg.get("_max_legs") or 12)))
-    pool = 22 if lmax <= 6 else (18 if lmax <= 8 else 15)
-    bt = lambda its, need, **kw: best_ticket(its, need, **dict(dict(max_legs=lmax, min_legs=lmin), **kw))
     books = set()
     allowed = {b.strip().lower() for b in cfg.get("bookmakers", "").split(",") if b.strip()}
     for s in selections:
         books |= set(s["playable"])
-    if allowed:
-        books &= allowed | (books if not (books & allowed) else set())
-    options = []
+    if allowed and books & allowed:
+        books &= allowed
+    found = {}  # (sélections) -> option ; à sélections égales on garde la meilleure cote
 
-    def add(kind, title, desc, tickets, book_title):
+    def add(kind, title, tickets, btitle, extra=None):
+        tickets = [t for t in tickets if t]
         if not tickets:
             return
+        key = tuple(sorted(l["uid"] for t in tickets for l in t["legs"]))
         miss = 1.0
         for t in tickets:
             miss *= 1 - t["p"]
-        options.append({"kind": kind, "title": title, "desc": desc, "book": book_title,
-                        "tickets": tickets, "p_hit": 1 - miss})
+        odds = sum(t["odds"] for t in tickets)
+        cur = found.get(key)
+        tags = (cur["_tags"] if cur else []) + ([(kind, title)] if (kind, title) not in (cur or {}).get("_tags", []) else [])
+        if cur and cur["_odds"] >= odds:
+            cur["_tags"] = tags
+            return
+        o = {"book": btitle, "tickets": tickets, "p_hit": 1 - miss, "_odds": odds, "_tags": tags}
+        found[key] = dict(o, **(extra or {}))
 
-    for book in books:
-        items = _book_items(selections, cfg, book, pool_size=pool)
+    ranked_books = sorted(books, key=lambda bk: -sum(1 for s in selections if bk in s["playable"]))
+    for bi, book in enumerate(ranked_books[:4]):
+        items = _book_items(selections, cfg, book)
         if not items:
             continue
         btitle = items[0][0]["playable"][book][1]
-        # 1 ticket : le plus sûr
-        t = bt(items, need1)
-        if t and len(t["legs"]) >= 3:  # à proba quasi égale, on préfère moins de matchs
-            tl = bt(items, need1, legs_limit=len(t["legs"]) - 1)
-            if tl and tl["p"] >= t["p"] * 0.99:
-                tl["_fewer"] = True
-                t = tl
-        if t:
-            t["stake"] = stake
-            add("one", "1 ticket · le plus de chances au total",
-                f"La meilleure probabilité globale pour une cote ≥ {need1:.2f}".replace(".", ","), [t], btitle)
-        # 1 ticket : que des favoris (chaque sélection très probable), quitte à mettre plus de matchs
-        # 1 favori par match : on cherche le seuil de sécurité le plus haut qui permet d'atteindre la cote
-        fmax = int(cfg.get("_max_legs") or 60)
-        allit = _book_items(selections, cfg, book)
-        seen_sets = []
-        for th in (0.85, 0.80, 0.75, 0.70, 0.65, 0.60, 0.55):
-            tf = favorites_ticket(allit, need1, th, min_legs=lmin, max_legs=fmax)
-            if not tf:
-                continue
-            key = frozenset(l["uid"] for l in tf["legs"])
-            if key in seen_sets:
-                continue
-            seen_sets.append(key)
-            tf["stake"] = stake
-            add("fav", f"Favoris ≥ {th * 100:.0f} % · {len(tf['legs'])} matchs",
-                f"1 favori par match, chacun avec au moins {th * 100:.0f} % de chances", [tf], btitle)
-            options[-1]["safety"] = th
-        if t:
-            # moins de matchs (si le plus sûr en a 3+)
-            if len(t["legs"]) >= 3:
-                t2 = bt(items, need1, legs_limit=len(t["legs"]) - 1)
-                if t2 and t2["p"] >= t["p"]:
-                    t2 = None  # déjà meilleur avec moins de matchs : inutile de le proposer 2 fois
-                if t2:
-                    t2["stake"] = stake
-                    add("few", "1 ticket · moins de matchs", "Moins de sélections, cote plus élevée par match",
-                        [t2], btitle)
-        # 1 ticket : gros gain (objectif x2)
-        t3 = bt(items, (stake + 2 * target) / stake)
-        if t3:
-            t3["stake"] = stake
-            add("big", "1 ticket · objectif x2", f"Pour viser {2 * target:.0f} € de gain".replace(".", ","),
-                [t3], btitle)
-        # plusieurs tickets sur des matchs différents : il suffit qu'UN passe
+        evs = _fronts(items)
+        solve = lambda **kw: _solve(evs, L, **dict(dict(lmin=lmin, lmax=lmax), **kw))
+        one = lambda t: [dict(t, stake=stake)] if t else []
+        # 1. le plus sûr, puis le plus sûr pour chaque nombre de matchs
+        best = solve()
+        if not best:
+            continue
+        add("best", "Le plus sûr, nombre de matchs libre", one(best), btitle)
+        ladder = [best] if best else []
+        for k in range(lmin, lmax + 1):
+            t = solve(k=k)
+            if t:
+                add("k", f"Le plus sûr en {k} match{'s' if k > 1 else ''}", one(t), btitle)
+                ladder.append(t)
+        if bi > 1:
+            continue  # bookmakers secondaires : l'essentiel suffit
+        # 2. toutes les autres combinaisons solides : on retire tour à tour les matchs des meilleurs tickets
+        #    (énumération des k meilleurs, façon Lawler) jusqu'à avoir des dizaines de tickets différents
+        import heapq
+        heap, tried, n_solve, n_new = [], set(), 0, 0
+        for t in ladder:
+            heapq.heappush(heap, (-t["p"], len(heap), frozenset(), t))
+        cap_s, cap_n = (40, 8) if cfg.get("_few") else (300, 75)
+        while heap and n_solve < cap_s and n_new < cap_n:
+            _, _, ban, t = heapq.heappop(heap)
+            key = tuple(sorted(l["uid"] for l in t["legs"]))
+            if key not in found:
+                n_new += 1
+                add("alt", f"Autre combinaison en {len(t['legs'])} matchs", one(t), btitle)
+            for l in t["legs"]:
+                nb = ban | {l["event_id"]}
+                sig = (nb, len(t["legs"]))
+                if sig in tried or len(nb) > 6:
+                    continue
+                tried.add(sig)
+                n_solve += 1
+                t2 = solve(banned=nb, lmin=max(lmin, len(t["legs"]) - 1), lmax=min(lmax, len(t["legs"]) + 1))
+                if t2 and t2["p"] >= best["p"] * 0.25:
+                    heapq.heappush(heap, (-t2["p"], n_solve + 1000, nb, t2))
+        # 3. un seul championnat
+        for lg in sorted({s["sport_key"] for s, o in items}):
+            name = next(s["sport"] for s, o in items if s["sport_key"] == lg)
+            add("league", f"Uniquement {name}", one(solve(keep=lambda s, lg=lg: s["sport_key"] == lg)), btitle)
+        # 4. par jour : un ticket fixé vite
+        days = sorted({s["start"].astimezone().date() for s, o in items})
+        for d in days[:4]:
+            add("day", f"Uniquement les matchs du {JOURS[d.weekday()]} {d:%d/%m}",
+                one(solve(keep=lambda s, d=d: s["start"].astimezone().date() == d)), btitle)
+        # 5. par famille de paris
+        for fam, (cats, label) in FAMILIES.items():
+            add("fam", label[0].upper() + label[1:], one(solve(keep=lambda s, c=cats: s.get("cat") in c)), btitle)
+        # 6. sélections toutes au-dessus d'un seuil de chances
+        for th in (0.80, 0.75, 0.70, 0.65, 0.60):
+            add("fav", f"Chaque sélection à {th * 100:.0f} % ou plus",
+                one(solve(keep=lambda s, th=th: s["p"] >= th)), btitle, {"safety": th})
+        # 7. plusieurs tickets sur des matchs différents : un seul gagnant suffit
         for n in (2, 3):
             st = round(stake / n, 2)
-            need = total_needed / st
-            used, tickets = set(), []
+            Ln = math.log(total_needed / st)
+            used, tks = set(), []
             for _ in range(n):
-                tk = bt(_book_items(selections, cfg, book, exclude_events=used, pool_size=pool), need)
+                tk = _solve(evs, Ln, lmin=lmin, lmax=lmax, banned=used)
                 if not tk:
-                    tickets = []
+                    tks = []
                     break
                 tk["stake"] = st
                 used |= {l["event_id"] for l in tk["legs"]}
-                tickets.append(tk)
-            add(f"split{n}", f"{n} tickets de {st:.2f} €".replace(".", ","),
-                f"Matchs différents · un seul ticket gagnant suffit (cote ≥ {need:.2f} chacun)".replace(".", ","),
-                tickets, btitle)
+                tks.append(tk)
+            add(f"split{n}", f"{n} tickets de {st:.2f} € sur des matchs différents".replace(".", ","), tks, btitle)
 
-    # le ticket « favoris » passe en premier quand il existe (c'est le plus objectif), puis par chances
-    # tickets « favoris » d'abord (du plus sûr par match au moins sûr), puis les autres par chances
-    options.sort(key=lambda o: (o["kind"] != "fav", -o.get("safety", 0), -o["p_hit"]))
-    seen, uniq = set(), []
+    options = sorted(found.values(), key=lambda o: (-o["p_hit"], sum(len(t["legs"]) for t in o["tickets"])))
     for o in options:
-        key = tuple(sorted(l["uid"] for t in o["tickets"] for l in t["legs"]))
-        if key in seen:
-            continue
-        seen.add(key)
-        uniq.append(o)
+        o.pop("_odds", None)
+        tags = o.pop("_tags")
+        named = [t for t in tags if t[0] != "alt"] or tags
+        o["kind"], o["title"] = named[0]
+        o["tags"] = [t[1] for t in named[1:4]]
+        legs = [l for t in o["tickets"] for l in t["legs"]]
+        o["n_legs"] = len(legs)
+        o["ends"] = max(l["start"] for l in legs)
+        o["desc"] = f"{len(legs)} sélection{'s' if len(legs) > 1 else ''} · " + ", ".join(sorted({l['sport'] for l in legs}))
     # cote max atteignable (info si objectif impossible)
     max_odds = 0.0
     for book in books:
-        items = _book_items(selections, cfg, book)
         evs = {}
-        for s, o in items:
+        for s, o in _book_items(selections, cfg, book):
             evs[s["event_id"]] = max(evs.get(s["event_id"], 0), o)
         prod = 1.0
         for o in sorted(evs.values(), reverse=True)[:lmax]:
             prod *= o
         max_odds = max(max_odds, prod)
-    return {"stake": stake, "target": target, "need_odds": need1, "options": uniq[:12], "max_odds": max_odds}
+    return {"stake": stake, "target": target, "need_odds": need1, "options": options[:80], "n_found": len(options),
+            "max_odds": max_odds}
 
 
 # --------------------------------------------------------------------------
@@ -1670,13 +1781,14 @@ def ticket_risks(legs, p_hit):
 
 
 def ser_objective(res, cfg):
-    out = {k: res.get(k) for k in ("stake", "target", "need_odds", "max_odds", "strict", "n_ok", "strict_max_gain", "why")}
+    out = {k: res.get(k) for k in ("stake", "target", "need_odds", "max_odds", "strict", "n_ok", "strict_max_gain", "why", "n_found")}
     out["options"] = []
     opts = res["options"] + res.get("relaxed_options", [])
+    out["n_found"] = max(res.get("n_found") or 0, len(opts))
     out["locked_more"] = 0
-    if not tier_ok("pro") and len(opts) > 1:  # Essentiel : le ticket le plus sûr seulement
-        out["locked_more"] = len(opts) - 1
-        opts = opts[:1]
+    if not tier_ok("pro") and len(opts) > 5:  # Essentiel : les 5 tickets qui ont le plus de chances
+        out["locked_more"] = out["n_found"] - 5
+        opts = opts[:5]
     for o in opts:
         tickets = []
         for t in o["tickets"]:
@@ -1687,11 +1799,18 @@ def ser_objective(res, cfg):
                 "legs": [{"uid": l["uid"], "selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
                           "conf": l.get("conf"), "q": (l.get("stats") or {}).get("q"),
                           "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
-                          "min_odds": l.get("min_odds"), "market": l["market"]}
+                          "min_odds": l.get("min_odds"), "market": l["market"], "ts": l["start"].timestamp(),
+                          "league": l.get("sport")}
                          for l, lo in zip(t["legs"], t["leg_odds"])],
             })
+        legs_all = [l for t in o["tickets"] for l in t["legs"]]
+        ends = max(l["start"] for l in legs_all)
         out["options"].append({"relaxed": bool(o.get("relaxed")), "kind": o["kind"], "title": o["title"],
-                               "desc": o["desc"], "book": o["book"],
+                               "desc": o["desc"], "book": o["book"], "n_legs": len(legs_all),
+                               "ends": fmt_date(ends), "ends_ts": ends.timestamp(),
+                               "odds": round(sum(t["stake"] * t["odds"] for t in o["tickets"]) / max(0.01, sum(t["stake"] for t in o["tickets"])), 2),
+                               "ret": round(max(t["stake"] * t["odds"] for t in o["tickets"]), 2),
+                               "avg": round(sum(t["stake"] * t["odds"] * t["p"] for t in o["tickets"]), 2),
                                "p_hit": round(o["p_hit"], 4), "tickets": tickets,
                                "risks": ticket_risks([l for t in o["tickets"] for l in t["legs"]], o["p_hit"])})
     return out
@@ -2574,6 +2693,7 @@ class Api:
             cfg["_types"] = set(types)
         cfg["_min_legs"], cfg["_max_legs"] = _int_or_none(min_legs), _int_or_none(max_legs)
         cfg["_obj"] = _obj_opts(obj)
+        cfg["_few"] = not tier_ok("pro")
         if cfg["_min_legs"] and cfg["_max_legs"] and cfg["_min_legs"] > cfg["_max_legs"]:
             cfg["_min_legs"], cfg["_max_legs"] = cfg["_max_legs"], cfg["_min_legs"]
         res = objective_plan(stake, target, sel, cfg)

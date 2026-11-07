@@ -203,6 +203,21 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .tot{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:12px;border-top:1px dashed var(--rim2)}
 .tot b{font-family:var(--disp);font-size:18px;color:var(--home)}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.gsum{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:baseline;margin-bottom:10px}
+.gsum b{font-family:var(--disp);font-size:22px}
+.gfair{font-size:12.5px;color:var(--fog);padding:10px 12px;border-radius:10px;border:1px solid var(--rim);background:var(--night);margin-bottom:12px}
+.gbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.gbar .chip{padding:6px 10px;font-size:12.5px}
+.orow{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:12px;align-items:center;cursor:pointer}
+.orow .n{font-family:var(--disp);font-weight:700;color:var(--dim);font-size:15px}
+.orow .t b{font-size:15px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.orow .t small{color:var(--fog);font-size:12.5px}
+.orow .k{text-align:right;white-space:nowrap}
+.orow .k b{font-family:var(--disp);font-size:20px;color:var(--home);display:block}
+.orow .k small{font-size:12px;color:var(--fog)}
+.opt.sm{padding:13px 16px;margin-bottom:8px}
+.opt .body{margin-top:10px}
+.avg{font-size:12.5px;color:var(--fog);margin-top:8px}
 .tgl{display:flex;flex-wrap:wrap;gap:6px}
 .tgl .chip{padding:6px 10px;font-size:12.5px}
 .risks{margin-top:12px;padding:12px 14px;border-radius:11px;background:rgba(255,107,122,.05);border:1px solid rgba(255,107,122,.2);display:grid;gap:4px;font-size:13px;color:#F3C4CA}
@@ -333,8 +348,8 @@ const VIEWS = [["matchs","Matchs"],["picks","Pronostics"],["goal","Objectif"],["
 const PLAN_NAME = {gratuit:"Gratuit", essentiel:"Essentiel", pro:"Pro", elite:"Elite"};
 const RANK = {gratuit:0, essentiel:1, pro:2, elite:3};
 const PLANS = [
-  {id:"essentiel", name:"Essentiel", price:"9,99", feats:["Les 6 grands championnats","Paris principaux : 1N2, double chance, buts, les 2 marquent","Objectif : le ticket le plus sûr","Mon ticket : cote, chances, gain","Forme et classement"]},
-  {id:"pro", name:"Pro", price:"19,99", hot:"Le plus choisi", feats:["Tout Essentiel","Tous les paris : buteurs, handicaps, score exact…","Page match complète : absents, compos, face-à-face, météo","Objectif : toutes les alternatives","Bilan de tes tickets"]},
+  {id:"essentiel", name:"Essentiel", price:"9,99", feats:["Les 6 grands championnats","Paris principaux : 1N2, double chance, buts, les 2 marquent","Objectif : les 5 tickets qui ont le plus de chances","Mon ticket : cote, chances, gain","Forme et classement"]},
+  {id:"pro", name:"Pro", price:"19,99", hot:"Le plus choisi", feats:["Tout Essentiel","Tous les paris : buteurs, handicaps, score exact…","Page match complète : absents, compos, face-à-face, météo","Objectif : des dizaines de tickets, triés et filtrés","Bilan de tes tickets"]},
   {id:"elite", name:"Elite", price:"49,99", feats:["Tout Pro","Paris value et sélection de Cotescope","Mouvement des cotes","Actus de dernière minute","Fiabilité mesurée et bankroll"]},
 ];
 const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["unibet_fr","Unibet"],["pmu_fr","PMU"],["parionssport_fr","Parions Sport"],["netbet_fr","NetBet"]];
@@ -677,16 +692,9 @@ function vGoal(){
     if (r.locked) out = lockBox("essentiel", "Le mode Objectif", "Disponible avec tous les forfaits payants.");
     else if (r.error) out = `<div class="panel empty"><b>${esc(r.error)}</b></div>`;
     else if (!r.options.length) out = `<div class="panel empty"><b>Aucun ticket possible avec ces réglages</b>Coche plus de championnats ou de types de paris, ou laisse le nombre de matchs libre.</div>`;
-    else out = (r.closest ? `<div class="warn">Ton objectif demande une cote de <b>${fr(r.need_odds)}</b>, impossible à atteindre avec les matchs actuels. Voici les tickets qui s'en approchent le plus : cote ${fr(r.closest.odds)}, gain d'environ ${eur(r.closest.gain)}.</div>` : "")
-      + (r.note ? `<div class="warn">${esc(r.note)}</div>` : "")
-      + r.options.map((o, i) => `<div class="panel opt ${i===0?"best":""}">
-        <div class="oh"><div style="flex:1"><b>${i===0?"Le ticket le plus sûr":esc(o.title)}</b><small>${esc(o.desc)}</small></div><div class="ring"><b>${pc(o.p_hit, o.p_hit<.1?1:0)}</b><small>de chances</small></div></div>
-        ${o.tickets.map(t => `${t.legs.map(l => `<div class="leg"><div>${esc(l.selection)} <small>· ${esc(l.match)} · ${esc(l.date)} · ${pc(l.p)}</small></div><span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`).join("")}
-          <div class="tot"><span class="note">Mise ${eur(t.stake)} · cote ${fr(t.odds)}</span><div class="sp"></div><b>${eur(t.ret)}</b><button class="btn sm" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}">Je le joue</button></div>`).join("")}
-        ${(o.risks||[]).length ? `<div class="risks"><b>Les risques</b>${o.risks.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}
-      </div>`).join("") + (r.locked_more ? lockBox("pro", `${r.locked_more} autre${r.locked_more>1?"s":""} ticket${r.locked_more>1?"s":""} possible${r.locked_more>1?"s":""}`, "Toutes les alternatives classées pour ton objectif.") : "");
+    else out = goalList(r);
   } else out = `<div class="panel empty"><b>Donne ta mise et ce que tu veux gagner</b>Cotescope cherche parmi tous les paris de tous les matchs les tickets qui ont le plus de chances d'y arriver, avec leurs risques.</div>`;
-  return `<h1 class="t">Objectif</h1><p class="lead">« Je mise 10 €, je veux gagner 40 € » : Cotescope te sort le ticket le plus sûr pour y arriver.</p>
+  return `<h1 class="t">Objectif</h1><p class="lead">Tu donnes ta mise et ce que tu veux gagner. Cotescope passe en revue tous les paris de tous les matchs et te sort des dizaines de tickets qui y arrivent, classés par leurs vraies chances de passer.</p>
     <div class="goal">
       <div class="panel goalf">
         <label class="f" for="gl-s">Je mise</label><div class="money"><input class="in" id="gl-s" inputmode="decimal" value="${esc(GOAL.stake)}"><span>€</span></div>
@@ -703,6 +711,45 @@ function vGoal(){
       <div id="g-out">${out}</div>
     </div>`;
 }
+let GSORT = "p", GLEGS = "all", GOPEN = new Set([0]), GMORE = 15;
+function goalList(r){
+  let opts = r.options.map((o, i) => ({...o, rank: i + 1}));
+  const counts = [...new Set(opts.map(o => o.n_legs))].sort((a, b) => a - b);
+  if (GLEGS !== "all") opts = opts.filter(o => String(o.n_legs) === GLEGS);
+  const by = {p: (a, b) => b.p_hit - a.p_hit, legs: (a, b) => a.n_legs - b.n_legs || b.p_hit - a.p_hit,
+              soon: (a, b) => a.ends_ts - b.ends_ts || b.p_hit - a.p_hit, gain: (a, b) => b.ret - a.ret || b.p_hit - a.p_hit};
+  opts.sort(by[GSORT]);
+  const top = r.options[0];
+  const head = (r.closest ? `<div class="warn">Ton objectif demande une cote de <b>${fr(r.need_odds)}</b>, impossible à atteindre avec les matchs actuels. Voici les tickets qui s'en approchent le plus : cote ${fr(r.closest.odds)}, gain d'environ ${eur(r.closest.gain)}.</div>` : "")
+    + (r.note ? `<div class="warn">${esc(r.note)}</div>` : "")
+    + `<div class="gsum"><span><b>${r.n_found || r.options.length}</b> <span class="note">tickets trouvés pour une cote ≥ ${fr(r.closest ? r.closest.odds : r.need_odds)}</span></span>
+       <span class="note">Le meilleur : <b style="font-size:16px;color:var(--home)">${pc(top.p_hit, top.p_hit < .1 ? 1 : 0)}</b> de chances</span></div>
+      <div class="gfair">Classement objectif : uniquement les vraies chances que le ticket passe, calculées sans la marge du bookmaker, en tenant compte de la forme et des absents. Aucun ticket n'est mis en avant pour une autre raison.</div>
+      <div class="gbar">${[["p","Plus de chances"],["legs","Moins de matchs"],["soon","Fini le plus tôt"],["gain","Plus gros gain"]].map(([k,l]) => `<button class="chip ${GSORT===k?"on":""}" data-gsort="${k}">${l}</button>`).join("")}</div>
+      <div class="gbar" style="margin-bottom:14px"><button class="chip ${GLEGS==="all"?"on":""}" data-glegs="all">Tous</button>${counts.map(c => `<button class="chip ${GLEGS===String(c)?"on":""}" data-glegs="${c}">${c} match${c>1?"s":""}</button>`).join("")}</div>`;
+  const card = o => {
+    const open = GOPEN.has(o.rank - 1);
+    return `<div class="panel opt sm ${o.rank===1?"best":""}">
+      <div class="orow" data-gopen="${o.rank - 1}"><span class="n">#${o.rank}</span>
+        <div class="t"><b>${o.rank===1?"Le plus de chances":esc(o.kind==="alt" ? o.tickets[0].legs.map(l => l.selection).join(" + ") : o.title)}</b><small>${esc(o.desc)} · fini ${esc(o.ends)}${o.tags && o.tags.length ? " · " + o.tags.map(esc).join(" · ") : ""}</small></div>
+        <div class="k"><b>${pc(o.p_hit, o.p_hit < .1 ? 1 : 0)}</b><small>cote ${fr(o.odds)} · ${eur(o.ret)}</small></div></div>
+      ${open ? `<div class="body">${o.tickets.map(t => `${t.legs.map(l => `<div class="leg"><div>${esc(l.selection)} <small>· ${esc(l.match)} · ${esc(l.date)} · ${pc(l.p)}</small></div><span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`).join("")}
+          <div class="tot"><span class="note">Mise ${eur(t.stake)} · cote ${fr(t.odds)} · ${pc(t.p, t.p < .1 ? 1 : 0)}</span><div class="sp"></div><b>${eur(t.ret)}</b><button class="btn sm" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}">Je le joue</button></div>`).join("")}
+        <div class="avg">En moyenne, sur la durée, ce ticket rend ${eur(o.avg)} pour ${eur(o.tickets.reduce((s, t) => s + t.stake, 0))} misés${o.avg < o.tickets.reduce((s, t) => s + t.stake, 0) ? " : la marge du bookmaker joue contre toi" : ""}.</div>
+        ${(o.risks||[]).length ? `<div class="risks"><b>Les risques</b>${o.risks.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}</div>` : ""}
+    </div>`;
+  };
+  const shown = opts.slice(0, GMORE);
+  return head + shown.map(card).join("")
+    + (opts.length > GMORE ? `<button class="btn ghost" data-gmore style="width:100%;margin:6px 0 12px">Voir ${Math.min(15, opts.length - GMORE)} tickets de plus (${opts.length - GMORE} restants)</button>` : "")
+    + (r.locked_more ? lockBox("pro", `${r.locked_more} autre${r.locked_more>1?"s":""} ticket${r.locked_more>1?"s":""} trouvé${r.locked_more>1?"s":""}`, "Toutes les combinaisons qui atteignent ton objectif, classées par chances, avec tri et filtres.") : "");
+}
+document.addEventListener("click", e => {
+  const s = e.target.closest("[data-gsort]"); if (s) { GSORT = s.dataset.gsort; GMORE = 15; render(); return; }
+  const l = e.target.closest("[data-glegs]"); if (l) { GLEGS = l.dataset.glegs; GMORE = 15; render(); return; }
+  if (e.target.closest("[data-gmore]")) { GMORE += 15; render(); return; }
+  const o = e.target.closest("[data-gopen]"); if (o) { const i = +o.dataset.gopen; GOPEN.has(i) ? GOPEN.delete(i) : GOPEN.add(i); render(); }
+});
 document.addEventListener("click", e => {
   const c = e.target.closest(".tgl .chip:not(.lk)"); if (!c) return;
   c.classList.toggle("on");
@@ -716,6 +763,7 @@ document.addEventListener("click", e => {
     readGoal();
     if (!GOAL.leagues.length || !GOAL.types.length) { toast("Coche au moins un championnat et un type de pari"); return; }
     $("#g-out").innerHTML = `<div class="panel loader" style="padding:40px"><div class="scan">${spec([.45,.27,.28])}</div>Recherche parmi tous les paris…</div>`;
+    GSORT = "p"; GLEGS = "all"; GOPEN = new Set([0]); GMORE = 15;
     setTimeout(() => { GOAL.res = call("compute_objective", GOAL.stake, GOAL.target, GOAL.types, GOAL.min || null, GOAL.max || null, null, GOAL.leagues); render(); }, 30);
   }
   const p = e.target.closest("[data-play]");

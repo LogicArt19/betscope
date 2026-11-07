@@ -853,6 +853,31 @@ function tabH2H(e, i){
     <div class="panel">${h.slice(0, 10).map(g => `<div class="bet" style="grid-template-columns:96px minmax(0,1fr) auto"><span class="note">${esc(String(g.date||"").split("-").reverse().join("/"))}</span><div class="sel">${esc(g.home)} – ${esc(g.away)}<small>${esc(g.comp||"")}</small></div><b class="num">${g.gh} – ${g.ga}</b></div>`).join("")}</div>
     <p class="note" style="margin-top:8px">Confrontations en championnat depuis 2020 (source : football-data.co.uk).</p>`;
 }
+let CARD_ODDS = {};
+function cardsBox(e, i){
+  if (rank() < 2) return lockBox("pro", "Cartons et arbitre", "La moyenne de cartons des 2 équipes et de l'arbitre, et les vraies chances de dépasser 3,5, 4,5 ou 5,5 cartons.");
+  const c = i.cards;
+  if (!c) return `<div class="panel empty"><b>Statistiques de cartons pas encore disponibles</b>Elles arrivent avec la fiche du match (championnats couverts par football-data.co.uk).</div>`;
+  const r = c.referee;
+  const line = k => { const p = c.over[k], fair = p > 0 ? 1 / p : null, mine = parseFloat(String(CARD_ODDS[e.id + k] || "").replace(",", "."));
+    const v = mine > 1 && p ? p * mine - 1 : null;
+    return `<div class="bet" style="grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px"><div class="sel">Plus de ${k.replace(".", ",")} cartons<small>juste prix ${fair ? fr(fair) : "–"}</small></div><b class="num">${pc(p)}</b>
+      <input class="sel2" data-cardodds="${esc(e.id + k)}" placeholder="ta cote" inputmode="decimal" value="${esc(CARD_ODDS[e.id + k] || "")}" style="width:84px">
+      <span class="pill ${v == null ? "" : v >= .03 ? "ok" : v >= -.03 ? "warn" : "bad"}">${v == null ? "—" : v >= .03 ? "à jouer" : v >= -.03 ? "correct" : "trop bas"}</span></div>`; };
+  return `<div class="grid2">
+    <div class="panel box"><h3>Les deux équipes <small class="note">(20 derniers matchs)</small></h3>
+      <table class="tbl"><tr><th></th><th>${esc(e.home)}</th><th>${esc(e.away)}</th></tr>
+      <tr><td>Cartons pris par match</td><td>${fr(c.home.own, 1)}</td><td>${fr(c.away.own, 1)}</td></tr>
+      <tr><td>Cartons provoqués chez l'adversaire</td><td>${fr(c.home.opp, 1)}</td><td>${fr(c.away.opp, 1)}</td></tr>
+      <tr><td>Fautes par match</td><td>${c.home.fouls != null ? fr(c.home.fouls, 1) : "–"}</td><td>${c.away.fouls != null ? fr(c.away.fouls, 1) : "–"}</td></tr></table>
+      <p class="note" style="margin-top:8px">Moyenne du championnat : ${fr(c.league_avg, 1)} cartons par match (jaune = 1, rouge = 2).</p></div>
+    <div class="panel box"><h3>Arbitre</h3>${r ? `<p><b>${esc(r.name)}</b></p><p class="note">${r.avg != null ? `${fr(r.avg, 1)} cartons par match en moyenne sur ${r.n} matchs arbitrés, contre ${fr(c.league_avg, 1)} pour le championnat${r.avg > c.league_avg * 1.1 ? " : arbitre plutôt sévère." : r.avg < c.league_avg * .9 ? " : arbitre plutôt clément." : "."}` : "Sa moyenne n'est pas disponible dans nos sources pour ce championnat : elle n'est pas prise en compte."}</p>` : `<p class="note">Arbitre pas encore désigné (en général 2 à 3 jours avant le match).</p>`}
+      <p class="note" style="margin-top:10px">Cartons attendus dans ce match : <b>${fr(c.expected, 1)}</b></p></div>
+  </div>
+  <div class="panel" style="margin-top:12px">${["3.5","4.5","5.5"].map(line).join("")}</div>
+  <p class="note" style="margin-top:8px">Tape la cote de ton bookmaker pour savoir si elle vaut le coup. Les cartons restent un marché très aléatoire : mise petite.</p>`;
+}
+document.addEventListener("change", e => { const t = e.target.closest("[data-cardodds]"); if (t) { CARD_ODDS[t.dataset.cardodds] = t.value; render(); } });
 function stakeBox(e, i){
   const sh = i.stake_home, sa = i.stake_away;
   const one = (name, x, col) => {
@@ -870,6 +895,7 @@ function tabInfos(e, i){
   return `<div class="grid2">
     <div class="panel box"><h3>Météo au coup d'envoi</h3>${rank() < 2 ? '<p class="note">Disponible avec Pro.</p>' : w ? `<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div><small class="note">Température</small><b class="num" style="display:block;font-size:22px">${w.temp}°</b></div><div><small class="note">Pluie</small><b class="num" style="display:block;font-size:22px">${w.rain} mm</b></div><div><small class="note">Vent</small><b class="num" style="display:block;font-size:22px">${w.wind} km/h</b></div></div><p class="note" style="margin-top:8px">${esc(w.city||"")}</p>` : '<p class="note">Pas encore disponible.</p>'}</div>
     ${stakeBox(e, i)}</div>
+    <h2 class="s">Cartons et arbitre</h2>${cardsBox(e, i)}
     <h2 class="s">Actus de dernière minute</h2>
     ${rank() < 3 ? lockBox("elite", "Actus de dernière minute", "Les infos trouvées sur le web juste avant le match.") :
       (i.news||[]).length ? `<div class="panel">${i.news.map(n => `<div class="bet" style="grid-template-columns:1fr"><div class="sel">${esc(n.title)}<small>${esc(n.desc||"")}</small></div></div>`).join("")}</div>` : `<div class="panel empty"><b>Rien de neuf pour l'instant</b>Les actus sont vérifiées plusieurs fois avant le match.</div>`}`;

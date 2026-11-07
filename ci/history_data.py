@@ -101,6 +101,11 @@ def read_rows(raw):
         out.append({
             "d": d, "h": h, "a": a, "hg": hg, "ag": ag,
             "hst": fnum(row, "HST"), "ast": fnum(row, "AST"),
+            # cartons et fautes (pour le module arbitres et cartons)
+            "hy": fnum(row, "HY") or (0 if (row.get("HY") or "").strip() == "0" else None),
+            "ay": fnum(row, "AY") or (0 if (row.get("AY") or "").strip() == "0" else None),
+            "hr": fnum(row, "HR") or 0, "ar": fnum(row, "AR") or 0,
+            "hf": fnum(row, "HF"), "af": fnum(row, "AF"), "ref": (row.get("Referee") or "").strip(),
             # cotes d'avant-match : moyenne du marché, meilleure cote, Pinnacle (repli Bet365)
             "avg": [fnum(row, "AvgH", "BbAvH", "B365H"), fnum(row, "AvgD", "BbAvD", "B365D"), fnum(row, "AvgA", "BbAvA", "B365A")],
             "max": [fnum(row, "MaxH", "BbMxH"), fnum(row, "MaxD", "BbMxD"), fnum(row, "MaxA", "BbMxA")],

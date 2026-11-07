@@ -459,7 +459,7 @@ class Stats:
                     mins = (t - now).total_seconds() / 60
                     ttl = 10 * 60 if mins < 120 else (45 * 60 if mins < 24 * 60 else 3 * 3600)
                     cur = web.get(ev["id"])
-                    if cur and time.time() - cur["ts"] < ttl and (cur.get("v") or {}).get("fmt") == 2:
+                    if cur and time.time() - cur["ts"] < ttl and (cur.get("v") or {}).get("fmt") == 3:
                         continue
                     try:
                         j = self._web_get(f"{ESPN_BASE}/{slug}/summary?event={m['id']}")
@@ -468,7 +468,7 @@ class Stats:
                         errors.append(f"recherche web : {e}")
                         continue
                     parsed = self._parse_summary(j)
-                    parsed["fmt"] = 2  # format ESPN « lastFiveGames » : les anciennes fiches sont refaites
+                    parsed["fmt"] = 3  # format ESPN « lastFiveGames » : les anciennes fiches sont refaites
                     try:
                         parsed["stakes"] = season_stakes(parsed.get("table_all") or [], parsed.get("team_ids") or {}, slug)
                     except Exception:
@@ -614,6 +614,13 @@ class Stats:
                                            "comp": e.get("leagueName") or e.get("leagueAbbreviation") or ""})
             except (AttributeError, TypeError):
                 continue
+        try:  # arbitre désigné (ESPN)
+            offs = ((j.get("gameInfo") or {}).get("officials") or [])
+            main = next((o for o in offs if "referee" in str(((o.get("position") or {}).get("name") or "")).lower()
+                         and "assistant" not in str(((o.get("position") or {}).get("name") or "")).lower()), offs[0] if offs else None)
+            out["referee"] = (main or {}).get("displayName") or (main or {}).get("fullName") or ""
+        except (AttributeError, TypeError, IndexError):
+            out["referee"] = ""
         try:
             v = (j.get("gameInfo") or {}).get("venue") or {}
             addr = v.get("address") or {}
@@ -1138,6 +1145,10 @@ class Stats:
                 "scored_in": round(sum(g["gf"] > 0 for g in last) / len(last), 2), "src": "ESPN"}
 
     def _fill_from_web(self, r, w):
+        if w.get("cards"):
+            r["cards"] = w["cards"]
+        if w.get("referee"):
+            r["referee"] = w["referee"]
         sk = w.get("stakes") or {}
         for side in ("home", "away"):
             if sk.get(side):

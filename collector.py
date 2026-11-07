@@ -462,6 +462,44 @@ def publish_lineup_watch(events, st):
     return len(out)
 
 
+def cards_profile(rows, hn, an, referee):
+    """Cartons : moyenne des 2 équipes (pris et provoqués chez l'adversaire) sur leurs 20 derniers matchs,
+    l'arbitre désigné (sa moyenne quand la source le donne), et les chances de dépasser 3,5 / 4,5 / 5,5 cartons
+    (jaune = 1, rouge = 2, comme chez la plupart des bookmakers)."""
+    import math
+    valid = [r for r in rows if r.get("hy") is not None and r.get("ay") is not None]
+    if len(valid) < 50:
+        return None
+    pts = lambda r, home: (r["hy"] + 2 * r["hr"]) if home else (r["ay"] + 2 * r["ar"])
+    league = sum(pts(r, True) + pts(r, False) for r in valid[-380:]) / len(valid[-380:])
+
+    def team(t):
+        g = [r for r in valid if t in (r["h"], r["a"])][-20:]
+        if len(g) < 5:
+            return None
+        own = sum(pts(r, r["h"] == t) for r in g) / len(g)
+        opp = sum(pts(r, r["h"] != t) for r in g) / len(g)
+        fouls = [r["hf"] if r["h"] == t else r["af"] for r in g if (r["hf"] if r["h"] == t else r["af"]) is not None]
+        return {"own": round(own, 2), "opp": round(opp, 2), "fouls": round(sum(fouls) / len(fouls), 1) if fouls else None, "n": len(g)}
+
+    th, ta = team(hn), team(an)
+    if not th or not ta:
+        return None
+    exp = (th["own"] + ta["opp"]) / 2 + (ta["own"] + th["opp"]) / 2
+    ref = None
+    if referee:
+        last = referee.split()[-1].lower()
+        rg = [r for r in valid if r.get("ref") and r["ref"].split()[-1].lower() == last][-40:]
+        if len(rg) >= 8:
+            avg = sum(pts(r, True) + pts(r, False) for r in rg) / len(rg)
+            ref = {"name": referee, "avg": round(avg, 2), "n": len(rg)}
+            exp *= max(0.75, min(1.3, avg / league))  # un arbitre sévère fait monter l'espérance, sans excès
+    pois_over = lambda k: 1 - sum(math.exp(-exp) * exp ** i / math.factorial(i) for i in range(int(k) + 1))
+    return {"home": th, "away": ta, "league_avg": round(league, 2), "expected": round(exp, 2),
+            "referee": ref or ({"name": referee, "avg": None, "n": 0} if referee else None),
+            "over": {str(k + .5): round(pois_over(k), 3) for k in (3, 4, 5)}}
+
+
 def add_fd_h2h(events, st):
     """Les 5 dernières confrontations en championnat (football-data.co.uk, gratuit, sans clé) pour chaque match
     qui a une fiche, quand ESPN ne les donne pas."""
@@ -477,7 +515,7 @@ def add_fd_h2h(events, st):
     for ev in events:
         eid, code = ev.get("id"), code_of.get(ev.get("sport_key"))
         w = (web.get(eid) or {}).get("v")
-        if not code or w is None or len(w.get("h2h") or []) >= 5:
+        if not code or w is None or (len(w.get("h2h") or []) >= 5 and w.get("cards")):
             continue
         if code not in games_by_code:
             rows = []
@@ -498,9 +536,14 @@ def add_fd_h2h(events, st):
         hn, an = _best_team(ev.get("home_team"), teams), _best_team(ev.get("away_team"), teams)
         if not hn or not an or hn == an:
             continue
+        try:
+            w["cards"] = cards_profile(rows, hn, an, w.get("referee") or "")
+        except Exception:
+            pass
         meet = [r for r in rows if {r["h"], r["a"]} == {hn, an}]
         meet.sort(key=lambda r: r["d"], reverse=True)
         if not meet:
+            n += 1
             continue
         lname = H.LEAGUES[code][0]
         w["h2h"] = [{"date": r["d"].isoformat(), "home": ev.get("home_team") if r["h"] == hn else ev.get("away_team"),

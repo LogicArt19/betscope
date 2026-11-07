@@ -96,7 +96,11 @@ async function whop(env, path, opts = {}) {
     ...opts,
     headers: { Authorization: "Bearer " + env.WHOP_API_KEY, Accept: "application/json", "Content-Type": "application/json" },
   });
-  if (!r.ok) throw new Error("whop_" + r.status);
+  if (!r.ok) {
+    const detail = (await r.text().catch(() => "")).slice(0, 300);
+    console.log("Whop", opts.method || "GET", path.split("?")[0], r.status, detail);
+    throw Object.assign(new Error("whop_" + r.status), { status: r.status, detail });
+  }
   return r.json();
 }
 function tierOfPlan(env, planId) {
@@ -309,9 +313,13 @@ export default {
       try {
         r = await whop(env, "/checkout_configurations", {
           method: "POST",
-          body: JSON.stringify({ plan_id: plan, metadata: { cotescope_account: user.email }, redirect_url: ret }),
+          body: JSON.stringify({ plan_id: plan, company_id: env.WHOP_COMPANY_ID || undefined,
+                                 metadata: { cotescope_account: user.email }, redirect_url: ret }),
         });
-      } catch (e) { return json(req, { ok: false, reason: "whop_unreachable" }, 502); }
+      } catch (e) {
+        return json(req, { ok: false, reason: e.status ? "whop_error" : "whop_unreachable", status: e.status || 0,
+                           detail: e.detail || String(e.message || e) }, 502);
+      }
       user.pending = Date.now();
       await putUser(env, user);
       return json(req, { ok: true, url: r.purchase_url });

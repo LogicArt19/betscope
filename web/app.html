@@ -877,7 +877,8 @@ document.addEventListener("click", async e => {
   const v = e.target.closest("[data-gv]");
   if (v) { if (v.dataset.gv === "close") gate(null); else gate(v.dataset.gv); }
   const b = e.target.closest("[data-buy]");
-  if (b) { b.disabled = true; const r = await Auth.checkout(b.dataset.buy); b.disabled = false; if (!r.ok) { const m = $("#g-msg"); if (m) m.textContent = errMsg(r.reason); } }
+  if (b) { b.disabled = true; const r = await Auth.checkout(b.dataset.buy); b.disabled = false;
+    if (!r.ok) { const m = $("#g-msg"); if (m) m.textContent = r.reason === "whop_error" ? `Le paiement a été refusé par Whop (code ${r.status}). Détail : ${String(r.detail || "").slice(0, 160)}` : errMsg(r.reason); } }
 });
 
 async function start(){

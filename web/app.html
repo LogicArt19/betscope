@@ -819,11 +819,23 @@ function tabH2H(e, i){
     <div class="panel">${h.slice(0, 10).map(g => `<div class="bet" style="grid-template-columns:96px minmax(0,1fr) auto"><span class="note">${esc(String(g.date||"").split("-").reverse().join("/"))}</span><div class="sel">${esc(g.home)} – ${esc(g.away)}<small>${esc(g.comp||"")}</small></div><b class="num">${g.gh} – ${g.ga}</b></div>`).join("")}</div>
     <p class="note" style="margin-top:8px">Confrontations en championnat depuis 2020 (source : football-data.co.uk).</p>`;
 }
+function stakeBox(e, i){
+  const sh = i.stake_home, sa = i.stake_away;
+  const one = (name, x, col) => {
+    if (!x) return `<div><b>${esc(name)}</b><p class="note">Classement indisponible.</p></div>`;
+    if (typeof x === "string") return `<div><b>${esc(name)}</b><p class="note">${esc(x)}</p></div>`;
+    return `<div><b>${esc(name)}</b> <span class="pill">${esc(x.label)}</span>${x.score != null ? `<div class="bar" style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--rim);margin:8px 0 4px"><i style="width:${x.score*10}%;background:${col}"></i></div><small class="note">Enjeu ${x.score}/10</small>` : ""}<p class="note">${esc(x.detail || "")}</p></div>`;
+  };
+  const trap = sh && sa && typeof sh === "object" && typeof sa === "object" && sh.score != null && sa.score != null && Math.abs(sh.score - sa.score) >= 5;
+  return `<div class="panel box"><h3>Enjeu de fin de saison</h3><div style="display:grid;gap:12px">${one(e.home, sh, "var(--home)")}${one(e.away, sa, "var(--away)")}</div>
+    ${trap ? `<div class="warn" style="margin-top:10px">⚠️ Match piège : ${esc(sh.score > sa.score ? e.away : e.home)} n'a plus grand-chose à jouer face à une équipe qui joue gros.</div>` : ""}
+    <p class="note" style="margin-top:8px">Calculé avec les points d'écart et les matchs restants ; compte surtout dans les 12 dernières journées.</p></div>`;
+}
 function tabInfos(e, i){
   const w = i.weather;
   return `<div class="grid2">
     <div class="panel box"><h3>Météo au coup d'envoi</h3>${rank() < 2 ? '<p class="note">Disponible avec Pro.</p>' : w ? `<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div><small class="note">Température</small><b class="num" style="display:block;font-size:22px">${w.temp}°</b></div><div><small class="note">Pluie</small><b class="num" style="display:block;font-size:22px">${w.rain} mm</b></div><div><small class="note">Vent</small><b class="num" style="display:block;font-size:22px">${w.wind} km/h</b></div></div><p class="note" style="margin-top:8px">${esc(w.city||"")}</p>` : '<p class="note">Pas encore disponible.</p>'}</div>
-    <div class="panel box"><h3>Enjeu</h3><p class="note">${esc([i.stake_home, i.stake_away].filter(Boolean).map(s => s.label || s).join(" · ") || "Pas d'enjeu particulier détecté.")}</p></div></div>
+    ${stakeBox(e, i)}</div>
     <h2 class="s">Actus de dernière minute</h2>
     ${rank() < 3 ? lockBox("elite", "Actus de dernière minute", "Les infos trouvées sur le web juste avant le match.") :
       (i.news||[]).length ? `<div class="panel">${i.news.map(n => `<div class="bet" style="grid-template-columns:1fr"><div class="sel">${esc(n.title)}<small>${esc(n.desc||"")}</small></div></div>`).join("")}</div>` : `<div class="panel empty"><b>Rien de neuf pour l'instant</b>Les actus sont vérifiées plusieurs fois avant le match.</div>`}`;

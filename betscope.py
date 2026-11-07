@@ -721,7 +721,18 @@ def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
             score += 3
         sm, so = st.get("stake_home" if side == "home" else "stake_away"), \
             st.get("stake_away" if side == "home" else "stake_home")
-        if sm and not so:
+        if isinstance(sm, dict) or isinstance(so, dict):
+            # enjeu précis (points d'écart et matchs restants) : compte seulement en fin de saison
+            a = (sm or {}).get("score") if isinstance(sm, dict) else None
+            o = (so or {}).get("score") if isinstance(so, dict) else None
+            if a is not None and o is not None and abs(a - o) >= 5:
+                if a > o:
+                    pros.append(f"Enjeu : {me} ({sm['label'].lower()}) contre une équipe qui n'a plus grand-chose à jouer")
+                    score += 3
+                else:
+                    cons.append(f"Match piège : {opp} ({so['label'].lower()}) a beaucoup plus à jouer que {me}")
+                    score -= 3
+        elif sm and not so:
             pros.append(f"Enjeu : {me} en {sm}")
             score += 2
         elif so and not sm:

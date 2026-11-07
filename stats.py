@@ -132,6 +132,60 @@ def _pct(x):
         return None
 
 
+# Enjeu de fin de saison : places européennes et relégation par championnat (slug ESPN)
+ZONES = {"fra.1": (4, 6, 3), "eng.1": (5, 7, 3), "esp.1": (5, 7, 3), "ita.1": (4, 7, 3), "ger.1": (4, 7, 3),
+         "ned.1": (2, 5, 3), "por.1": (2, 5, 3)}  # (Ligue des champions, Europe au total, relégables + barrage)
+
+
+def season_stakes(table, team_ids, slug):
+    """Ce que chaque équipe a encore à jouer, calculé avec les points d'écart et les matchs restants.
+    Renvoie {home/away: {score 0-10, label, detail, remaining}}."""
+    if len(table) < 10:
+        return {}
+    n = len(table)
+    total = 2 * (n - 1)
+    rows = sorted(table, key=lambda t: t["rank"] or 99)
+    ucl, eur, rel = ZONES.get(slug, (4, 6, 3))
+    rem = {t["tid"]: max(0, total - t["played"]) for t in rows}
+    mx = {t["tid"]: t["pts"] + 3 * rem[t["tid"]] for t in rows}
+    at = lambda r: rows[min(len(rows), max(1, r)) - 1]
+
+    def one(tid):
+        t = next((x for x in rows if x["tid"] == str(tid)), None)
+        if not t:
+            return None
+        r, pts, left = t["rank"], t["pts"], rem[t["tid"]]
+        others = [x for x in rows if x["tid"] != t["tid"]]
+        champion = all(mx[x["tid"]] < pts for x in others)
+        title_ok = mx[t["tid"]] >= rows[0]["pts"] and not champion
+        relegated = mx[t["tid"]] < at(n - rel)["pts"]
+        safe = pts > max(mx[x["tid"]] for x in rows[n - rel:] if x["tid"] != t["tid"]) if r <= n - rel else False
+        eur_ok = mx[t["tid"]] >= at(eur)["pts"]
+        eur_sure = r <= eur and pts > mx[at(eur + 1)["tid"]]
+        ucl_ok = mx[t["tid"]] >= at(ucl)["pts"]
+        ucl_sure = r <= ucl and pts > mx[at(ucl + 1)["tid"]]
+        if left > 12:
+            return {"score": None, "label": "Saison en cours", "detail": f"Encore {left} matchs : tout reste ouvert.", "remaining": left}
+        if champion:
+            return {"score": 1, "label": "Déjà championne", "detail": "Plus rien à jouer : risque de rotation.", "remaining": left}
+        if relegated:
+            return {"score": 1, "label": "Déjà reléguée", "detail": "Mathématiquement condamnée : motivation incertaine.", "remaining": left}
+        if title_ok and r <= 3:
+            return {"score": 10, "label": "Course au titre", "detail": f"{rows[0]['pts'] - pts} pt(s) du leader, {left} matchs restants." if r > 1 else f"Leader, {pts - rows[1]['pts']} pt(s) d'avance, {left} matchs restants.", "remaining": left}
+        if not safe and r >= n - rel - 3:
+            gap = pts - at(n - rel + 1)["pts"]
+            return {"score": 10, "label": "Lutte pour le maintien", "detail": (f"{gap} pt(s) d'avance sur la zone rouge" if gap > 0 else f"{-gap} pt(s) de retard sur le maintien") + f", {left} matchs restants.", "remaining": left}
+        if ucl_ok and not ucl_sure:
+            return {"score": 8, "label": "Course à la Ligue des champions", "detail": f"{left} matchs restants.", "remaining": left}
+        if eur_ok and not eur_sure:
+            return {"score": 7, "label": "Course à l'Europe", "detail": f"{left} matchs restants.", "remaining": left}
+        if ucl_sure or eur_sure:
+            return {"score": 4, "label": "Place européenne assurée", "detail": "Objectif atteint : possible rotation.", "remaining": left}
+        return {"score": 3, "label": "Plus grand-chose à jouer", "detail": "Ni l'Europe ni la relégation ne sont encore en jeu.", "remaining": left}
+
+    return {side: one(tid) for side, tid in team_ids.items() if one(tid)}
+
+
 class Stats:
     def __init__(self, cache_dir, user_agent="Cotescope"):
         self.path = os.path.join(cache_dir, "stats_cache.json")
@@ -416,6 +470,10 @@ class Stats:
                     parsed = self._parse_summary(j)
                     parsed["fmt"] = 2  # format ESPN « lastFiveGames » : les anciennes fiches sont refaites
                     try:
+                        parsed["stakes"] = season_stakes(parsed.get("table_all") or [], parsed.get("team_ids") or {}, slug)
+                    except Exception:
+                        parsed["stakes"] = {}
+                    try:
                         parsed["weather"] = self._weather(parsed.get("venue") or {}, t)
                     except Exception:
                         parsed["weather"] = None
@@ -564,15 +622,22 @@ class Stats:
         except (AttributeError, TypeError):
             out["venue"] = {}
         out["table"] = {}
+        out["table_all"] = []
         try:
             groups = (j.get("standings") or {}).get("groups") or []
             for gr in groups:
                 for ent in ((gr.get("standings") or {}).get("entries") or []):
                     tid = str(ent.get("id") or (ent.get("team") or {}).get("id") or "")
+                    st = {x.get("name") or x.get("type"): x.get("value") for x in ent.get("stats") or []}
+                    try:
+                        out["table_all"].append({"tid": tid, "name": (ent.get("team") or {}).get("displayName") or "",
+                                                 "rank": int(st.get("rank") or 0), "pts": int(st.get("points") or 0),
+                                                 "played": int(st.get("gamesPlayed") or 0)})
+                    except (TypeError, ValueError):
+                        pass
                     side = side_by_team.get(tid)
                     if not side:
                         continue
-                    st = {x.get("name") or x.get("type"): x.get("value") for x in ent.get("stats") or []}
                     out["table"][side] = {"rank": int(st.get("rank") or 0) or None,
                                           "points": int(st.get("points") or 0)}
         except (AttributeError, TypeError, ValueError):
@@ -1073,6 +1138,10 @@ class Stats:
                 "scored_in": round(sum(g["gf"] > 0 for g in last) / len(last), 2), "src": "ESPN"}
 
     def _fill_from_web(self, r, w):
+        sk = w.get("stakes") or {}
+        for side in ("home", "away"):
+            if sk.get(side):
+                r[f"stake_{side}"] = sk[side]
         f = w.get("form") or {}
         if not r.get("form_home") and f.get("home"):
             r["form_home"] = self._form_from_games(f["home"])

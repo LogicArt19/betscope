@@ -127,7 +127,7 @@ def tier_snapshot(snap, tier):
         v = dict(w.get("v") or {})
         v["news"] = []
         if tier in ("gratuit", "essentiel"):
-            v.update(inj_home=[], inj_away=[], lineups=[], weather=None)
+            v.update(inj_home=[], inj_away=[], lineups=[], last_xi=[], weather=None)
         web[eid] = dict(w, v=v)
     st["web"] = web
     if tier in ("gratuit", "essentiel"):

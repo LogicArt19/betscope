@@ -219,6 +219,35 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .opt .body{margin-top:10px}
 .avg{font-size:12.5px;color:var(--fog);margin-top:8px}
 .gleg{cursor:pointer;border-radius:8px}
+.pitches{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pitchbox h3{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.pill{white-space:nowrap}
+.pitch{position:relative;aspect-ratio:68/100;border-radius:14px;overflow:hidden;border:1px solid rgba(38,224,184,.18);
+  background:repeating-linear-gradient(0deg,#0B2A22 0 10%,#0D3027 10% 20%);box-shadow:inset 0 0 60px rgba(0,0,0,.45)}
+.pitch .ln{position:absolute;border:1.5px solid rgba(255,255,255,.16)}
+.pitch .half{left:0;right:0;top:50%;border-width:1.5px 0 0}
+.pitch .circ{left:50%;top:50%;width:26%;aspect-ratio:1;border-radius:50%;transform:translate(-50%,-50%)}
+.pitch .boxb{left:22%;right:22%;bottom:0;height:15%;border-bottom:0}
+.pitch .boxt{left:22%;right:22%;top:0;height:15%;border-top:0}
+.pitch .smb{left:37%;right:37%;bottom:0;height:5.5%;border-bottom:0}
+.pitch .smt{left:37%;right:37%;top:0;height:5.5%;border-top:0}
+.ply{position:absolute;transform:translate(-50%,50%);padding:0;gap:0;display:flex;flex-direction:column;align-items:center;width:22%;text-align:center}
+.ply i{font-style:normal;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-family:var(--disp);font-weight:700;font-size:13px;
+  color:#04140F;background:var(--home);box-shadow:0 0 0 2px rgba(4,20,15,.6),0 4px 14px rgba(0,0,0,.5)}
+.pitch.aw .ply i{background:var(--away);color:#0D0A24}
+.ply i.gk{background:var(--draw);color:#241A04}
+.ply span{margin-top:3px;font-size:11px;font-weight:600;color:#E8EEF8;line-height:1.15;text-shadow:0 1px 3px #000;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bench{margin-top:10px;font-size:12.5px;color:var(--fog)}
+.cmp{display:grid;gap:2px}
+.cmp .r{display:grid;grid-template-columns:64px minmax(0,1fr) 64px;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--rim)}
+.cmp .r:first-child{border-top:0}
+.cmp .v{font-family:var(--disp);font-weight:700;font-size:15px}
+.cmp .v.a{text-align:right}
+.cmp .v.win{color:var(--home)} .cmp .v.a.win{color:var(--away)}
+.cmp .m{text-align:center;font-size:12.5px;color:var(--fog)}
+.cmp .bar{display:flex;height:5px;border-radius:3px;overflow:hidden;background:var(--rim);margin-top:5px}
+.cmp .bar b{background:var(--home)} .cmp .bar u{background:var(--away);margin-left:auto}
+@media (max-width:720px){.pitches{grid-template-columns:1fr}}
 .gleg:hover{background:rgba(38,224,184,.04)}
 .gleg .why{display:block;margin-top:2px;color:var(--fog)}
 .gleg .why b{color:var(--home)}
@@ -638,13 +667,105 @@ function formBox(name, f, tbl){
     <p class="note" style="margin-top:10px">${esc(f.streak_txt||"")}${f.home_rec?` · domicile ${esc(f.home_rec)} · extérieur ${esc(f.away_rec)}`:""}</p></div>`;
 }
 const injList = l => (l && l.length) ? `<ul class="args">${l.map(i => `<li>${esc(i.player)} <span class="pill ${i.type==="out"?"bad":"warn"}">${esc(i.status||i.type||"")}</span> <span class="note">${esc(i.reason||"")}</span></li>`).join("")}</ul>` : `<p class="note">Aucun absent signalé.</p>`;
+/* ---------- mini terrain ---------- */
+function plDepth(p){
+  p = String(p||"").toUpperCase();
+  if (p === "G" || p === "GK") return 0;
+  if (/^(DM|CDM|DMF)/.test(p)) return 2;
+  if (/^(CD|CB|SW|LB|RB|LWB|RWB|WB|D\b|D-|DF)/.test(p) || p === "D") return 1;
+  if (/^(AM|CAM|LW|RW|W\b|SS)/.test(p)) return 4;
+  if (/^(F|CF|ST|S\b|FW)/.test(p) || p === "F") return 5;
+  if (/^(RM|LM|RW|LW)/.test(p)) return 3.5; // milieux excentrés : une ligne au-dessus des milieux axiaux
+  if (/^(CM|M\b|M-|MF)/.test(p) || p === "M") return 2.5;
+  return 3;
+}
+// gauche → droite vu depuis l'arrière : latéral gauche (0), axial gauche (0,7), axe (1), axial droit (1,3), latéral droit (2)
+const plLat = p => { p = String(p||"").toUpperCase(); return /^L/.test(p) ? 0 : /-L$/.test(p) ? 0.7 : /^R/.test(p) ? 2 : /-R$/.test(p) ? 1.3 : 1; };
+function pitchRows(l){
+  const xi = (l.xi||[]).map((x, k) => typeof x === "string" ? {n:x, num:"", pos:"", place:k + 1} : x);
+  const gk = xi.find(x => plDepth(x.pos) === 0) || xi.find(x => x.place === 1) || xi[0];
+  const out = xi.filter(x => x !== gk).sort((a, b) => plDepth(a.pos) - plDepth(b.pos) || a.place - b.place);
+  const counts = String(l.formation||"").split("-").map(Number).filter(n => n > 0);
+  let rows = [];
+  if (counts.length && counts.reduce((a, b) => a + b, 0) === out.length) {
+    let k = 0; for (const c of counts) { rows.push(out.slice(k, k + c)); k += c; }
+  } else {
+    const by = {}; out.forEach(x => (by[plDepth(x.pos)] = by[plDepth(x.pos)] || []).push(x));
+    rows = Object.keys(by).sort().map(k => by[k]);
+  }
+  rows = rows.map(r => r.sort((a, b) => plLat(a.pos) - plLat(b.pos) || a.place - b.place));
+  return [[gk], ...rows];
+}
+function pitch(l, away){
+  const rows = pitchRows(l), n = rows.length;
+  const pls = rows.map((r, ri) => r.map((x, k) => {
+    const y = ri === 0 ? 7 : 18 + (ri - 1) * (72 / Math.max(1, n - 2));
+    const xp = (k + 1) / (r.length + 1) * 100;
+    return `<div class="ply" style="left:${xp}%;bottom:${y}%"><i class="${ri===0?"gk":""}">${esc(x.num || "•")}</i><span title="${esc(x.full||x.n)}">${esc(x.n)}</span></div>`;
+  }).join("")).join("");
+  return `<div class="pitch ${away?"aw":""}"><div class="ln half"></div><div class="ln circ"></div><div class="ln boxb"></div><div class="ln boxt"></div><div class="ln smb"></div><div class="ln smt"></div>${pls}</div>`;
+}
+function lineupsBlock(e, i){
+  const off = i.lineups || [], last = i.last_xi || [];
+  const L = off.length ? off : last;
+  if (!L.length) return `<div class="panel empty"><b>Pas encore publiées</b>Les compos officielles arrivent environ une heure avant le coup d'envoi.</div>`;
+  const ordered = [...L].sort((a, b) => (a.side === "away") - (b.side === "away"));
+  return (off.length ? "" : `<div class="warn" style="margin-bottom:12px">Compos officielles pas encore publiées (environ 1 h avant le match). Voici les onze alignés par chaque équipe à son <b>dernier match</b> : c'est une indication, pas la compo de ce match.</div>`)
+    + `<div class="pitches">${ordered.map(l => `<div class="panel box pitchbox"><h3>${esc(l.team)} <span class="pill">${esc(l.formation||"")}</span>${l.last?` <span class="pill warn">dernier match${l.opp?" · contre "+esc(l.opp):""}</span>`:` <span class="pill ok">officielle</span>`}</h3>
+        ${pitch(l, l.side === "away")}
+        ${(l.bench||[]).length ? `<div class="bench"><b>Remplaçants :</b> ${l.bench.map(b => esc((b.num?b.num+" ":"") + b.n)).join(", ")}</div>` : ""}</div>`).join("")}</div>`;
+}
+/* ---------- statistiques comparées ---------- */
+function teamNums(f, t, side){
+  if (!f) return null;
+  const last = f.last || [], n = last.length || 1;
+  const sc = last.map(g => String(g.score||"").split("-").map(Number)).filter(x => x.length === 2 && !x.some(isNaN));
+  const k = sc.length || 1;
+  const recSide = side === "home" ? f.home_rec : f.away_rec;
+  return {
+    rank: t && t.rank, pts: t && t.points,
+    ppg: f.ppg5, gf: f.gf5 != null ? f.gf5 / n : null, ga: f.ga5 != null ? f.ga5 / n : null,
+    cs: sc.filter(x => x[1] === 0).length / k, fts: sc.filter(x => x[0] === 0).length / k,
+    btts: f.btts != null ? f.btts : sc.filter(x => x[0] > 0 && x[1] > 0).length / k,
+    o25: f.over25 != null ? f.over25 : sc.filter(x => x[0] + x[1] > 2).length / k,
+    rest: f.rest_days, rec: recSide, streak: f.streak_txt, n: sc.length,
+  };
+}
+function statsCompare(e, i){
+  const h = teamNums(i.form_home, i.table_home, "home"), a = teamNums(i.form_away, i.table_away, "away");
+  if (!h || !a) return `<div class="panel empty"><b>Statistiques indisponibles</b>La forme récente d'au moins une équipe n'a pas encore été trouvée.</div>`;
+  const m = i.model || {};
+  const rows = [
+    ["Classement", h.rank, a.rank, v => v ? v + "e" : "–", "low"],
+    ["Points au classement", h.pts, a.pts, v => v ?? "–", "high"],
+    [`Points par match (${h.n} derniers)`, h.ppg, a.ppg, v => fr(v, 2), "high"],
+    ["Buts marqués par match", h.gf, a.gf, v => fr(v, 1), "high"],
+    ["Buts encaissés par match", h.ga, a.ga, v => fr(v, 1), "low"],
+    ["Matchs sans encaisser", h.cs, a.cs, v => pc(v), "high"],
+    ["Matchs sans marquer", h.fts, a.fts, v => pc(v), "low"],
+    ["Les 2 équipes marquent", h.btts, a.btts, v => pc(v), null],
+    ["Plus de 2,5 buts", h.o25, a.o25, v => pc(v), null],
+    ["Buts attendus (modèle)", m.xg_home, m.xg_away, v => fr(v, 2), "high"],
+    ["Jours de repos", h.rest, a.rest, v => v != null ? fr(v, 0) : "–", "high"],
+  ].filter(r => r[1] != null && r[2] != null);
+  const row = ([lab, x, y, f, better]) => {
+    const tot = (Math.abs(+x) + Math.abs(+y)) || 1, wx = better === "low" ? (+y / tot) : (+x / tot);
+    const hw = better && x !== y ? ((better === "high") === (+x > +y)) : false, aw = better && x !== y && !hw;
+    return `<div class="r"><span class="v ${hw?"win":""}">${f(x)}</span><div class="m">${esc(lab)}<div class="bar"><b style="width:${Math.round(wx*100)}%"></b><u style="width:${Math.round((1-wx)*100)}%"></u></div></div><span class="v a ${aw?"win":""}">${f(y)}</span></div>`;
+  };
+  return `<div class="panel box"><h3 style="display:flex;justify-content:space-between"><span style="color:var(--home)">${esc(e.home)}</span><span style="color:var(--away)">${esc(e.away)}</span></h3>
+    <div class="cmp">${rows.map(row).join("")}</div>
+    ${(h.rec || a.rec) ? `<p class="note" style="margin-top:10px">${esc(e.home)} à domicile : ${esc(h.rec||"–")} · ${esc(e.away)} à l'extérieur : ${esc(a.rec||"–")}</p>` : ""}
+    ${(h.streak || a.streak) ? `<p class="note">${[h.streak && esc(e.home) + " : " + esc(h.streak), a.streak && esc(e.away) + " : " + esc(a.streak)].filter(Boolean).join(" · ")}</p>` : ""}</div>`;
+}
 function tabEquipes(e, i){
-  if (rank() < 2) return `<div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}</div>` + lockBox("pro", "Absents et compositions", "Les blessés et suspendus pondérés par leur importance, et les compos officielles environ 1 h avant le match.");
-  const lu = (i.lineups||[]);
-  return `<div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}
-    <div class="panel box"><h3>Absents · ${esc(e.home)}</h3>${injList(i.inj_home)}</div>
-    <div class="panel box"><h3>Absents · ${esc(e.away)}</h3>${injList(i.inj_away)}</div></div>
-    <h2 class="s">Compositions</h2>${lu.length ? `<div class="grid2">${lu.map(l => `<div class="panel box"><h3>${esc(l.team)} <span class="pill">${esc(l.formation||"")}</span></h3><p class="note">${(l.xi||[]).map(esc).join(", ")}</p></div>`).join("")}</div>` : `<div class="panel empty"><b>Pas encore publiées</b>Les compos officielles arrivent environ une heure avant le coup d'envoi.</div>`}`;
+  const top = `<h2 class="s" style="margin-top:0">Statistiques comparées</h2>${statsCompare(e, i)}
+    <h2 class="s">Forme récente</h2><div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}</div>`;
+  if (rank() < 2) return top + lockBox("pro", "Absents et compositions sur le terrain", "Les blessés et suspendus pondérés par leur importance, et les compos placées sur un mini terrain.");
+  return top + `<h2 class="s">Compositions</h2>${lineupsBlock(e, i)}
+    <h2 class="s">Absents</h2><div class="grid2">
+    <div class="panel box"><h3>${esc(e.home)}</h3>${injList(i.inj_home)}</div>
+    <div class="panel box"><h3>${esc(e.away)}</h3>${injList(i.inj_away)}</div></div>`;
 }
 function tabH2H(e, i){
   if (rank() < 2) return lockBox("pro", "Face-à-face", "Les 10 dernières confrontations, toutes compétitions, et leur moyenne de buts.");

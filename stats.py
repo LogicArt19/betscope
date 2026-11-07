@@ -418,6 +418,11 @@ class Stats:
                         parsed["weather"] = self._weather(parsed.get("venue") or {}, t)
                     except Exception:
                         parsed["weather"] = None
+                    if not parsed.get("lineups"):
+                        try:
+                            parsed["last_xi"] = self._last_xi(slug, parsed)
+                        except Exception:
+                            parsed["last_xi"] = []
                     with self.lock:
                         web[ev["id"]] = {"ts": time.time(), "v": parsed}
                         self._save()
@@ -433,6 +438,28 @@ class Stats:
                 self._save()
             if on_change:
                 on_change()
+
+    def _last_xi(self, slug, parsed):
+        """Avant la compo officielle : la compo alignée par chaque équipe à son dernier match (ESPN)."""
+        cache = self.data.setdefault("xi_cache", {})
+        out = []
+        for side in ("home", "away"):
+            games = (parsed.get("form") or {}).get(side) or []
+            tid = (parsed.get("team_ids") or {}).get(side)
+            g = next((x for x in games if x.get("id")), None)
+            if not g or not tid:
+                continue
+            hit = cache.get(g["id"])
+            if not hit:
+                j = self._web_get(f"{ESPN_BASE}/{slug}/summary?event={g['id']}")
+                hit = cache[g["id"]] = {"ts": time.time(), "rosters": self._rosters(j)}
+                if len(cache) > 400:  # on garde le cache léger
+                    for k in sorted(cache, key=lambda k: cache[k]["ts"])[:100]:
+                        cache.pop(k, None)
+            ro = next((r for r in hit["rosters"] if r.get("team_id") == str(tid)), None)
+            if ro:
+                out.append(dict(ro, side=side, last=True, date=g.get("date", ""), opp=g.get("opp", "")))
+        return out
 
     def _weather(self, venue, kickoff):
         """Météo au coup d'envoi (Open-Meteo, gratuit, sans clé)."""
@@ -497,15 +524,8 @@ class Stats:
                                                    "reason": str(reason)[:60], "status": status})
             except (AttributeError, TypeError):
                 continue
-        for r in j.get("rosters") or []:
-            try:
-                xi = [p["athlete"]["displayName"] for p in r.get("roster", []) if p.get("starter")]
-                if xi:
-                    out["lineups"].append({"team": (r.get("team") or {}).get("displayName", ""),
-                                           "formation": r.get("formation") or "", "xi": xi,
-                                           "side": r.get("homeAway")})
-            except (KeyError, TypeError):
-                continue
+        out["team_ids"] = {v: k for k, v in side_by_team.items() if v in ("home", "away")}
+        out["lineups"] = self._rosters(j)
         # forme récente, face-à-face et classement (ESPN, sans clé)
         out["form"] = {}
         for blk in ((j.get("boxscore") or {}).get("form") or []):
@@ -564,6 +584,30 @@ class Stats:
         return out
 
     @staticmethod
+    def _rosters(j):
+        """Compos ESPN : titulaires avec numéro et poste (pour le mini terrain), remplaçants."""
+        out = []
+        for r in j.get("rosters") or []:
+            try:
+                xi, bench = [], []
+                for p in r.get("roster", []) or []:
+                    a = p.get("athlete") or {}
+                    name = a.get("shortName") or a.get("displayName") or ""
+                    if not name:
+                        continue
+                    item = {"n": name, "full": a.get("displayName") or name, "num": str(p.get("jersey") or ""),
+                            "pos": ((p.get("position") or {}).get("abbreviation") or "").upper(),
+                            "place": int(p.get("formationPlace") or 0) if str(p.get("formationPlace") or "").isdigit() else 0}
+                    (xi if p.get("starter") else bench).append(item)
+                if len(xi) >= 7:
+                    out.append({"team": (r.get("team") or {}).get("displayName", ""), "team_id": str((r.get("team") or {}).get("id") or ""),
+                                "formation": r.get("formation") or "", "xi": xi, "bench": bench[:12],
+                                "side": r.get("homeAway")})
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out
+
+    @staticmethod
     def _espn_game(e):
         res = str(e.get("gameResult") or "").upper()[:1]
         if res not in ("W", "D", "L"):
@@ -580,7 +624,7 @@ class Stats:
         return {"res": {"W": "V", "D": "N", "L": "D"}[res], "gf": gf, "ga": ga,
                 "opp": (e.get("opponent") or {}).get("displayName", ""),
                 "home": str(e.get("atVs") or "vs").strip().lower() != "@",
-                "date": str(e.get("gameDate") or "")[:10]}
+                "date": str(e.get("gameDate") or "")[:10], "id": str(e.get("id") or "")}
 
     def _match_one(self, ev, cands):
         try:
@@ -910,6 +954,7 @@ class Stats:
                     if not res[eid]["lineups"]:
                         res[eid]["lineups"] = w["lineups"]
                     res[eid]["news"] = w["news"]
+                    res[eid]["last_xi"] = w.get("last_xi") or []
                     self._fill_from_web(res[eid], w)
             # matchs sans stats (pas de clé) : on garde quand même les infos web
             for ev in events:
@@ -923,7 +968,7 @@ class Stats:
                             "away": ev.get("away_team", ""), "form_home": None, "form_away": None,
                             "table_home": None, "table_away": None, "inj_home": w["inj_home"],
                             "inj_away": w["inj_away"], "model": None, "pred": None, "h2h": [], "h2h_sum": None,
-                            "lineups": w["lineups"], "news": w["news"]}
+                            "lineups": w["lineups"], "news": w["news"], "last_xi": w.get("last_xi") or []}
                 self._fill_from_web(res[eid], w)
             for eid, r in res.items():
                 r["sources"] = self._sources(eid, r)

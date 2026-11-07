@@ -303,6 +303,45 @@ def oddspapi_diag():
             log(f"OddsPapi diag ({label}) : {e}")
 
 
+def op_market_map(markets):
+    """Repère dans le catalogue OddsPapi les marchés qu'on sait analyser, et traduit leurs issues
+    en clés Cotescope (dc1N, bttsY, o1.5…). Match complet uniquement, pas de paris sur joueurs."""
+    out = {}
+    for m in markets if isinstance(markets, list) else (markets or {}).get("data", []):
+        try:
+            if m.get("sportId") not in (10, None) or m.get("playerProp") or str(m.get("period", "fulltime")).lower() not in ("fulltime", "full time", "ft", ""):
+                continue
+            name, typ = str(m.get("marketName") or "").lower(), str(m.get("marketType") or "").lower()
+            outs = {str(o["outcomeId"]): str(o.get("outcomeName") or "").strip() for o in m.get("outcomes") or []}
+            line = m.get("handicap")
+            kind, mp = None, {}
+            if "double chance" in name:
+                kind = "dc"
+                mp = {oid: {"1x": "dc1N", "12": "dc12", "x2": "dcN2"}.get(n.lower().replace(" ", ""), "") for oid, n in outs.items()}
+            elif "both teams" in name and "score" in name and "half" not in name:
+                kind = "btts"
+                mp = {oid: {"yes": "bttsY", "no": "bttsN"}.get(n.lower(), "") for oid, n in outs.items()}
+            elif "draw no bet" in name:
+                kind = "dnb"
+                mp = {oid: {"1": "dnb1", "2": "dnb2"}.get(n.lower(), "") for oid, n in outs.items()}
+            elif (typ in ("totals", "total", "overunder", "over/under") or "over/under" in name or name.startswith("total goals")) \
+                    and "team" not in name and "corner" not in name and "card" not in name and "half" not in name and line is not None:
+                ln = float(line)
+                if ln not in (0.5, 1.5, 2.5, 3.5, 4.5):
+                    continue
+                for oid, n in outs.items():
+                    nl = n.lower()
+                    side = "Over" if nl.startswith("over") or nl.startswith("+") else ("Under" if nl.startswith("under") or nl.startswith("-") else "")
+                    mp[oid] = side if ln == 2.5 else ({"Over": f"o{ln:g}", "Under": f"u{ln:g}"}.get(side, "") if side else "")
+                out[str(m["marketId"])] = {"kind": "total", "line": ln, "outcomes": {k: v for k, v in mp.items() if v}}
+                continue
+            if kind and any(mp.values()):
+                out[str(m["marketId"])] = {"kind": kind, "line": line, "outcomes": {k: v for k, v in mp.items() if v}}
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 def collect_oddspapi(events, state):
     """Ajoute Bet365 comme bookmaker réel (1N2). Respecte le quota gratuit : budget mensuel suivi,
     rafraîchissement toutes les 8 h, et seulement les championnats qui jouent dans les 48 h."""
@@ -335,6 +374,13 @@ def collect_oddspapi(events, state):
                 log(f"OddsPapi : {len(op['names'])} équipes en cache")
             except Exception as e:
                 log("OddsPapi (équipes) :", e)
+        if not op.get("mk"):  # catalogue des marchés (1 seule requête, gardé)
+            try:
+                op["mk"] = op_market_map(_op_get("markets"))
+                op["used"] += 1
+                log(f"OddsPapi : {len(op['mk'])} marchés reconnus ({', '.join(sorted({v['kind'] for v in op['mk'].values()}))})")
+            except Exception as e:
+                log("OddsPapi (marchés) :", e)
         boards = []
         for chunk in calls:
             try:
@@ -354,7 +400,22 @@ def collect_oddspapi(events, state):
             h, d, a = price("101"), price("102"), price("103")
             if not (h and d and a):
                 continue
-            keep.append({"start": f.get("startTime") or f.get("trueStartTime"), "home": f.get("participant1Name") or (op.get("names") or {}).get(str(f.get("participant1Id")), ""),
+            extra, tot25 = {}, None
+            for mid, meta in (op.get("mk") or {}).items():
+                mm = mk.get(mid)
+                if not mm:
+                    continue
+                for oid, lab in meta["outcomes"].items():
+                    pl = (((mm.get("outcomes") or {}).get(oid) or {}).get("players") or {}).get("0") or {}
+                    pr = pl.get("price")
+                    if not pr or pl.get("active") is False:
+                        continue
+                    if meta["kind"] == "total" and meta.get("line") == 2.5:
+                        tot25 = dict(tot25 or {}, **{lab: float(pr)})
+                    elif lab:
+                        extra[lab] = float(pr)
+            keep.append({"extra": extra, "tot25": tot25 if tot25 and len(tot25) == 2 else None,
+                         "start": f.get("startTime") or f.get("trueStartTime"), "home": f.get("participant1Name") or (op.get("names") or {}).get(str(f.get("participant1Id")), ""),
                          "away": f.get("participant2Name") or (op.get("names") or {}).get(str(f.get("participant2Id")), ""),
                          "h": float(h), "d": float(d), "a": float(a)})
         op["boards"] = keep
@@ -386,9 +447,15 @@ def collect_oddspapi(events, state):
         if not hit:
             continue
         e["bookmakers"] = [bk for bk in e.get("bookmakers", []) if bk.get("key") != "bet365"]
-        e["bookmakers"].append({"key": "bet365", "title": "Bet365", "markets": [{"key": "h2h", "outcomes": [
+        mkts = [{"key": "h2h", "outcomes": [
             {"name": e["home_team"], "price": hit["h"]}, {"name": e["away_team"], "price": hit["a"]},
-            {"name": "Draw", "price": hit["d"]}]}]})
+            {"name": "Draw", "price": hit["d"]}]}]
+        if hit.get("tot25"):
+            mkts.append({"key": "totals", "outcomes": [{"name": "Over", "price": hit["tot25"]["Over"], "point": 2.5},
+                                                       {"name": "Under", "price": hit["tot25"]["Under"], "point": 2.5}]})
+        e["bookmakers"].append({"key": "bet365", "title": "Bet365", "markets": mkts})
+        # vraies cotes Bet365 des autres paris (double chance, les 2 marquent, buts…) : remplacent nos estimations
+        e["_real"] = {k: [v, "bet365", "Bet365"] for k, v in (hit.get("extra") or {}).items()}
         n += 1
     if n:
         log(f"cotes Bet365 ajoutées : {n} matchs")

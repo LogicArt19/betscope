@@ -1048,6 +1048,11 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
             continue
         p_market = rows_m.get(key, (None, None, None, p))[3]
         odds, min_odds = mk.estimated_odds(cat, p_market)
+        # vraie cote publiée (Bet365 via OddsPapi) quand on l'a et que l'utilisateur joue chez ce bookmaker
+        real = (ev.get("_real") or {}).get(key)
+        is_real = bool(real) and (not allowed or real[1] in allowed)
+        if is_real:
+            odds, min_odds = float(real[0]), None
         ev_ = p * odds - 1
         dstat, conf = None, 50
         if st:
@@ -1066,13 +1071,15 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
                      "form_home": fh_.get("form", ""), "form_away": fa_.get("form", "")}
         out.append({
             "key": key, "sport_key": sport_key, "home": home, "away": away,
-            "cat": cat, "estimated": True, "min_odds": min_odds,
+            "cat": cat, "estimated": not is_real, "min_odds": min_odds, "odds_ts": ev.get("_odds_ts") if is_real else None,
             "p_market": p_market, "stats": dstat, "conf": conf,
             "uid": f"{eid}|x|{key}", "event_id": eid, "match": match,
             "sport": SPORTS.get(sport_key, ev.get("sport_title", sport_key)), "start": start,
             "market": market, "selection": sel, "p": p, "fair": 1 / p, "odds": odds,
-            "book": btitle, "book_key": bkey, "ev": ev_, "kelly": ev_ / (odds - 1) if odds > 1 else 0,
-            "n_books": ref["n_books"], "playable": {bkey: (odds, btitle)}, "all_prices": {bkey: (odds, btitle)},
+            "book": real[2] if is_real else btitle, "book_key": real[1] if is_real else bkey, "ev": ev_,
+            "kelly": ev_ / (odds - 1) if odds > 1 else 0, "n_books": ref["n_books"],
+            "playable": {(real[1] if is_real else bkey): (odds, real[2] if is_real else btitle)},
+            "all_prices": {(real[1] if is_real else bkey): (odds, real[2] if is_real else btitle)},
             "suspect": False,
         })
 

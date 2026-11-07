@@ -2794,7 +2794,8 @@ class Api:
         out["bank"] = self.get_bank()
         return out
 
-    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None, leagues=None, days=None):
+    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None, leagues=None, days=None, *_more):
+        # *_more : une appli plus récente que le moteur peut envoyer des réglages en plus, sans planter
         free = not tier_ok("pro")
         if free:  # version gratuite : 1 ticket Objectif par jour (le meilleur)
             today = datetime.now().strftime("%Y-%m-%d")

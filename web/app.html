@@ -1031,6 +1031,9 @@ document.addEventListener("click", e => { const t = e.target.closest("[data-ptab
    Vue : Objectif
    ====================================================================== */
 let GOAL = {stake:"10", target:"40", res:null, leagues:null, types:null, min:"", max:"", days:null};
+// réglages de l'Objectif gardés d'une visite à l'autre (sur cet appareil)
+try { Object.assign(GOAL, JSON.parse(localStorage.getItem("cotescope_goal") || "{}"), {res: null}); } catch(e) {}
+const saveGoal = () => { try { const {res, ...keep} = GOAL; localStorage.setItem("cotescope_goal", JSON.stringify(keep)); } catch(e) {} };
 const CATS = [["1n2","Résultat"],["dc","Double chance"],["dnb","Remboursé si nul"],["total","Nombre de buts"],["team","Buts par équipe"],["btts","Les 2 marquent"],["hcp","Handicap"],["exact","Score exact"],["mtft","Mi-temps / fin"],["scorer","Buteurs"],["decisive","Joueurs décisifs"]];
 const CAT_TIER = {essentiel:["1n2","dc","total","btts"]};
 // jours qui ont des matchs à venir : « Aujourd'hui », « Demain », puis « sam 08/11 »…
@@ -1064,7 +1067,7 @@ function vGoal(){
         <label class="f">Nombre de matchs</label>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px"><input class="in" id="gl-min" inputmode="numeric" placeholder="min" value="${esc(GOAL.min)}" style="width:70px"><span class="note">à</span><input class="in" id="gl-max" inputmode="numeric" placeholder="max" value="${esc(GOAL.max)}" style="width:70px"><span class="note">vide = libre</span></div>
         <label class="f">Jours des matchs</label>
-        <div class="tgl" id="gl-dy" style="margin-bottom:12px">${goalDays().map(([k,l]) => `<button class="chip ${(GOAL.days||[]).length===0||(GOAL.days||[]).includes(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("")}</div>
+        <div class="tgl" id="gl-dy" style="margin-bottom:12px">${(() => { const D = goalDays(), keep = (GOAL.days||[]).filter(d => D.some(x => x[0] === d)); return D.map(([k,l]) => `<button class="chip ${!keep.length||keep.includes(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join(""); })()}</div>
         <label class="f">Championnats</label>
         <div class="tgl" id="gl-lg">${leagues.map(([k,l]) => `<button class="chip ${selL.has(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("")}</div>
         <label class="f" style="margin-top:12px">Types de paris</label>
@@ -1136,6 +1139,7 @@ const readGoal = () => {
   GOAL.leagues = $$("#gl-lg .chip.on").map(x => x.dataset.k); GOAL.types = $$("#gl-ty .chip.on").map(x => x.dataset.k);
   const allD = $$("#gl-dy .chip"), onD = $$("#gl-dy .chip.on").map(x => x.dataset.k);
   GOAL.days = onD.length === allD.length ? [] : onD;
+  saveGoal();
 };
 document.addEventListener("click", e => {
   if (e.target.closest("#gl-go")) {

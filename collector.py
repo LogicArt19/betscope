@@ -603,6 +603,59 @@ def publish_lineup_watch(events, st):
     return len(out)
 
 
+def fd_enrich(w, rows, hn, an, code, ev):
+    """Complète la fiche avec les données gratuites de football-data.co.uk quand ESPN ne les donne pas :
+    modèle de buts de la saison (forces d'attaque et de défense), 5 derniers matchs, classement, enjeu."""
+    import model as M
+    import stats as SS
+    today = datetime.now(timezone.utc).date()
+    season_start = datetime(today.year if today.month >= 7 else today.year - 1, 7, 1).date()
+    # 1) modèle de buts sur ~1 an de matchs (les plus récents comptent plus)
+    if not w.get("model"):
+        res = [{"date": r["d"].isoformat() + "T12:00:00+00:00", "home_id": r["h"], "away_id": r["a"], "gh": r["hg"], "ga": r["ag"]}
+               for r in rows if (today - r["d"]).days <= 400]
+        rt = M.fit_ratings(res)
+        pr = M.predict(rt, hn, an) if rt else None
+        if pr:
+            w["model"] = pr
+    # 2) forme : 5 derniers matchs de championnat
+    form = w.setdefault("form", {})
+    for side, t in (("home", hn), ("away", an)):
+        if form.get(side):
+            continue
+        g = [r for r in rows if t in (r["h"], r["a"])][-8:]
+        games = []
+        for r in g:
+            home = r["h"] == t
+            gf, ga = (r["hg"], r["ag"]) if home else (r["ag"], r["hg"])
+            games.append({"res": "V" if gf > ga else ("N" if gf == ga else "D"), "gf": gf, "ga": ga,
+                          "opp": r["a"] if home else r["h"], "home": home, "date": r["d"].isoformat(),
+                          "comp": ev.get("sport_title") or code})
+        if games:
+            form[side] = list(reversed(games))
+    # 3) classement de la saison en cours, et enjeu
+    cur = [r for r in rows if r["d"] >= season_start]
+    if cur:
+        tab = {}
+        for r in cur:
+            for t, gf, ga in ((r["h"], r["hg"], r["ag"]), (r["a"], r["ag"], r["hg"])):
+                x = tab.setdefault(t, [0, 0, 0, 0])
+                x[0] += 3 if gf > ga else (1 if gf == ga else 0)
+                x[1] += gf
+                x[2] += ga
+                x[3] += 1
+        order = sorted(tab.items(), key=lambda kv: (-kv[1][0], -(kv[1][1] - kv[1][2]), -kv[1][1]))
+        table_all = [{"tid": t, "name": t, "rank": i + 1, "pts": v[0], "played": v[3]} for i, (t, v) in enumerate(order)]
+        rank = {t["tid"]: t for t in table_all}
+        tb = w.setdefault("table", {})
+        for side, t in (("home", hn), ("away", an)):
+            if not tb.get(side) and t in rank:
+                tb[side] = {"rank": rank[t]["rank"], "points": rank[t]["pts"]}
+        if not w.get("stakes"):
+            slug = {"F1": "fra.1", "E0": "eng.1", "SP1": "esp.1", "I1": "ita.1", "D1": "ger.1", "N1": "ned.1", "P1": "por.1"}.get(code, "")
+            w["stakes"] = SS.season_stakes(table_all, {"home": hn, "away": an}, slug)
+
+
 def cards_profile(rows, hn, an, referee):
     """Cartons : moyenne des 2 équipes (pris et provoqués chez l'adversaire) sur leurs 20 derniers matchs,
     l'arbitre désigné (sa moyenne quand la source le donne), et les chances de dépasser 3,5 / 4,5 / 5,5 cartons
@@ -655,9 +708,14 @@ def add_fd_h2h(events, st):
     n = 0
     for ev in events:
         eid, code = ev.get("id"), code_of.get(ev.get("sport_key"))
-        w = (web.get(eid) or {}).get("v")
-        if not code or w is None or (len(w.get("h2h") or []) >= 5 and w.get("cards")):
+        if not code:
             continue
+        if eid not in web or not (web[eid] or {}).get("v"):
+            # pas de fiche ESPN : on en crée une avec les données gratuites de football-data.co.uk
+            web[eid] = {"ts": 0, "v": {"inj_home": [], "inj_away": [], "lineups": [], "news": [], "form": {}, "h2h": [],
+                                       "table": {}, "fmt": 0, "src": "football-data.co.uk"}}
+            st.data["web"] = web
+        w = web[eid]["v"]
         if code not in games_by_code:
             rows = []
             for se in seas:
@@ -681,6 +739,10 @@ def add_fd_h2h(events, st):
             w["cards"] = cards_profile(rows, hn, an, w.get("referee") or "")
         except Exception:
             pass
+        try:
+            fd_enrich(w, rows, hn, an, code, ev)
+        except Exception as e:
+            log("enrichissement football-data :", e)
         meet = [r for r in rows if {r["h"], r["a"]} == {hn, an}]
         meet.sort(key=lambda r: r["d"], reverse=True)
         if not meet:
@@ -693,6 +755,18 @@ def add_fd_h2h(events, st):
         n += 1
     if n:
         st._save()
+    # rapport de couverture : ce qui manque encore, match par match (pour corriger les noms d'équipes)
+    miss = []
+    for ev in events:
+        w = (web.get(ev.get("id")) or {}).get("v") or {}
+        lacks = [k for k, ok in (("forme", (w.get("form") or {}).get("home") and (w.get("form") or {}).get("away")),
+                                 ("modèle", w.get("model")), ("classement", (w.get("table") or {}).get("home")),
+                                 ("face-à-face", w.get("h2h"))) if not ok]
+        if lacks:
+            miss.append(f"{ev.get('home_team')} - {ev.get('away_team')} ({', '.join(lacks)})")
+    log(f"couverture : {len(events) - len(miss)}/{len(events)} matchs complets")
+    for m in miss[:25]:
+        log("   manque :", m)
     return n
 
 

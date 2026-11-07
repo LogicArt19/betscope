@@ -725,7 +725,25 @@ class Stats:
             sa = max(_sim(ev.get("away_team", ""), fx["away"]), _sim(ev.get("away_team", ""), fx.get("away_short", "")))
             if (sh + sa) / 2 > score:
                 best, score = fx, (sh + sa) / 2
-        return best if score >= 0.55 else None
+        if score >= 0.55:
+            return best
+        # noms très différents (ex. « Athletic Club » / « Athletic Bilbao ») : si un seul match ESPN commence
+        # à la même heure (±20 min) dans ce championnat, c'est forcément lui, pourvu qu'un nom se ressemble un peu
+        near = []
+        for fx in cands:
+            try:
+                ft = datetime.fromisoformat(fx["date"].replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if abs((ft - t).total_seconds()) <= 20 * 60:
+                near.append(fx)
+        if len(near) == 1:
+            fx = near[0]
+            sh = max(_sim(ev.get("home_team", ""), fx["home"]), _sim(ev.get("home_team", ""), fx.get("home_short", "")))
+            sa = max(_sim(ev.get("away_team", ""), fx["away"]), _sim(ev.get("away_team", ""), fx.get("away_short", "")))
+            if max(sh, sa) >= 0.4:
+                return fx
+        return best if score >= 0.45 else None
 
     def web_for(self, event_id):
         with self.lock:
@@ -1145,6 +1163,8 @@ class Stats:
                 "scored_in": round(sum(g["gf"] > 0 for g in last) / len(last), 2), "src": "ESPN"}
 
     def _fill_from_web(self, r, w):
+        if not r.get("model") and w.get("model"):
+            r["model"] = w["model"]
         if w.get("cards"):
             r["cards"] = w["cards"]
         if w.get("referee"):

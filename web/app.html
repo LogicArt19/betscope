@@ -945,6 +945,7 @@ function goalList(r){
         <div class="k"><b>${pc(o.p_hit, o.p_hit < .1 ? 1 : 0)}</b><small>cote ${fr(o.odds)} · ${eur(o.ret)}</small></div></div>
       ${open ? `<div class="body">${o.tickets.map(t => `${t.legs.map(goalLeg).join("")}
           <div class="tot"><span class="note">Mise ${eur(t.stake)} · cote ${fr(t.odds)} · ${pc(t.p, t.p < .1 ? 1 : 0)}</span><div class="sp"></div><b>${eur(t.ret)}</b><button class="btn sm" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}">Je le joue</button></div>`).join("")}
+        ${(() => { const t0 = o.tickets[0], a = o.tickets.length === 1 ? stakeAdvice(t0.p, t0.odds) : null; return a ? `<div class="avg">💰 ${a.txt}</div>` : ""; })()}
         <div class="avg">En moyenne, sur la durée, ce ticket rend ${eur(o.avg)} pour ${eur(o.tickets.reduce((s, t) => s + t.stake, 0))} misés${o.avg < o.tickets.reduce((s, t) => s + t.stake, 0) ? " : la marge du bookmaker joue contre toi" : ""}.</div>
         ${(o.risks||[]).length ? `<div class="risks"><b>Les risques</b>${o.risks.map(x => `<span>${esc(x)}</span>`).join("")}</div>` : ""}</div>` : ""}
     </div>`;
@@ -1205,6 +1206,25 @@ document.addEventListener("click", e => {
    Vue : Mon ticket
    ====================================================================== */
 let TSTAKE = "10";
+/* ---------- capital et mise conseillée (Elite) ---------- */
+function bankNow(){ if (rank() < 3) return null; const b = call("get_bank"); return b && b.enabled ? b : null; }
+// Mise conseillée : critère de Kelly fractionné si le pari est rentable sur la durée (plafonné à 3 % du capital),
+// sinon 1 % maximum ; jamais plus que ce qu'il reste dans la limite du jour.
+function stakeAdvice(p, odds){
+  const b = bankNow(); if (!b || !p || !odds) return null;
+  const cfg = call("get_config") || {}, kf = Number(cfg.kelly_fraction || .25);
+  if (b.stop) return {stake: 0, txt: `Stop-loss du jour atteint (−${eur(b.stop_loss)}) : on s'arrête là pour aujourd'hui.`};
+  const k = (p * odds - 1) / (odds - 1), cur = b.current;
+  let pct, why;
+  const ev = p * odds - 1;
+  if (ev >= .02 && k > 0) { pct = Math.max(.01, Math.min(.03, kf * k)); why = `ce pari est rentable sur la durée selon nos analyses (+${fr(ev * 100, 1)} % en moyenne)`; }
+  else if (ev > -.02) { pct = .01; why = "l'avantage est quasi nul : pas de raison de miser plus"; }
+  else { pct = .01; why = "ce pari n'est pas rentable sur la durée (marge du bookmaker) : à jouer petit, pour le plaisir"; }
+  let stake = Math.floor(cur * pct * 100) / 100;
+  if (b.left_today != null) stake = Math.max(0, Math.min(stake, b.left_today));
+  if (stake <= 0) return {stake: 0, txt: `Limite du jour atteinte (${eur(b.day_max)}).`};
+  return {stake, txt: `Mise conseillée : <b>${eur(stake)}</b> (${fr(stake / cur * 100, 1)} % de ton capital de ${eur(cur)}), car ${why}.`};
+}
 function vTicket(){
   const r = call("builder_get", TSTAKE);
   if (!r.legs.length) return `<h1 class="t">Mon ticket</h1><p class="lead">Ajoute des paris avec + depuis les matchs ou les pronostics : Cotescope calcule tes vraies chances.</p><div class="panel empty"><b>Ton ticket est vide</b><button class="btn go" data-go="matchs" style="margin-top:14px">Voir les matchs</button></div>`;
@@ -1224,10 +1244,12 @@ function vTicket(){
         <div class="o">${l.estimated?"≈":""}${fr(l.odds)}<small>${l.user_odds?"ta cote":l.estimated?"mini "+fr(l.min_odds):esc(book(l.book))}</small></div>
         ${yours(l)}
         <button class="add rm" data-add="${esc(l.uid)}" title="Retirer">×</button></div>`).join("")}</div>
+    ${(() => { const a = stakeAdvice(r.p, r.odds); return a ? `<div class="tip" style="margin-top:12px"><span>💰 ${a.txt}</span>${a.stake ? `<button class="btn sm" id="t-adv" data-v="${a.stake}">Utiliser</button>` : ""}</div>` : (rank() >= 3 ? `<div class="note" style="margin-top:12px">Renseigne ton capital dans Mon compte pour avoir une mise conseillée.</div>` : ""); })()}
     <div style="display:flex;gap:10px;margin-top:16px"><button class="btn go" id="t-play">Je joue ce ticket</button><button class="btn" id="t-clear">Vider</button></div>`;
 }
 document.addEventListener("click", e => {
   const s = e.target.closest("[data-swap]"); if (s) { const [a,b] = s.dataset.swap.split("~"); call("builder_swap", a, b); BSET.delete(a); BSET.add(b); toast("Sélection remplacée"); render(); }
+  const adv = e.target.closest("#t-adv"); if (adv) { TSTAKE = String(adv.dataset.v); render(); return; }
   if (e.target.closest("#t-play")) { const r = call("builder_play", TSTAKE); toast(r.ok ? "Ticket ajouté à ton bilan" : (r.error || "Erreur")); }
   if (e.target.closest("#t-clear")) { call("builder_clear"); BSET.clear(); render(); }
 });
@@ -1339,11 +1361,30 @@ function vCompte(){
       <div class="panel box"><h3>Où je parie</h3><p class="note" style="margin-bottom:12px">Chaque pari prend la meilleure cote parmi les bookmakers cochés.</p>
         <div class="books" id="c-books">${BOOKS.map(([k,n]) => `<label class="${books.has(k)?"on":""}"><input type="checkbox" value="${k}" ${books.has(k)?"checked":""}>${n}</label>`).join("")}</div></div>
       <div class="panel box"><h3>Championnats affichés</h3><div class="books" id="c-lg">${(cfg._sports||[]).map(s => `<label class="${hid.has(s.key)?"":"on"}"><input type="checkbox" value="${s.key}" ${hid.has(s.key)?"":"checked"}>${esc(s.label)}</label>`).join("") || '<p class="note">Aucun championnat couvert pour l\'instant.</p>'}</div></div>
+      ${capitalPanel()}
       <div class="panel box"><h3>Appareils connectés</h3><p class="note" style="margin-bottom:10px">5 appareils maximum. Un appareil que tu ne reconnais pas ? Déconnecte-le, puis change ton mot de passe.</p>
         <div id="c-dev"><p class="note">Chargement…</p></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" id="c-out">Se déconnecter</button><button class="btn" id="c-outall">Déconnecter tous les appareils</button></div></div>
     </div>`;
 }
+function capitalPanel(){
+  if (rank() < 3) return `<div class="panel box"><h3>Mon capital</h3>${lockBox("elite", "Capital et mise conseillée", "Indique ton capital : Cotescope te dit combien miser sur chaque pari, avec une limite par jour et un stop-loss.")}</div>`;
+  const cfg = call("get_config") || {}, b = call("get_bank") || {};
+  return `<div class="panel box"><h3>Mon capital</h3>
+    ${b.enabled ? `<div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:12px"><div><small class="note">Capital actuel</small><b class="num" style="display:block;font-size:22px">${eur(b.current)}</b></div><div><small class="note">Reste à miser aujourd'hui</small><b class="num" style="display:block;font-size:22px">${b.left_today != null ? eur(b.left_today) : "–"}</b></div><div><small class="note">Résultat du jour</small><b class="num" style="display:block;font-size:22px;color:${b.today_pl>=0?"var(--home)":"var(--bad)"}">${eur(b.today_pl)}</b></div></div>` : `<p class="note" style="margin-bottom:10px">Indique ton capital de départ : il évolue tout seul avec les résultats de tes tickets.</p>`}
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+      <div><label class="f">Capital de départ (€)</label><input class="sel2" id="bk-s" inputmode="decimal" value="${esc(cfg.bankroll || "")}"></div>
+      <div><label class="f">Mise max par jour (% du capital)</label><input class="sel2" id="bk-d" inputmode="decimal" value="${esc(cfg.daily_max_pct || 10)}"></div>
+      <div><label class="f">Stop-loss par jour (€, vide = aucun)</label><input class="sel2" id="bk-l" inputmode="decimal" value="${esc(cfg.stop_loss || "")}"></div>
+      <div><label class="f">Prudence</label><select class="sel2" id="bk-k">${[[.25,"Prudent (recommandé)"],[.5,"Équilibré"]].map(([v,l]) => `<option value="${v}" ${Number(cfg.kelly_fraction||.25)===v?"selected":""}>${l}</option>`).join("")}</select></div>
+    </div><button class="btn go" id="bk-go" style="margin-top:10px">Enregistrer</button></div>`;
+}
+document.addEventListener("click", e => {
+  if (!e.target.closest("#bk-go")) return;
+  const n = id => parseFloat(String($(id).value).replace(",", ".")) || 0;
+  call("save_config", {bankroll: n("#bk-s"), daily_max_pct: n("#bk-d") || 10, stop_loss: n("#bk-l"), kelly_fraction: n("#bk-k") || .25});
+  toast("Capital enregistré"); render();
+});
 async function loadDevices(){
   const box = $("#c-dev"); if (!box) return;
   const r = await Auth.devices();

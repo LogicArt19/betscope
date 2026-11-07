@@ -1,7 +1,8 @@
-name: Build BetScope.exe
+name: Build Cotescope.exe
 on:
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "*.md"]
   workflow_dispatch:
 permissions:
   contents: write
@@ -17,27 +18,55 @@ jobs:
       - name: Build
         shell: bash
         run: >
-          pyinstaller --noconfirm --onefile --windowed --name BetScope
+          pyinstaller --noconfirm --onefile --windowed --name Cotescope
           --icon assets/betscope.ico --add-data "ui;ui" --add-data "assets;assets"
           betscope.py
       - name: Test de démarrage du .exe
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist\BetScope.exe -ArgumentList "--selftest" -Wait -PassThru
+          $p = Start-Process -FilePath dist\Cotescope.exe -ArgumentList "--selftest" -Wait -PassThru
           if ($p.ExitCode -ne 0) { Get-Content "$env:TEMP\betscope_selftest.txt" -ErrorAction SilentlyContinue; exit 1 }
           Write-Host "Selftest OK"
-      - name: Version
+      - name: Version et empreinte
         id: v
         shell: bash
-        run: echo "tag=v$(grep -oP 'APP_VERSION = "\K[^"]+' betscope.py)" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: BetScope
-          path: dist/BetScope.exe
+        run: |
+          echo "ver=$(grep -oP 'APP_VERSION = "\K[^"]+' betscope.py)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sha256sum dist/Cotescope.exe | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "size=$(stat -c%s dist/Cotescope.exe)" >> "$GITHUB_OUTPUT"
+      # Release dans ce dépôt (privé) : archive + transition des anciennes versions
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.v.outputs.tag }}
-          name: BetScope ${{ steps.v.outputs.tag }}
-          body: "Télécharge **BetScope.exe** ci-dessous et lance-le. Les versions suivantes s'installent toutes seules depuis l'appli."
-          files: dist/BetScope.exe
+          tag_name: v${{ steps.v.outputs.ver }}
+          name: Cotescope v${{ steps.v.outputs.ver }}
+          files: dist/Cotescope.exe
           make_latest: true
+      # Publication publique : le .exe dans le dépôt du site (sans le code)
+      - uses: softprops/action-gh-release@v2
+        with:
+          repository: LogicArt19/cotescope
+          token: ${{ secrets.PUBLISH_TOKEN }}
+          tag_name: v${{ steps.v.outputs.ver }}
+          name: Cotescope v${{ steps.v.outputs.ver }}
+          body: "Télécharge Cotescope.exe ci-dessous. SHA-256 : ${{ steps.v.outputs.sha }}"
+          files: dist/Cotescope.exe
+          make_latest: true
+      - name: Annonce de la version sur le site (version.json)
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+        run: |
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/LogicArt19/cotescope.git" site
+          cd site
+          cat > version.json <<JSON
+          {"version": "${{ steps.v.outputs.ver }}",
+           "url": "https://github.com/LogicArt19/cotescope/releases/download/v${{ steps.v.outputs.ver }}/Cotescope.exe",
+           "sha256": "${{ steps.v.outputs.sha }}",
+           "size": ${{ steps.v.outputs.size }},
+           "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+          JSON
+          git config user.name "Cotescope bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add version.json
+          git commit -m "Version ${{ steps.v.outputs.ver }}" || echo "rien à publier"
+          git push

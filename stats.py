@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Module stats BetScope : relie les matchs (The Odds API) aux données API-Football
+Module stats Cotescope : relie les matchs (The Odds API) aux données API-Football
 (journée, blessés/suspendus, compos officielles, forme, confrontations, pronostic).
 
 Plan gratuit API-Football : 100 requêtes / jour et ~10 / minute.
@@ -133,7 +133,7 @@ def _pct(x):
 
 
 class Stats:
-    def __init__(self, cache_dir, user_agent="BetScope"):
+    def __init__(self, cache_dir, user_agent="Cotescope"):
         self.path = os.path.join(cache_dir, "stats_cache.json")
         self.ua = user_agent
         self.lock = threading.RLock()
@@ -335,7 +335,7 @@ class Stats:
         if wait > 0:
             time.sleep(wait)
         self._web_last = time.time()
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 BetScope", "Accept": "application/json"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Cotescope", "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.loads(r.read().decode("utf-8"))
 

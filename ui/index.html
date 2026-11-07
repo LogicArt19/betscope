@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>BetScope</title>
+<title>Cotescope</title>
 <style>
 :root{
   --bg:#0a0c11; --bg2:#0f1218; --card:#141821; --card2:#1a1f2b; --line:#232a38;
@@ -300,7 +300,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
   <aside class="side">
     <div class="brand">
       <svg viewBox="0 0 256 256"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#0e7490"/></linearGradient></defs><rect x="8" y="8" width="240" height="240" rx="56" fill="url(#lg)"/><circle cx="128" cy="128" r="72" fill="none" stroke="#fff" stroke-width="16"/><g stroke="#fff" stroke-width="14" stroke-linecap="round"><line x1="128" y1="34" x2="128" y2="70"/><line x1="128" y1="186" x2="128" y2="222"/><line x1="34" y1="128" x2="70" y2="128"/><line x1="186" y1="128" x2="222" y2="128"/></g><polygon points="128,100 154.6,119.3 144.5,150.7 111.5,150.7 101.4,119.3" fill="#fff"/></svg>
-      <div><b>BetScope</b><small>Analyseur foot · <span id="ver"></span></small></div>
+      <div><b>Cotescope</b><small>Analyseur foot · <span id="ver"></span></small></div>
     </div>
     <nav class="nav" id="nav">
       <button data-p="home" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Accueil</button>
@@ -423,7 +423,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
             <div style="display:flex;gap:8px"><button class="link" data-allcat="1" style="font-size:12px;color:var(--green2)">Tout cocher</button><button class="link" data-allcat="0" style="font-size:12px;color:var(--muted)">Tout décocher</button></div>
             <button class="btn primary" id="g-go" style="justify-content:center;padding:13px">Trouver les meilleures options</button>
           </div>
-          <div id="goal"><div class="card empty"><b>Tes options s'afficheront ici</b>Choisis ta mise et ton objectif de gain : BetScope cherche les tickets qui l'atteignent avec le plus de chances de passer.</div></div>
+          <div id="goal"><div class="card empty"><b>Tes options s'afficheront ici</b>Choisis ta mise et ton objectif de gain : Cotescope cherche les tickets qui l'atteignent avec le plus de chances de passer.</div></div>
         </div>
         <div class="bud" id="v-split">
           <div class="card form">
@@ -463,7 +463,7 @@ h2 .link{margin-left:auto;font-size:12.5px;color:var(--green2);font-weight:600}
 
       <!-- HISTORIQUE -->
       <section class="page" id="p-hist">
-        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px"><p class="sub" style="margin:0;flex:1">Chaque ticket que tu marques « Je joue » et chaque pari que BetScope jouerait lui-même (✔ JE JOUE) sont vérifiés automatiquement après le match (résultats ESPN). C'est le juge de paix de l'analyse.</p><button class="btn" id="h-check">⟳ Vérifier les résultats</button></div>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px"><p class="sub" style="margin:0;flex:1">Chaque ticket que tu marques « Je joue » et chaque pari que Cotescope jouerait lui-même (✔ JE JOUE) sont vérifiés automatiquement après le match (résultats ESPN). C'est le juge de paix de l'analyse.</p><button class="btn" id="h-check">⟳ Vérifier les résultats</button></div>
         <div id="hist"></div>
       </section>
 
@@ -553,7 +553,7 @@ document.addEventListener("click",e=>{ const g=e.target.closest("[data-goto]"); 
 
 function tag(b){
   if (b.estimated) return `<span class="tag n" title="Cote Betclic estimée : prends ce pari seulement si Betclic affiche au moins ${fr(b.min_odds)}">≈ prends si ≥ ${fr(b.min_odds)}</span>`;
-  if (b.mine) return `<span class="tag v" title="BetScope jouerait ce pari avec son propre argent">✔ JE JOUE ${sg(b.ev)}</span>`;
+  if (b.mine) return `<span class="tag v" title="Cotescope jouerait ce pari avec son propre argent">✔ JE JOUE ${sg(b.ev)}</span>`;
   if (b.suspect) return `<span class="tag w">⚠ ${sg(b.ev)}</span>`;
   if (b.value) return `<span class="tag v">VALUE ${sg(b.ev)}</span>`;
   return `<span class="tag n">Sans value ${sg(b.ev)}</span>`;
@@ -895,8 +895,8 @@ async function loadHist(){
     <div class="stats">
       <div class="card stat"><div class="l">Mes tickets</div><div class="v">${u.n}</div><div class="h">${u.wins} gagnés · ${u.pending} en attente</div></div>
       <div class="card stat"><div class="l">Mon bilan</div><div class="v" style="color:${u.profit>=0?'var(--green2)':'#fca5a5'}">${u.profit>=0?"+":""}${eur(u.profit)}</div><div class="h">pour ${eur(u.staked)} misés · ROI ${u.roi==null?"–":sg(u.roi)}</div></div>
-      <div class="card stat"><div class="l">Propositions de BetScope</div><div class="v">${rate(a.rate)}</div><div class="h">de réussite sur ${a.n} paris vérifiés · ${a.pending} en attente</div></div>
-      <div class="card stat"><div class="l">Rentabilité de BetScope</div><div class="v" style="color:${(a.roi||0)>=0?'var(--green2)':'#fca5a5'}">${a.roi==null?"–":sg(a.roi)}</div><div class="h">si 1 € misé sur chaque « ✔ JE JOUE »</div></div>
+      <div class="card stat"><div class="l">Propositions de Cotescope</div><div class="v">${rate(a.rate)}</div><div class="h">de réussite sur ${a.n} paris vérifiés · ${a.pending} en attente</div></div>
+      <div class="card stat"><div class="l">Rentabilité de Cotescope</div><div class="v" style="color:${(a.roi||0)>=0?'var(--green2)':'#fca5a5'}">${a.roi==null?"–":sg(a.roi)}</div><div class="h">si 1 € misé sur chaque « ✔ JE JOUE »</div></div>
     </div>
     ${bk.enabled?`<h2>Bankroll</h2><div class="stats">
       <div class="card stat"><div class="l">Capital actuel</div><div class="v">${eur(bk.current)}</div><div class="h">départ ${eur(bk.start)}</div></div>
@@ -904,13 +904,13 @@ async function loadHist(){
       <div class="card stat"><div class="l">Résultat du jour</div><div class="v" style="color:${bk.today_pl>=0?'var(--green2)':'#fca5a5'}">${bk.today_pl>=0?"+":""}${eur(bk.today_pl)}</div></div>
       <div class="card stat"><div class="l">Stop-loss</div><div class="v" style="font-size:20px;padding-top:6px">${bk.stop?"⛔ Atteint":bk.stop_loss?"OK":"—"}</div><div class="h">${bk.stop_loss?`perte max ${eur(bk.stop_loss)} / jour`:"non défini"}</div></div>
     </div>`:""}
-    <h2>Fiabilité des pourcentages <span style="font-weight:400;color:var(--dim);font-size:12px">(si BetScope dit 60 %, ça passe-t-il vraiment 6 fois sur 10 ?)</span></h2>
+    <h2>Fiabilité des pourcentages <span style="font-weight:400;color:var(--dim);font-size:12px">(si Cotescope dit 60 %, ça passe-t-il vraiment 6 fois sur 10 ?)</span></h2>
     ${a.buckets.length?`<div class="card" style="padding:6px 16px"><table class="nt"><tr><th>Tranche</th><th>Paris</th><th>Prévu</th><th>Réel</th><th>Verdict</th></tr>${a.buckets.map(b=>`<tr><td>${b.label}</td><td>${b.n}</td><td>${pc(b.pred)}</td><td><b>${pc(b.real)}</b></td><td>${b.n<15?'<span style="color:var(--dim)">pas assez de paris</span>':Math.abs(b.real-b.pred)<0.07?'✅ fiable':b.real>b.pred?'👍 mieux que prévu':'⚠ trop optimiste'}</td></tr>`).join("")}</table></div>`:'<div class="card empty"><b>Pas encore de paris vérifiés</b>Le bilan se remplit tout seul après les matchs.</div>'}
     <h2>Mes tickets</h2>
     <div class="list">${h.tickets.length?h.tickets.map(t=>`<div class="card" style="padding:14px 16px">
       <div style="display:flex;gap:10px;align-items:center"><b>${ST[t.status]||t.status}</b><span style="color:var(--muted);font-size:12.5px">${new Date(t.created*1000).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · mise ${eur(t.stake)} · cote ${fr(t.legs.reduce((a,l)=>a*l.odds,1))}</span><div class="sp" style="flex:1"></div>${t.status==="won"?`<b style="color:var(--green2)">+${eur(t.payout-t.stake)}</b>`:t.status==="lost"?`<b style="color:#fca5a5">−${eur(t.stake)}</b>`:""}<button class="btn" data-del="${t.id}" style="padding:5px 9px;font-size:12px">Supprimer</button></div>
       <div class="legs" style="margin-top:8px;font-size:12.5px;display:flex;flex-direction:column;gap:3px">${t.legs.map(l=>`<div>${(ST[l.status]||"").split(" ")[0]} ${esc(l.selection)} <span style="color:var(--dim)">— ${esc(l.match)}${l.score?` · ${l.score}`:""}</span> @ ${fr(l.odds)}</div>`).join("")}</div></div>`).join(""):'<div class="card empty"><b>Aucun ticket enregistré</b>Clique sur « ✔ Je joue ce ticket » dans Mon budget pour suivre tes paris.</div>'}</div>
-    <h2>Propositions de BetScope (✔ JE JOUE)</h2>
+    <h2>Propositions de Cotescope (✔ JE JOUE)</h2>
     <div class="list">${h.app_list.slice(0,60).map(l=>`<div class="card" style="padding:10px 16px;display:flex;gap:12px;font-size:13px"><span style="width:120px">${ST[l.status]||l.status}</span><b style="flex:1">${esc(l.selection)}</b><span style="color:var(--dim)">${esc(l.match)}${l.score?` · ${l.score}`:""}</span><span>${pc(l.p)} · @ ${fr(l.odds)}</span></div>`).join("")||'<div class="card empty"><b>Rien pour l\'instant</b>Les paris marqués ✔ JE JOUE sont suivis automatiquement.</div>'}</div>`;
 }
 $("#h-check").onclick = async () => { await api.settle_now(); toast("Vérification des résultats…"); setTimeout(loadHist, 4000); };

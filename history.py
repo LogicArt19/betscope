@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Historique BetScope : propositions de l'appli + tickets joués, vérifiés automatiquement
+Historique Cotescope : propositions de l'appli + tickets joués, vérifiés automatiquement
 après les matchs (résultats ESPN, gratuits et sans clé), bilan et contrôle de fiabilité.
 """
 
@@ -112,7 +112,7 @@ class History:
                 "odds": s["odds"], "p": round(s["p"], 4), "estimated": bool(s.get("estimated")), "status": "pending"}
 
     def log_app(self, picks):
-        """Mémorise les paris que BetScope « jouerait » (1 fois par sélection)."""
+        """Mémorise les paris que Cotescope « jouerait » (1 fois par sélection)."""
         with self.lock:
             known = {e["uid"] for e in self.data["app"]}
             added = 0
@@ -142,7 +142,7 @@ class History:
 
     # ---------- vérification des résultats ----------
     def _get(self, url):
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 BetScope", "Accept": "application/json"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Cotescope", "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.loads(r.read().decode("utf-8"))
 

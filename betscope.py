@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-BetScope - Analyseur de paris sportifs (value bets, combinés, gestion de mise)
+Cotescope - Analyseur de paris sportifs (value bets, combinés, gestion de mise)
 
 Principe :
   1. Récupère les cotes de dizaines de bookmakers (The Odds API).
@@ -38,10 +38,14 @@ import stats as statsmod
 from history import History
 from datetime import datetime, timedelta, timezone
 
-APP_NAME = "BetScope"
-APP_VERSION = "2.2.0"
+APP_NAME = "Cotescope"
+OLD_APP_NAME = "BetScope"
+APP_VERSION = "2.3.0"
 API_BASE = "https://api.the-odds-api.com/v4"
 GITHUB_REPO = "LogicArt19/betscope"
+# Mises à jour : fichier publié sur le site (le code source reste privé)
+UPDATE_URLS = ["https://logicart19.github.io/cotescope/version.json"]
+SITE_URL = "https://logicart19.github.io/cotescope/"
 
 # --------------------------------------------------------------------------
 # Configuration
@@ -112,8 +116,61 @@ MARKET_LABELS = {"h2h": "Résultat", "totals": "Total", "spreads": "Handicap"}
 def config_dir():
     base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), ".config")
     path = os.path.join(base, APP_NAME)
+    if not os.path.isdir(path):
+        old = os.path.join(base, OLD_APP_NAME)
+        if os.path.isdir(old):  # BetScope -> Cotescope : on garde réglages, clés, historique
+            import shutil
+            try:
+                shutil.copytree(old, path)
+            except OSError:
+                pass
     os.makedirs(path, exist_ok=True)
     return path
+
+
+# --------------------------------------------------------------------------
+# Clés API chiffrées (Windows DPAPI : lisibles seulement par ta session Windows)
+# --------------------------------------------------------------------------
+
+SECRET_KEYS = ("api_key", "fd_key", "football_key")
+
+
+def _dpapi(data, encrypt):
+    import ctypes
+    from ctypes import wintypes
+
+    class BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+    buf = ctypes.create_string_buffer(data, len(data))
+    inp = BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+    out = BLOB()
+    fn = ctypes.windll.crypt32.CryptProtectData if encrypt else ctypes.windll.crypt32.CryptUnprotectData
+    if not fn(ctypes.byref(inp), None, None, None, None, 0x01, ctypes.byref(out)):
+        raise OSError("DPAPI")
+    try:
+        return ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(out.pbData)
+
+
+def protect(value):
+    if not value or os.name != "nt" or str(value).startswith("dpapi:"):
+        return value
+    import base64
+    try:
+        return "dpapi:" + base64.b64encode(_dpapi(str(value).encode("utf-8"), True)).decode()
+    except Exception:
+        return value
+
+
+def unprotect(value):
+    if not isinstance(value, str) or not value.startswith("dpapi:"):
+        return value
+    import base64
+    try:
+        return _dpapi(base64.b64decode(value[6:]), False).decode("utf-8")
+    except Exception:
+        return ""
 
 
 def load_config():
@@ -123,6 +180,8 @@ def load_config():
             cfg.update(json.load(f))
     except (OSError, ValueError):
         pass
+    for k in SECRET_KEYS:
+        cfg[k] = unprotect(cfg.get(k, ""))
     if cfg.get("cfg_version", 0) < 3:  # mise à jour : on ne parie que sur Betclic
         cfg["bookmakers"] = "betclic_fr"
         cfg["cfg_version"] = 3
@@ -142,8 +201,11 @@ def load_config():
 
 
 def save_config(cfg):
+    disk = dict(cfg)
+    for k in SECRET_KEYS:
+        disk[k] = protect(disk.get(k, ""))
     with open(os.path.join(config_dir(), "config.json"), "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        json.dump(disk, f, indent=2, ensure_ascii=False)
 
 
 def save_cache(events, quota):
@@ -288,19 +350,30 @@ def _vtuple(v):
 
 
 def check_update():
-    """Renvoie (version, url_du_exe) si une version plus récente existe, sinon None."""
-    data, _ = http_get_json(f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest", timeout=15)
-    tag = data.get("tag_name", "")
-    if not tag or _vtuple(tag) <= _vtuple(APP_VERSION):
+    """Renvoie (version, url, sha256) si le site annonce une version plus récente, sinon None."""
+    last = None
+    for u in UPDATE_URLS:
+        try:
+            data, _ = http_get_json(f"{u}?t={int(time.time())}", timeout=15)
+            break
+        except Exception as e:
+            last = e
+    else:
+        raise last or RuntimeError("site injoignable")
+    ver, url, sha = str(data.get("version", "")), str(data.get("url", "")), str(data.get("sha256", "")).lower()
+    if not ver or _vtuple(ver) <= _vtuple(APP_VERSION):
         return None
-    for asset in data.get("assets", []):
-        if asset.get("name", "").lower().endswith(".exe"):
-            return tag.lstrip("vV"), asset["browser_download_url"]
-    return None
+    if not url.startswith("https://") or len(sha) != 64:
+        raise RuntimeError("annonce de mise à jour invalide")
+    return ver, url, sha
 
 
-def download_update(url, progress=None):
-    dest = os.path.join(tempfile.gettempdir(), "BetScope_update.exe")
+def download_update(url, progress=None, sha256=None):
+    if not str(url).startswith("https://"):
+        raise RuntimeError("téléchargement non sécurisé refusé")
+    import hashlib
+    h = hashlib.sha256()
+    dest = os.path.join(tempfile.gettempdir(), "Cotescope_update.exe")
     req = urllib.request.Request(url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
     with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
@@ -310,18 +383,25 @@ def download_update(url, progress=None):
             if not chunk:
                 break
             f.write(chunk)
+            h.update(chunk)
             done += len(chunk)
             if progress and total:
                 progress(done / total)
     if os.path.getsize(dest) < 1_000_000:
         raise RuntimeError("fichier téléchargé incomplet")
+    if sha256 and h.hexdigest() != sha256:
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        raise RuntimeError("empreinte invalide : fichier modifié ou corrompu, mise à jour refusée")
     return dest
 
 
 def install_update_and_restart(new_exe):
     """Remplace le .exe actuel par le nouveau puis relance l'appli (Windows)."""
     exe = sys.executable
-    bat = os.path.join(tempfile.gettempdir(), "betscope_update.bat")
+    bat = os.path.join(tempfile.gettempdir(), "cotescope_update.bat")
     script = f"""@echo off
 set PYINSTALLER_RESET_ENVIRONMENT=1
 set _MEIPASS2=
@@ -674,7 +754,7 @@ def neutral_view(st, sel):
                      "p": [(hs["w"] + 1) / n, (hs["d"] + 1) / n, (hs["l"] + 1) / n]})
     fin = trio("p")
     if fin:
-        rows.append({"src": "BetScope (final)", "p": fin, "final": True})
+        rows.append({"src": "Cotescope (final)", "p": fin, "final": True})
     # arguments neutres pour chaque équipe
     adv_h = analyse_points(st, "home", home_o, None, "h2h", 0, None, home_o, away_o)["pros"] if st else []
     adv_a = analyse_points(st, "away", away_o, None, "h2h", 0, None, home_o, away_o)["pros"] if st else []
@@ -951,7 +1031,7 @@ def pro_score(b):
 
 
 def would_bet(b, cfg):
-    """Ce que BetScope jouerait avec son propre argent : rentable ET confirmé par l'analyse."""
+    """Ce que Cotescope jouerait avec son propre argent : rentable ET confirmé par l'analyse."""
     st = b.get("stats") or {}
     return (is_value(b, cfg) and not st.get("contra") and b.get("conf", 50) >= 50
             and float(cfg["min_odds"]) <= b["odds"] <= float(cfg["max_odds"]))
@@ -2042,7 +2122,7 @@ class Api:
         except Exception:
             return None
         with self._lock:
-            self._update = {"version": res[0], "url": res[1]} if res else None
+            self._update = {"version": res[0], "url": res[1], "sha256": res[2]} if res else None
             self._rev += 1
         return self._update
 
@@ -2240,7 +2320,7 @@ class Api:
                 def prog(p):
                     self._dl_progress = p
                     self._rev += 1
-                path = download_update(upd["url"], prog)
+                path = download_update(upd["url"], prog, upd.get("sha256"))
                 install_update_and_restart(path)
                 time.sleep(0.3)
                 try:

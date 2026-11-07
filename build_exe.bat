@@ -14,7 +14,7 @@ if not defined PY (
 echo [1/2] Installation de PyInstaller...
 %PY% -m pip install --upgrade pyinstaller pywebview || goto :err
 echo [2/2] Fabrication de BetScope.exe...
-%PY% -m PyInstaller --noconfirm --onefile --windowed --name BetScope --icon assets\betscope.ico --add-data "ui;ui" --add-data "assets;assets" betscope.py || goto :err
+%PY% -m PyInstaller --noconfirm --onefile --windowed --name Cotescope --icon assets\betscope.ico --add-data "ui;ui" --add-data "assets;assets" betscope.py || goto :err
 echo.
 echo ===============================================
 echo  Termine ! Ton logiciel : dist\BetScope.exe

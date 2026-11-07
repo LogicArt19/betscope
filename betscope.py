@@ -72,10 +72,11 @@ class LicenseError(Exception):
 # --------------------------------------------------------------------------
 # Forfaits : ce qui est débloqué à chaque niveau
 # --------------------------------------------------------------------------
-TIER_RANK = {"essentiel": 1, "pro": 2, "elite": 3}
-TIER_NAMES = {"essentiel": "Essentiel", "pro": "Pro", "elite": "Elite"}
+TIER_RANK = {"gratuit": 0, "essentiel": 1, "pro": 2, "elite": 3}
+TIER_NAMES = {"gratuit": "Gratuit", "essentiel": "Essentiel", "pro": "Pro", "elite": "Elite"}
 TIER = {"v": "elite"}                     # forfait des données chargées (démo = tout visible)
 ESSENTIEL_CATS = {"1n2", "dc", "total", "btts"}
+GRATUIT_CATS = {"1n2"}
 
 
 def tier_ok(need):
@@ -2196,7 +2197,7 @@ class Api:
             self._cfg["demo"] = False
             save_config(self._cfg)
             self._account = {k: r.get(k) for k in ("email", "name", "tier", "status", "renews", "cancel", "manage")}
-            self._license_state = "ok" if r.get("tier") else "no_plan"
+            self._license_state = "ok" if r.get("tier") else ("free_over" if r.get("status") == "free_over" else "no_plan")
         self.refresh()
         return {"ok": True, "tier": r.get("tier")}
 
@@ -2236,7 +2237,7 @@ class Api:
         with self._lock:
             changed = (self._account or {}).get("tier") != r.get("tier")
             self._account = {k: r.get(k) for k in ("email", "name", "tier", "status", "renews", "cancel", "manage")}
-            self._license_state = "ok" if r.get("tier") else "no_plan"
+            self._license_state = "ok" if r.get("tier") else ("free_over" if r.get("status") == "free_over" else "no_plan")
         if changed:
             self.refresh()
         return r
@@ -2310,7 +2311,8 @@ class Api:
                                      "bookmakers affichées à titre indicatif.")
                 self._sel = analyze(events, cfg, info=self._info)
                 if not tier_ok("pro"):
-                    self._sel = [x for x in self._sel if x.get("cat") in ESSENTIEL_CATS]
+                    keep = ESSENTIEL_CATS if tier_ok("essentiel") else GRATUIT_CATS
+                    self._sel = [x for x in self._sel if x.get("cat") in keep]
                 self._apply_overrides(cfg)
                 if not self._is_demo:
                     self._apply_moves()

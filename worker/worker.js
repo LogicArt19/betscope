@@ -15,6 +15,7 @@ const ALLOWED_ORIGINS = [
 ];
 const APP_URL = "https://cotescope.fr/app/";
 const TIERS = ["essentiel", "pro", "elite"];
+const FREE_DAYS = 7; // version gratuite : 7 jours après la création du compte, sans carte
 const OK_STATUSES = new Set(["active", "trialing", "completed", "past_due"]);
 const ACCESS_CACHE_SECONDS = 300;
 const SESSION_DAYS = 60;
@@ -147,6 +148,9 @@ async function access(env, user, fresh = false) {
       if (String(e.message).startsWith("whop_5")) return { tier: null, status: "whop_unreachable" };
     }
   }
+  if (!best.tier && user.created && Date.now() - user.created < FREE_DAYS * 864e5) {
+    best = { tier: "gratuit", status: "free", renews: new Date(user.created + FREE_DAYS * 864e5).toISOString() };
+  } else if (!best.tier && best.status === "none" && user.created) best.status = "free_over";
   if (cache) await cache.put(ck, new Response(JSON.stringify(best), { headers: { "Cache-Control": "max-age=" + ACCESS_CACHE_SECONDS } }));
   return best;
 }
@@ -296,7 +300,7 @@ export default {
     if (p === "/api/snapshot" || p === "/api/engine") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
       const acc = await access(env, user);
-      if (!acc.tier) return json(req, { ok: false, reason: acc.status === "whop_unreachable" ? "whop_unreachable" : "no_plan" }, 403);
+      if (!acc.tier) return json(req, { ok: false, reason: ["whop_unreachable", "free_over"].includes(acc.status) ? acc.status : "no_plan" }, 403);
       const text = await kvJson(env, p === "/api/engine" ? "engine" : "snapshot_" + acc.tier);
       if (!text) return json(req, { ok: false, reason: "no_data_yet" }, 503);
       return new Response(text, {

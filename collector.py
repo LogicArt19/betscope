@@ -109,7 +109,8 @@ def collect_scores(state, slugs):
     return {k: v for k, v in out.items() if k.split("|")[1] >= limit}
 
 
-TIERS = ("essentiel", "pro", "elite")
+TIERS = ("gratuit", "essentiel", "pro", "elite")
+FREE_SPORTS = {"soccer_france_ligue_one", "soccer_epl"}
 
 
 def tier_snapshot(snap, tier):
@@ -125,15 +126,17 @@ def tier_snapshot(snap, tier):
     for eid, w in (st.get("web") or {}).items():
         v = dict(w.get("v") or {})
         v["news"] = []
-        if tier == "essentiel":
+        if tier in ("gratuit", "essentiel"):
             v.update(inj_home=[], inj_away=[], lineups=[], weather=None)
         web[eid] = dict(w, v=v)
     st["web"] = web
-    if tier == "essentiel":
+    if tier in ("gratuit", "essentiel"):
         for k in ("h2h", "scorers", "inj_day", "pred", "lineups"):
             st[k] = {}
         out["events"] = [dict(e, bookmakers=[dict(bk, markets=[m for m in bk.get("markets", []) if m.get("key") != "spreads"])
                                              for bk in e.get("bookmakers", [])]) for e in snap["events"]]
+    if tier == "gratuit":  # version gratuite : Ligue 1 et Premier League, résultat du match
+        out["events"] = [e for e in out["events"] if e.get("sport_key") in FREE_SPORTS]
     out["stats"] = st
     return out
 

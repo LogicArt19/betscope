@@ -665,7 +665,7 @@ function renderPicks(){
     (fType==="all" || (fType==="mine" && b.mine) || (fType==="value" && b.value) || b.cat===fType) &&
     (!q || (b.match+" "+b.sport+" "+b.selection).toLowerCase().includes(q)));
   L = L.slice().sort((a,b)=> fSort==="ts" ? a.ts-b.ts : b[fSort]-a[fSort]);
-  $("#picks").innerHTML = (tierRank()<3 ? lockBox("elite","Paris VALUE et sélection ✔ JE JOUE","Les paris où la cote est au-dessus du juste prix, et ceux que Cotescope jouerait avec son propre argent.") : "") + L.map(betRow).join("") || (data.picks.length ? emptyBox("Aucun pari avec ces filtres", "") : noData());
+  $("#picks").innerHTML = (tierRank()<1 ? lockBox("essentiel","Plus de paris et de championnats","Double chance, nombre de buts, les 2 marquent, et les 6 grands championnats.") : tierRank()<3 ? lockBox("elite","Paris VALUE et sélection ✔ JE JOUE","Les paris où la cote est au-dessus du juste prix, et ceux que Cotescope jouerait avec son propre argent.") : "") + L.map(betRow).join("") || (data.picks.length ? emptyBox("Aucun pari avec ces filtres", "") : noData());
   $("#prob").innerHTML = data.probable.map(betRow).join("") || noData();
   $("#combos").innerHTML = data.combos.map(comboCard).join("") || noData();
 }
@@ -1042,9 +1042,10 @@ function renderStatus(){
     const err = (status.update_state||"").startsWith("error:") ? status.update_state.slice(6) : "";
     b += `<div class="banner upd"><span>🚀 <b>Nouvelle version ${esc(status.update.version)} disponible</b> (tu as la ${esc(status.version)})${err?` — échec : ${esc(err)}`:""}</span><div class="sp"></div>${dl ? `<span>Téléchargement…</span><div class="bar"><i style="width:${Math.round(status.dl_progress*100)}%"></i></div>` : `<button class="btn primary" id="do-upd">Mettre à jour</button>`}</div>`;
   }
+  if (status.tier === "gratuit" && status.account) { const n = daysLeft(status.account.renews); b += `<div class="banner upd"><span>🎁 <b>Version gratuite</b> : encore ${n} jour${n>1?"s":""}. Ligue 1 et Premier League, résultat du match.</span><div class="sp"></div><button class="btn primary" data-auth="plans">Voir les forfaits</button></div>`; }
   if (status.demo) b += status.account
     ? `<div class="banner warn"><span>ℹ️ <b>Mode démo</b> (matchs fictifs) · ${esc(errMsg(status.license_state||"no_plan"))} Choisis un forfait pour les vrais matchs.</span><div class="sp"></div><button class="btn primary" data-auth="plans">Voir les forfaits</button></div>`
-    : `<div class="banner warn"><span>ℹ️ <b>Mode démo</b> (matchs fictifs). Crée ton compte pour les vrais matchs : 7 jours d'essai gratuit.</span><div class="sp"></div><button class="btn" data-auth="login">Se connecter</button><button class="btn primary" data-auth="signup" style="margin-left:8px">Créer un compte</button></div>`;
+    : `<div class="banner warn"><span>ℹ️ <b>Mode démo</b> (matchs fictifs). Crée ton compte pour les vrais matchs : 7 jours gratuits, sans carte bancaire.</span><div class="sp"></div><button class="btn" data-auth="login">Se connecter</button><button class="btn primary" data-auth="signup" style="margin-left:8px">Créer un compte</button></div>`;
   renderLic();
   if (status.stats && status.stats.error && !/api-football/i.test(status.stats.error) || (status.stats && status.stats.error && status.stats.af_set)) b += `<div class="banner err">⚠ ${esc(status.stats.error)}</div>`;
   if (status.warning) b += `<div class="banner warn">ℹ️ ${esc(status.warning)}</div>`;
@@ -1074,16 +1075,17 @@ const PLANS = [
   {id:"pro", name:"Pro", price:"19,99", hot:"Le plus choisi", feats:["Tout Essentiel","Tous les paris : buteurs, handicaps, score exact, mi-temps…","Fiche complète : absents, compos, face-à-face, météo, fatigue","Mode objectif : toutes les alternatives + réglages","Mon ticket : maillon faible et remplacements","Historique et bilan automatiques"]},
   {id:"elite", name:"Elite", price:"49,99", hot:"Analyse maximale", feats:["Tout Pro","Paris VALUE : cote au-dessus du juste prix","Sélection ✔ JE JOUE de Cotescope","Mouvement des cotes (argent des parieurs pros)","Actus de dernière minute sur chaque match","Fiabilité mesurée et bankroll avec stop-loss"]},
 ];
-const PLAN_NAME = {essentiel:"Essentiel", pro:"Pro", elite:"Elite"};
+const PLAN_NAME = {gratuit:"Gratuit", essentiel:"Essentiel", pro:"Pro", elite:"Elite"};
 const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["unibet_fr","Unibet"],["pmu_fr","PMU"],["parionssport_fr","Parions Sport"],["netbet_fr","NetBet"]];
 const BK = () => (status && status.book_name) || "ton bookmaker";
-const tierRank = () => ({essentiel:1, pro:2, elite:3})[status && status.tier] || 3;
+const tierRank = () => { const r = ({gratuit:0, essentiel:1, pro:2, elite:3})[status && status.tier]; return r === undefined ? 3 : r; };
+const daysLeft = x => x ? Math.max(0, Math.ceil((new Date(x) - Date.now()) / 864e5)) : 0;
 function lockBox(need, title, text){
-  return `<div class="card lock"><span class="lk">🔒 ${PLAN_NAME[need]}</span><div><b>${esc(title)}</b><small>${esc(text||"")} Inclus dans ${need==="pro"?"Pro et Elite":"Elite"}.</small></div><button class="btn primary" data-auth="plans">Voir les forfaits</button></div>`;
+  return `<div class="card lock"><span class="lk">🔒 ${PLAN_NAME[need]}</span><div><b>${esc(title)}</b><small>${esc(text||"")} Inclus dans ${need==="essentiel"?"tous les forfaits payants":need==="pro"?"Pro et Elite":"Elite"}.</small></div><button class="btn primary" data-auth="plans">Voir les forfaits</button></div>`;
 }
 const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un compte existe déjà avec cet e-mail : connecte-toi.",
   bad_email:"Adresse e-mail invalide.", weak_password:"Mot de passe trop court (8 caractères minimum).", too_many:"Trop d'essais. Réessaie dans 15 minutes.",
-  session:"Session expirée, reconnecte-toi.", no_plan:"Aucun forfait actif sur ce compte.", inactive:"Ton abonnement est terminé.",
+  session:"Session expirée, reconnecte-toi.", free_over:"Ta version gratuite de 7 jours est terminée. Choisis un forfait pour continuer.", no_plan:"Aucun forfait actif sur ce compte.", inactive:"Ton abonnement est terminé.",
   whop_unreachable:"Le service de paiement ne répond pas, réessaie dans un instant.", plans_not_configured:"Les abonnements ouvrent très bientôt.",
   server_not_configured:"Le serveur Cotescope n'est pas encore prêt.", mail_not_configured:"Écris-nous pour réinitialiser ton mot de passe.",
   bad_code:"Ce lien a expiré. Redemande un e-mail.", network:"Pas de connexion au serveur Cotescope.", no_data_yet:"Les données du jour arrivent, réessaie dans quelques minutes."};
@@ -1111,7 +1113,7 @@ function authView(v, x){
       <div class="msg" id="a-msg"></div><button class="btn primary full" id="a-go">Se connecter</button>
       <div class="alt"><button data-av="forgot">Mot de passe oublié ?</button></div>
       <div class="alt">Pas encore de compte ? <button data-av="signup">Créer un compte</button></div>${skip}`;
-  else if (v === "signup") b.innerHTML = `<h3>Créer mon compte</h3><div class="sub2">7 jours d'essai gratuit sur tous les forfaits.</div>
+  else if (v === "signup") b.innerHTML = `<h3>Créer mon compte</h3><div class="sub2">Version gratuite pendant 7 jours, sans carte bancaire.</div>
       ${field("a-em","E-mail","email","toi@exemple.fr")}${field("a-pw2","Mot de passe (8 caractères minimum)","password")}
       <label class="chk" style="font-size:12.5px"><input type="checkbox" id="a-ok">J'ai 18 ans ou plus et j'accepte les&nbsp;<a href="#" data-url="https://cotescope.fr/cgv.html" style="color:var(--green2)">CGV</a></label>
       <div class="msg" id="a-msg"></div><button class="btn primary full" id="a-go">Créer mon compte</button>
@@ -1122,16 +1124,18 @@ function authView(v, x){
   else if (v === "reset") b.innerHTML = `<h3>Nouveau mot de passe</h3><div class="sub2">Choisis ton nouveau mot de passe.</div>
       ${field("a-pw2","Nouveau mot de passe (8 caractères minimum)","password")}<div class="msg" id="a-msg"></div><button class="btn primary full" id="a-go">Enregistrer</button>`;
   else if (v === "plans") {
-    const cur = status && status.account && status.account.tier;
-    b.innerHTML = `<h3>Choisis ton forfait</h3><div class="sub2">7 jours d'essai gratuit, puis prélèvement mensuel. Sans engagement, annulable à tout moment.</div>
+    const acc = status && status.account, free = acc && acc.tier === "gratuit";
+    const cur = acc && !free ? acc.tier : null;
+    const over = acc && !acc.tier;
+    b.innerHTML = `<h3>${over ? "Ta version gratuite est terminée" : "Choisis ton forfait"}</h3><div class="sub2">${free ? `Version gratuite : encore ${daysLeft(acc.renews)} jour${daysLeft(acc.renews)>1?"s":""}. ` : over ? "Merci d'avoir testé Cotescope ! " : ""}Paiement mensuel, sans engagement, annulable à tout moment.</div>
       <div class="plans">${PLANS.map(p => `<div class="plan ${p.hot?"hot":""} ${cur===p.id?"cur":""}">${p.hot?`<span class="pt">${p.hot}</span>`:""}
         <h4>${p.name}</h4><div class="pp"><b>${p.price} €</b><span> / mois</span></div>
         <ul>${p.feats.map(f => `<li class="${/^Tout /.test(f)?"inc":""}">${esc(f)}</li>`).join("")}</ul>
-        ${cur===p.id ? `<button class="btn full" disabled>Ton forfait actuel</button>` : `<button class="btn ${p.hot?"primary":""} full" data-plan="${p.id}">${cur?"Passer à "+p.name:"Essayer "+p.name}</button>`}</div>`).join("")}</div>
+        ${cur===p.id ? `<button class="btn full" disabled>Ton forfait actuel</button>` : `<button class="btn ${p.hot?"primary":""} full" data-plan="${p.id}">${cur?"Passer à "+p.name:"Choisir "+p.name}</button>`}</div>`).join("")}</div>
       ${cur?`<div class="alt">Pour changer de forfait, annule d'abord l'actuel dans « Gérer mon abonnement ».</div>`:""}
       <div class="msg" id="a-msg"></div>
       <div class="alt" style="font-size:12px">Paiement sécurisé par carte bancaire via Whop. Cotescope ne voit jamais tes coordonnées bancaires.</div>
-      ${A.canSkip && !cur ? skip : ""}${!A.canSkip && !cur ? `<div class="alt"><button data-av="logout" style="color:var(--muted);font-weight:400">Se déconnecter</button></div>` : ""}`;
+      ${free ? `<div class="alt"><button data-av="skip">Continuer avec la version gratuite</button></div>` : A.canSkip && !cur ? skip : ""}${!A.canSkip && !cur ? `<div class="alt"><button data-av="logout" style="color:var(--muted);font-weight:400">Se déconnecter</button></div>` : ""}`;
   }
   else if (v === "wait") {
     b.innerHTML = `<h3>Paiement en cours</h3><div class="sub2">Termine le paiement dans la page qui s'est ouverte.<br>Ton forfait s'active tout seul sur ton compte.</div>
@@ -1154,7 +1158,10 @@ function authView(v, x){
   const go = $("#a-go"), msg = $("#a-msg");
   const busy = t => { if (!go) return; if (t) { go.dataset.t = go.dataset.t || go.textContent; go.textContent = t; go.disabled = true; } else { if (go.dataset.t) go.textContent = go.dataset.t; go.disabled = false; } };
   const after = r => {
-    if (r && r.ok) { if (r.tier) { toast("✔ Connecté · forfait " + PLAN_NAME[r.tier]); A.done(r); } else authView("plans"); }
+    if (r && r.ok) {
+      if (r.tier) { toast(r.tier === "gratuit" ? `✔ Version gratuite activée (${daysLeft(r.renews)} jours)` : "✔ Connecté · forfait " + PLAN_NAME[r.tier]); A.done(r); }
+      else { if (status) status.account = {email: r.email, tier: null, status: r.status}; authView("plans"); }
+    }
     else msg.textContent = errMsg((r && r.reason) || "network");
   };
   if (go) go.onclick = async () => {
@@ -1194,9 +1201,9 @@ function renderAcc(){
   const d = x => x ? new Date(x).toLocaleDateString("fr-FR", {day:"numeric", month:"long"}) : "";
   const key = JSON.stringify(a || null); if (el.dataset.k === key) return; el.dataset.k = key;
   if (!a) { el.innerHTML = `<div class="accl"><span>Pas connecté : mode démo (matchs fictifs).</span></div><div style="display:flex;gap:8px"><button class="btn primary" data-auth="login">Se connecter</button><button class="btn" data-auth="signup">Créer un compte</button></div>`; return; }
-  const st = a.status === "trialing" ? `essai gratuit jusqu'au ${d(a.renews)}` : a.status === "owner" ? "accès propriétaire" : a.cancel ? `se termine le ${d(a.renews)}` : a.renews ? `renouvellement le ${d(a.renews)}` : "";
+  const st = a.status === "free" ? `version gratuite jusqu'au ${d(a.renews)}` : a.status === "trialing" ? `essai gratuit jusqu'au ${d(a.renews)}` : a.status === "owner" ? "accès propriétaire" : a.cancel ? `se termine le ${d(a.renews)}` : a.renews ? `renouvellement le ${d(a.renews)}` : "";
   el.innerHTML = `<div class="accl"><div>${esc(a.email)}</div><div>Forfait : <b>${a.tier ? PLAN_NAME[a.tier] : "aucun"}</b> ${st ? `<span>· ${esc(st)}</span>` : ""}</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${a.tier?"":"primary"}" data-auth="plans">${a.tier ? "Changer de forfait" : "Choisir un forfait"}</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${a.tier && a.tier!=="gratuit"?"":"primary"}" data-auth="plans">${a.tier && a.tier!=="gratuit" ? "Changer de forfait" : "Choisir un forfait"}</button>
     ${a.manage ? `<button class="btn" data-url="${esc(a.manage)}">Gérer mon abonnement</button>` : ""}<button class="btn" id="acc-out">Se déconnecter</button></div>`;
   $("#acc-out").onclick = async () => { await auth().logout(); toast("Déconnecté"); rev = -1; poll(); };
 }
@@ -1221,7 +1228,7 @@ function maybeAuth(){
   if (authShown || AUTH) return; authShown = true;
   let skip = false; try { skip = sessionStorage.getItem("authSkip"); } catch(e){}
   if (!status.license && !skip) authOpen("login");
-  else if (status.license_state === "no_plan" && !skip) authOpen("plans");
+  else if ((status.license_state === "no_plan" || status.license_state === "free_over") && !skip) authOpen("plans");
   else maybeBooks();
 }
 function maybeBooks(){ if (status && status.account && !status.books_chosen && $("#authov").style.display !== "grid") authOpen("books"); }

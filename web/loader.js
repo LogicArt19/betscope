@@ -121,7 +121,7 @@
     } catch (e) {
       loading("");
       const r = e.reason || e.message;
-      if (r === "no_plan" || r === "inactive") window.CotescopeAuth.open("plans");
+      if (r === "no_plan" || r === "inactive" || r === "free_over") window.CotescopeAuth.open("plans");
       else if (r === "session") window.CotescopeAuth.open("login");
       else loading(({ no_data_yet: "Les données du jour arrivent, réessaie dans quelques minutes.", network: "Pas de connexion au serveur Cotescope.", whop_unreachable: "Le service de paiement ne répond pas, réessaie dans un instant." })[r] || ("Erreur : " + r), true);
     }
@@ -139,7 +139,7 @@
       call("tick", []);
       if (Math.random() < 0.1) { const a = await AUTH.account(); if (a && a.ok) call("set_account", [ACCOUNT]); else if (a && a.reason === "session") location.reload(); }
     } catch (e) {
-      if (e.reason === "session" || e.reason === "no_plan" || e.reason === "inactive") location.reload();
+      if (["session", "no_plan", "inactive", "free_over"].includes(e.reason)) location.reload();
     }
   }
 

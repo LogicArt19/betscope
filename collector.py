@@ -320,12 +320,13 @@ def collect_oddspapi(events, state):
     calls = []
     if tids and not fresh:
         calls = [tids[i:i + 3] for i in range(0, len(tids), 3)]
-    need = len(calls) + (0 if op.get("names") else 1)
+    need = len(calls) + (0 if op.get("names_tried") else 1)
     if calls and op["used"] + need > OP_MONTHLY - 5:
         log(f"OddsPapi : quota du mois presque atteint ({op['used']}/{OP_MONTHLY}), pause jusqu'au mois prochain")
         calls = []
     if calls:
-        if not op.get("names"):  # noms des équipes (1 requête, gardée en cache)
+        if not op.get("names_tried"):  # noms des équipes (1 seule requête : les cotes contiennent déjà les noms)
+            op["names_tried"] = True
             try:
                 parts = _op_get("participants", sportId=10)
                 op["used"] += 1
@@ -353,8 +354,8 @@ def collect_oddspapi(events, state):
             h, d, a = price("101"), price("102"), price("103")
             if not (h and d and a):
                 continue
-            keep.append({"start": f.get("startTime") or f.get("trueStartTime"), "home": f.get("participant1Name") or op["names"].get(str(f.get("participant1Id")), ""),
-                         "away": f.get("participant2Name") or op["names"].get(str(f.get("participant2Id")), ""),
+            keep.append({"start": f.get("startTime") or f.get("trueStartTime"), "home": f.get("participant1Name") or (op.get("names") or {}).get(str(f.get("participant1Id")), ""),
+                         "away": f.get("participant2Name") or (op.get("names") or {}).get(str(f.get("participant2Id")), ""),
                          "h": float(h), "d": float(d), "a": float(a)})
         op["boards"] = keep
         log(f"OddsPapi : {len(keep)} matchs avec cotes Bet365 ({op['used']}/{OP_MONTHLY} requêtes ce mois)")

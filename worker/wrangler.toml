@@ -5,3 +5,8 @@ compatibility_date = "2026-06-01"
 [[kv_namespaces]]
 binding = "KV"
 id = "__KV_ID__"
+
+# forfaits Whop (identifiants publics, pas secrets)
+[vars]
+WHOP_COMPANY_ID = "biz_imzLiN4lnuxNJc"
+PLAN_IDS = '{"essentiel":"plan_VZOeTCDp6mseX","pro":"plan_xNSa2mwssfxvH","elite":"plan_PSEfzCI46Vyz9"}'

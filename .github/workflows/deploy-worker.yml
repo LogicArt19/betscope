@@ -44,7 +44,7 @@ jobs:
           npx --yes wrangler@3.114.0 deploy 2>&1 | tee deploy.log
           url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          for n in WHOP_API_KEY WHOP_COMPANY_ID PLAN_IDS OWNER_EMAILS WHOP_WEBHOOK_SECRET RESEND_KEY; do
+          for n in WHOP_API_KEY OWNER_EMAILS WHOP_WEBHOOK_SECRET RESEND_KEY; do
             v="$(printenv "S_$n" || true)"
             if [ -n "$v" ]; then printf '%s' "$v" | npx --yes wrangler@3.114.0 secret put "$n" >/dev/null && echo "secret $n OK"; fi
           done

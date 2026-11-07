@@ -11,7 +11,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      CONFIGURED: ${{ secrets.CF_API_TOKEN != '' && secrets.CF_ACCOUNT_ID != '' }}
+      CONFIGURED: ${{ secrets.CF_API_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
         if: env.CONFIGURED == 'true'
@@ -23,7 +23,7 @@ jobs:
         if: env.CONFIGURED == 'true'
         id: kv
         env:
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || '248f03341b6e3ba1b8392e98d98f9844' }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: echo "id=$(python3 ci/kv_id.py)" >> "$GITHUB_OUTPUT"
       - name: Déploiement
@@ -32,7 +32,7 @@ jobs:
         working-directory: worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || '248f03341b6e3ba1b8392e98d98f9844' }}
           S_WHOP_API_KEY: ${{ secrets.WHOP_API_KEY }}
           S_WHOP_COMPANY_ID: ${{ secrets.WHOP_COMPANY_ID }}
           S_PLAN_IDS: ${{ secrets.PLAN_IDS }}

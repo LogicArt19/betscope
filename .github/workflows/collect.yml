@@ -32,7 +32,7 @@ jobs:
         if: env.CONFIGURED == 'true'
         id: kv
         env:
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || '248f03341b6e3ba1b8392e98d98f9844' }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: echo "id=$(python ci/kv_id.py)" >> "$GITHUB_OUTPUT"
       - name: Collecte
@@ -40,7 +40,7 @@ jobs:
         env:
           ODDS_KEY: ${{ secrets.ODDS_KEY }}
           FD_KEY: ${{ secrets.FD_KEY }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || '248f03341b6e3ba1b8392e98d98f9844' }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_KV_ID: ${{ steps.kv.outputs.id }}
         run: python collector.py

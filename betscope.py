@@ -2847,6 +2847,30 @@ class Api:
                 "books": [BOOK_NAMES.get(b_, b_) for b_ in sorted(allowed)]}
         res = objective_plan(stake, target, sel, cfg)
         note = ""
+        fr_ref = ["winamax_fr", "parionssport_fr", "unibet_fr", "bet365"]
+        if len(res["options"]) < 5 and allowed and not set(fr_ref) <= allowed:
+            # peu de vraies cotes chez tes bookmakers (cas de Betclic, absent de nos sources gratuites) : on complète avec
+            # les VRAIES cotes des autres bookmakers français, affichées avec leur nom, comme repère
+            with self._lock:
+                events, info = list(self._events), self._info
+            sel2 = analyze(events, dict(cfg, bookmakers=",".join(sorted(allowed | set(fr_ref)))), info=info)
+            if not tier_ok("pro"):
+                sel2 = [x for x in sel2 if x.get("cat") in (ESSENTIEL_CATS if tier_ok("essentiel") else GRATUIT_CATS)]
+            if leagues:
+                sel2 = [x for x in sel2 if x.get("sport_key") in set(leagues)]
+            if days:
+                sel2 = [x for x in sel2 if x["start"].astimezone().date().isoformat() in set(days)]
+            r2 = objective_plan(stake, target, sel2, dict(cfg, bookmakers=",".join(sorted(allowed | set(fr_ref)))))
+            if len(r2["options"]) > len(res["options"]):
+                mine = {tuple(sorted(l["uid"] for t in o["tickets"] for l in t["legs"])) for o in res["options"]}
+                extra = [o for o in r2["options"] if tuple(sorted(l["uid"] for t in o["tickets"] for l in t["legs"])) not in mine]
+                n_own = len(res["options"])
+                res = dict(r2, options=res["options"] + extra, n_found=n_own + len(extra))
+                names = ", ".join(BOOK_NAMES.get(b_, b_) for b_ in sorted(allowed))
+                note = (f"{names} publie peu de cotes dans nos sources gratuites"
+                        + (f" ({n_own} ticket{'s' if n_own > 1 else ''} avec ses cotes en premier)" if n_own else "")
+                        + ". Les autres tickets utilisent les vraies cotes de Winamax, Parions Sport, Unibet ou Bet365, indiquées sous chaque cote. "
+                          "Les cotes sont en général très proches d'un bookmaker à l'autre : vérifie-les chez toi avant de jouer.")
         if not res["options"] and cfg.get("bookmakers"):
             # rien chez tes bookmakers : on élargit aux cotes de tous les bookmakers suivis
             r2 = objective_plan(stake, target, sel, dict(cfg, bookmakers=""))

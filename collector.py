@@ -254,6 +254,114 @@ def add_espn_odds(events, st):
         log(f"cotes ESPN ajoutées : {n}")
 
 
+# ---------------------------------------------------------------------------
+# OddsPapi (gratuit : 250 requêtes / mois) : cotes Bet365 pour les grands championnats
+# ---------------------------------------------------------------------------
+OP_BASE = "https://api.oddspapi.io/v4"
+OP_TOURNAMENTS = {"soccer_epl": 17, "soccer_spain_la_liga": 8, "soccer_italy_serie_a": 23,
+                  "soccer_germany_bundesliga": 35, "soccer_france_ligue_one": 34}  # identifiants Sportradar
+OP_MONTHLY = 250
+OP_EVERY_H = 8   # 3 fois par jour x 2 requêtes ≈ 180 / mois
+
+
+def _op_get(path, **params):
+    params["apiKey"] = os.environ.get("ODDSPAPI_KEY", "").strip()
+    url = f"{OP_BASE}/{path}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Cotescope/1.0", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def collect_oddspapi(events, state):
+    """Ajoute Bet365 comme bookmaker réel (1N2). Respecte le quota gratuit : budget mensuel suivi,
+    rafraîchissement toutes les 8 h, et seulement les championnats qui jouent dans les 48 h."""
+    if not os.environ.get("ODDSPAPI_KEY"):
+        return 0
+    op = state.setdefault("oddspapi", {})
+    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    if op.get("month") != month:
+        op.update(month=month, used=0)
+    now = datetime.now(timezone.utc)
+    soon = {e.get("sport_key") for e in events if now < b.parse_time(e["commence_time"]) < now + timedelta(hours=48)}
+    tids = [OP_TOURNAMENTS[k] for k in OP_TOURNAMENTS if k in soon]
+    fresh = time.time() - op.get("last", 0) < OP_EVERY_H * 3600
+    calls = []
+    if tids and not fresh:
+        calls = [tids[i:i + 3] for i in range(0, len(tids), 3)]
+    need = len(calls) + (0 if op.get("names") else 1)
+    if calls and op["used"] + need > OP_MONTHLY - 5:
+        log(f"OddsPapi : quota du mois presque atteint ({op['used']}/{OP_MONTHLY}), pause jusqu'au mois prochain")
+        calls = []
+    if calls:
+        if not op.get("names"):  # noms des équipes (1 requête, gardée en cache)
+            try:
+                parts = _op_get("participants", sportId=10)
+                op["used"] += 1
+                op["names"] = {str(p.get("participantId")): p.get("participantName") or p.get("name") or ""
+                               for p in (parts if isinstance(parts, list) else parts.get("data") or [])}
+                log(f"OddsPapi : {len(op['names'])} équipes en cache")
+            except Exception as e:
+                log("OddsPapi (équipes) :", e)
+        boards = []
+        for chunk in calls:
+            try:
+                boards += _op_get("odds-by-tournaments", tournamentIds=",".join(map(str, chunk)), bookmaker="bet365", verbosity=3) or []
+                op["used"] += 1
+                time.sleep(1.2)  # délai minimum entre deux appels
+            except Exception as e:
+                log("OddsPapi (cotes) :", e)
+        op["last"] = time.time()
+        keep = []
+        for f in boards:
+            mk = (((f.get("bookmakerOdds") or {}).get("bet365") or {}).get("markets") or {})
+            m = mk.get("101") or mk.get("10728")
+            if not m:
+                continue
+            price = lambda oid: (((m.get("outcomes") or {}).get(oid) or {}).get("players") or {}).get("0", {}).get("price")
+            h, d, a = price("101"), price("102"), price("103")
+            if not (h and d and a):
+                continue
+            keep.append({"start": f.get("startTime") or f.get("trueStartTime"), "home": f.get("participant1Name") or op["names"].get(str(f.get("participant1Id")), ""),
+                         "away": f.get("participant2Name") or op["names"].get(str(f.get("participant2Id")), ""),
+                         "h": float(h), "d": float(d), "a": float(a)})
+        op["boards"] = keep
+        log(f"OddsPapi : {len(keep)} matchs avec cotes Bet365 ({op['used']}/{OP_MONTHLY} requêtes ce mois)")
+    # on (ré)applique les dernières cotes connues à chaque collecte
+    n = 0
+    for e in events:
+        try:
+            t = b.parse_time(e["commence_time"])
+        except (KeyError, ValueError):
+            continue
+        cands = []
+        for k in op.get("boards") or []:
+            try:
+                kt = datetime.fromisoformat(str(k["start"]).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if abs((kt - t).total_seconds()) <= 20 * 60:
+                cands.append(k)
+        if not cands:
+            continue
+        hit = None
+        for k in cands:
+            if _best_team(e["home_team"], [k["home"]]) and _best_team(e["away_team"], [k["away"]]):
+                hit = k
+                break
+        if not hit and len(cands) == 1 and not cands[0]["home"]:
+            hit = cands[0]
+        if not hit:
+            continue
+        e["bookmakers"] = [bk for bk in e.get("bookmakers", []) if bk.get("key") != "bet365"]
+        e["bookmakers"].append({"key": "bet365", "title": "Bet365", "markets": [{"key": "h2h", "outcomes": [
+            {"name": e["home_team"], "price": hit["h"]}, {"name": e["away_team"], "price": hit["a"]},
+            {"name": "Draw", "price": hit["d"]}]}]})
+        n += 1
+    if n:
+        log(f"cotes Bet365 ajoutées : {n} matchs")
+    return n
+
+
 def public_record(events, st, state=None):
     """Bilan public : on enregistre chaque pari que Cotescope « jouerait », puis on le vérifie
     avec le résultat officiel. Le résumé est publié sans connexion (preuve pour la vitrine)."""
@@ -261,7 +369,7 @@ def public_record(events, st, state=None):
     folder = os.path.join(CACHE, "public")
     os.makedirs(folder, exist_ok=True)
     h = History(folder)
-    cfg = dict(b.DEFAULT_CONFIG, sports=SPORTS, bookmakers="betclic_fr,winamax_fr,unibet_fr,parionssport_fr")
+    cfg = dict(b.DEFAULT_CONFIG, sports=SPORTS, bookmakers="betclic_fr,winamax_fr,unibet_fr,parionssport_fr,bet365")
     sel = b.analyze(events, cfg, info=st.info_for(events))
     picks = [x for x in b.top_picks(sel, cfg) if b.would_bet(x, cfg)]
     # + la « sélection du jour » : les 3 paris les plus sûrs (vraies cotes) des matchs des 30 prochaines heures
@@ -585,6 +693,10 @@ def main():
         add_espn_odds(events, st)
     except Exception as e:
         log("cotes ESPN :", e)
+    try:
+        collect_oddspapi(events, state)
+    except Exception as e:
+        log("OddsPapi :", e)
     try:
         n = publish_lineup_watch(events, st)
         log("surveillance des compos :", n, "matchs dans les 36 h")

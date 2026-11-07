@@ -84,7 +84,7 @@ def tier_ok(need):
 
 
 BOOK_NAMES = {"betclic_fr": "Betclic", "winamax_fr": "Winamax", "unibet_fr": "Unibet (FDJ)",
-              "parionssport_fr": "Parions Sport (FDJ)"}
+              "parionssport_fr": "Parions Sport (FDJ)", "bet365": "Bet365"}
 
 
 def book_name(cfg):

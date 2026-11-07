@@ -997,6 +997,7 @@ def analyze(events, cfg, now=None, info=None):
                     "odds": odds,
                     "book": book_title,
                     "book_key": best_key,
+                    "odds_ts": ev.get("_odds_ts"),
                     "ev": ev_,
                     "kelly": kelly,
                     "n_books": a["n"],
@@ -1696,14 +1697,15 @@ def _objective_plan(stake, target, selections, cfg):
 
     ranked_books = sorted(books, key=lambda bk: -sum(1 for s in selections if bk in s["playable"]))
     for bi, book in enumerate(ranked_books[:4]):
-        items_all = _book_items(selections, cfg, book)
+        # jamais de cote estimée dans un ticket : uniquement les vraies cotes publiées (ou celle tapée par l'utilisateur)
+        items_all = [(x, o) for x, o in _book_items(selections, cfg, book) if not x.get("estimated") or x.get("user_odds")]
         if not items_all:
             continue
         btitle = items_all[0][0]["playable"][book][1]
         # paris raisonnables d'abord : au moins 1 chance sur 2, et nos analyses ne disent pas le contraire
         best, relaxed = None, False
         # 1) vraies cotes uniquement (pas de cote estimée) et paris raisonnables ; puis on élargit si besoin
-        for floor, real in ((0.5, True), (0.4, True), (0.5, False), (0.4, False), (0.3, False), (0.0, False)):
+        for floor, real in ((0.5, True), (0.4, True), (0.3, True), (0.0, True)):
             items = [(x, o) for x, o in items_all if _reasonable(x, floor) and (not real or not x.get("estimated") or x.get("user_odds"))]
             evs = _fronts(items)
             solve = lambda evs=evs, **kw: _solve(evs, L, **dict(dict(lmin=lmin, lmax=lmax), **kw))
@@ -1897,7 +1899,7 @@ def ser_objective(res, cfg):
                           "conf": l.get("conf"), "q": (l.get("stats") or {}).get("q"),
                           "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
                           "min_odds": l.get("min_odds"), "market": l["market"], "ts": l["start"].timestamp(),
-                          "league": l.get("sport"), "event_id": l["event_id"],
+                          "league": l.get("sport"), "event_id": l["event_id"], "book": l.get("book"), "odds_ts": l.get("odds_ts"),
                           "p_market": round(l.get("p_market", l["p"]), 4),
                           "p_model": round((l.get("stats") or {}).get("p_model"), 4) if (l.get("stats") or {}).get("p_model") is not None else None,
                           "contra": bool((l.get("stats") or {}).get("contra")),

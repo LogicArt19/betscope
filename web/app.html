@@ -824,10 +824,46 @@ function pickRow(b){
     <button class="add ${BSET.has(b.uid)?"in":""}" data-add="${esc(b.uid)}">${BSET.has(b.uid)?"✓":"+"}</button></div>`;
 }
 let PTAB = "sure";
+/* ---------- vérificateur de cote boostée ---------- */
+let BST = {m:"", u:"", o:""};
+function boostBox(){
+  if (rank() < 1) return lockBox("essentiel", "Vérificateur de cotes boostées", "Tape la cote boostée de ton bookmaker : Cotescope te dit si c'est une vraie bonne affaire ou un piège.");
+  const ms = (MATCHES || []).filter(m => m.n_bets).slice(0, 150);
+  const ev = BST.m ? call("get_event", BST.m) : null;
+  const bets = ev ? (ev.groups || []).flatMap(g => g.bets.map(b => ({...b, glabel: g.label}))) : [];
+  const b = bets.find(x => x.uid === BST.u);
+  const o = parseFloat(String(BST.o).replace(",", "."));
+  let verdict = "";
+  if (b && o > 1) {
+    const fair = 1 / b.p, ev_ = b.p * o - 1, base = b.estimated ? null : b.odds;
+    const cls = ev_ >= .03 ? "good" : ev_ >= -.03 ? "mid" : "bad";
+    const title = ev_ >= .03 ? "Vraie bonne affaire" : ev_ >= -.03 ? "Correct, sans plus" : "Piège : la cote reste trop basse";
+    verdict = `<div class="verdict ${cls}"><b>${title}.</b> Selon nos analyses, « ${esc(b.selection)} » a <b>${pc(b.p)}</b> de chances, soit un juste prix de <b>${fr(fair)}</b>.
+      ${base ? `La cote normale est à ${fr(base)}, boostée à ${fr(o)}.` : `Cote boostée : ${fr(o)}.`}
+      ${ev_ >= 0 ? `En moyenne, sur la durée, ce pari rapporte <b>${fr(ev_ * 100, 1)} %</b> de ta mise.` : `En moyenne, sur la durée, ce pari fait perdre <b>${fr(-ev_ * 100, 1)} %</b> de ta mise.`}
+      ${ev_ >= .03 ? " Les bookmakers offrent parfois de vrais boosts pour attirer les joueurs : celui-ci en est un." : ev_ < -.03 ? ` Pour être intéressant, il faudrait une cote d'au moins ${fr(fair * 1.03)}.` : ""}
+      ${b.p < .35 ? "<br>Attention : même rentable, ce pari perd plus souvent qu'il ne gagne. Mise petite." : ""}</div>`;
+  }
+  return `<div class="panel box" style="max-width:760px">
+    <h3>Ta cote boostée est-elle une affaire ?</h3>
+    <p class="note" style="margin-bottom:12px">Choisis le match et le pari boosté, tape la cote proposée : on la compare à nos vraies chances.</p>
+    <label class="f">Match</label><select class="sel2" id="bs-m"><option value="">Choisis un match…</option>${ms.map(m => `<option value="${esc(m.id)}" ${BST.m===m.id?"selected":""}>${esc(m.home)} – ${esc(m.away)} · ${esc(m.date)}</option>`).join("")}</select>
+    ${ev ? `<label class="f" style="margin-top:12px">Pari boosté</label><select class="sel2" id="bs-u"><option value="">Choisis le pari…</option>${bets.map(x => `<option value="${esc(x.uid)}" ${BST.u===x.uid?"selected":""}>${esc(x.glabel)} · ${esc(x.selection)}</option>`).join("")}</select>
+      <p class="note" style="margin-top:6px">Pari introuvable ? Les boosts sur un joueur précis ou plusieurs événements combinés ne sont pas encore calculés.</p>` : ""}
+    ${b ? `<label class="f" style="margin-top:12px">Cote boostée</label><div style="display:flex;gap:8px"><input class="sel2" id="bs-o" inputmode="decimal" placeholder="ex. 2,20" value="${esc(BST.o)}" style="max-width:140px"><button class="btn go" id="bs-go">Vérifier</button></div>` : ""}
+  </div>${verdict ? `<div style="max-width:760px;margin-top:12px">${verdict}</div>` : ""}`;
+}
+document.addEventListener("change", e => {
+  if (e.target.id === "bs-m") { BST = {m: e.target.value, u: "", o: ""}; render(); }
+  if (e.target.id === "bs-u") { BST.u = e.target.value; render(); }
+});
+document.addEventListener("click", e => { if (e.target.closest("#bs-go")) { BST.o = $("#bs-o").value; render(); } });
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "bs-o") { BST.o = e.target.value; render(); } });
 function vPicks(){
-  const t = [["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"]];
+  const t = [["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"],["boost","Cote boostée"]];
   let body;
-  if (PTAB === "sure") body = DATA.probable.slice(0, 40).map(pickRow).join("");
+  if (PTAB === "boost") body = boostBox();
+  else if (PTAB === "sure") body = DATA.probable.slice(0, 40).map(pickRow).join("");
   else if (PTAB === "best") body = (rank() < 3 ? lockBox("elite", "Paris value et sélection de Cotescope", "Les paris où la cote est au-dessus du juste prix, et ceux que Cotescope jouerait avec son propre argent.") : "") + DATA.picks.slice(0, 40).map(pickRow).join("");
   else body = DATA.combos.slice(0, 20).map(c => `<div class="panel opt"><div class="oh"><div style="flex:1"><b>Combiné ×${c.legs.length}</b><small>cote ${fr(c.odds)}${c.value?` · <span class="pill v">value</span>`:""}</small></div><div class="ring"><b>${pc(c.p)}</b><small>de chances</small></div></div>
       ${c.legs.map(l => `<div class="leg"><div>${esc(l.selection)} <small>· ${esc(l.match)}</small></div><span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`).join("")}</div>`).join("");

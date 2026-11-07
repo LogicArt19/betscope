@@ -33,13 +33,25 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          S_WHOP_API_KEY: ${{ secrets.WHOP_API_KEY }}
+          S_WHOP_COMPANY_ID: ${{ secrets.WHOP_COMPANY_ID }}
+          S_PLAN_IDS: ${{ secrets.PLAN_IDS }}
+          S_OWNER_EMAILS: ${{ secrets.OWNER_EMAILS }}
+          S_WHOP_WEBHOOK_SECRET: ${{ secrets.WHOP_WEBHOOK_SECRET }}
+          S_RESEND_KEY: ${{ secrets.RESEND_KEY }}
         run: |
           sed -i "s/__KV_ID__/${{ steps.kv.outputs.id }}/" wrangler.toml
           npx --yes wrangler@3.114.0 deploy 2>&1 | tee deploy.log
           url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          if [ -n "${{ secrets.WHOP_API_KEY }}" ]; then echo "${{ secrets.WHOP_API_KEY }}" | npx --yes wrangler@3.114.0 secret put WHOP_API_KEY; fi
-          if [ -n "${{ secrets.OWNER_KEYS }}" ]; then echo "${{ secrets.OWNER_KEYS }}" | npx --yes wrangler@3.114.0 secret put OWNER_KEYS; fi
+          for n in WHOP_API_KEY WHOP_COMPANY_ID PLAN_IDS OWNER_EMAILS WHOP_WEBHOOK_SECRET RESEND_KEY; do
+            v="$(printenv "S_$n" || true)"
+            if [ -n "$v" ]; then printf '%s' "$v" | npx --yes wrangler@3.114.0 secret put "$n" >/dev/null && echo "secret $n OK"; fi
+          done
+          # clé de signature des sessions : créée une seule fois
+          if ! npx --yes wrangler@3.114.0 secret list 2>/dev/null | grep -q SESSION_SECRET; then
+            openssl rand -hex 32 | tr -d '\n' | npx --yes wrangler@3.114.0 secret put SESSION_SECRET >/dev/null && echo "secret SESSION_SECRET créé"
+          fi
       - name: Adresse du serveur publiée sur le site (config.json)
         if: env.CONFIGURED == 'true' && steps.dep.outputs.url != ''
         env:

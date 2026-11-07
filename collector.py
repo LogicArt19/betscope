@@ -109,6 +109,35 @@ def collect_scores(state, slugs):
     return {k: v for k, v in out.items() if k.split("|")[1] >= limit}
 
 
+TIERS = ("essentiel", "pro", "elite")
+
+
+def tier_snapshot(snap, tier):
+    """Chaque forfait ne reçoit que les données qu'il a payées (impossible de débloquer en trichant).
+    - Essentiel : cotes, résultats, classements, forme (pas d'absents, compos, face-à-face, buteurs, météo, actus)
+    - Pro : tout sauf les actus de dernière minute
+    - Elite : tout"""
+    out = dict(snap, tier=tier)
+    if tier == "elite":
+        return out
+    st = dict(snap["stats"])
+    web = {}
+    for eid, w in (st.get("web") or {}).items():
+        v = dict(w.get("v") or {})
+        v["news"] = []
+        if tier == "essentiel":
+            v.update(inj_home=[], inj_away=[], lineups=[], weather=None)
+        web[eid] = dict(w, v=v)
+    st["web"] = web
+    if tier == "essentiel":
+        for k in ("h2h", "scorers", "inj_day", "pred", "lineups"):
+            st[k] = {}
+        out["events"] = [dict(e, bookmakers=[dict(bk, markets=[m for m in bk.get("markets", []) if m.get("key") != "spreads"])
+                                             for bk in e.get("bookmakers", [])]) for e in snap["events"]]
+    out["stats"] = st
+    return out
+
+
 def cf_put(key, data, gz=True, meta=None):
     acc, tok, ns = os.environ.get("CF_ACCOUNT_ID"), os.environ.get("CF_API_TOKEN"), os.environ.get("CF_KV_ID")
     if not (acc and tok and ns):
@@ -178,7 +207,8 @@ def main():
     with open(os.path.join(CACHE, "snapshot.json"), "w", encoding="utf-8") as f:
         json.dump(snap, f)
     log(f"snapshot : {len(events)} matchs, {len(snap['stats'].get('web', {}))} fiches web")
-    cf_put("snapshot", snap)
+    for tier in TIERS:
+        cf_put("snapshot_" + tier, tier_snapshot(snap, tier))
 
     engine = {}
     for name in ENGINE_FILES:

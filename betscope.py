@@ -69,6 +69,31 @@ class LicenseError(Exception):
     pass
 
 
+# --------------------------------------------------------------------------
+# Forfaits : ce qui est débloqué à chaque niveau
+# --------------------------------------------------------------------------
+TIER_RANK = {"essentiel": 1, "pro": 2, "elite": 3}
+TIER_NAMES = {"essentiel": "Essentiel", "pro": "Pro", "elite": "Elite"}
+TIER = {"v": "elite"}                     # forfait des données chargées (démo = tout visible)
+ESSENTIEL_CATS = {"1n2", "dc", "total", "btts"}
+
+
+def tier_ok(need):
+    return TIER_RANK.get(TIER["v"], 3) >= TIER_RANK[need]
+
+
+BOOK_NAMES = {"betclic_fr": "Betclic", "winamax_fr": "Winamax", "unibet_fr": "Unibet", "pmu_fr": "PMU",
+              "parionssport_fr": "Parions Sport", "netbet_fr": "NetBet"}
+
+
+def book_name(cfg):
+    """Nom à afficher pour « là où tu paries » : le bookmaker s'il n'y en a qu'un."""
+    mine = [b.strip().lower() for b in str(cfg.get("bookmakers", "")).split(",") if b.strip()]
+    if len(mine) == 1:
+        return BOOK_NAMES.get(mine[0], mine[0])
+    return "ton bookmaker"
+
+
 def server_call(path, license_key, method="GET", body=None, timeout=40):
     api = (remote_config() or {}).get("api")
     if not api:
@@ -85,7 +110,7 @@ def server_call(path, license_key, method="GET", body=None, timeout=40):
             info = json.loads(e.read().decode("utf-8"))
         except Exception:
             info = {}
-        if e.code == 403:
+        if e.code in (401, 403, 409, 400, 429):
             raise LicenseError(info.get("reason") or "refusée")
         raise RuntimeError(f"serveur : erreur {e.code} {info.get('reason', '')}".strip())
 
@@ -1577,9 +1602,9 @@ def ser_bet(b, cfg):
         "ts": b["start"].timestamp(), "selection": b["selection"], "market": b["market"],
         "p": round(b["p"], 4), "fair": round(b["fair"], 2), "odds": b["odds"], "book": b["book"],
         "ev": round(b["ev"], 4), "n_books": b["n_books"], "suspect": b["suspect"],
-        "value": is_value(b, cfg), "event_id": b["event_id"], "conf": b.get("conf"),
-        "mine": would_bet(b, cfg), "cat": b.get("cat"), "estimated": bool(b.get("estimated")),
-        "user_odds": bool(b.get("user_odds")), "move": b.get("move"),
+        "value": is_value(b, cfg) and tier_ok("elite"), "event_id": b["event_id"], "conf": b.get("conf"),
+        "mine": would_bet(b, cfg) and tier_ok("elite"), "cat": b.get("cat"), "estimated": bool(b.get("estimated")),
+        "user_odds": bool(b.get("user_odds")), "move": b.get("move") if tier_ok("elite") else None,
         "min_odds": b.get("min_odds"),
         "p_market": round(b.get("p_market", b["p"]), 4), "stats": b.get("stats"),
         "prices": [{"book": t, "odds": o, "playable": k in b["playable"]}
@@ -1590,7 +1615,7 @@ def ser_bet(b, cfg):
 def ser_combo(c):
     return {
         "uid": c["uid"], "odds": round(c["odds"], 2), "p": round(c["p"], 4), "ev": round(c["ev"], 4),
-        "book": c["book"], "value": c["value"], "mine": c.get("would_bet", False),
+        "book": c["book"], "value": c["value"] and tier_ok("elite"), "mine": c.get("would_bet", False) and tier_ok("elite"),
         "legs": [{"uid": l["uid"], "selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
                   "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
                   "min_odds": l.get("min_odds")}
@@ -1601,13 +1626,18 @@ def ser_combo(c):
 def ser_objective(res, cfg):
     out = {k: res.get(k) for k in ("stake", "target", "need_odds", "max_odds", "strict", "n_ok", "strict_max_gain", "why")}
     out["options"] = []
-    for o in res["options"] + res.get("relaxed_options", []):
+    opts = res["options"] + res.get("relaxed_options", [])
+    out["locked_more"] = 0
+    if not tier_ok("pro") and len(opts) > 1:  # Essentiel : le ticket le plus sûr seulement
+        out["locked_more"] = len(opts) - 1
+        opts = opts[:1]
+    for o in opts:
         tickets = []
         for t in o["tickets"]:
             tickets.append({
                 "stake": t["stake"], "odds": round(t["odds"], 2), "p": round(t["p"], 4), "ev": round(t["ev"], 4),
                 "ret": round(t["stake"] * t["odds"], 2),
-                "value": t["ev"] >= float(cfg["min_ev"]),
+                "value": t["ev"] >= float(cfg["min_ev"]) and tier_ok("elite"),
                 "legs": [{"uid": l["uid"], "selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
                           "conf": l.get("conf"), "q": (l.get("stats") or {}).get("q"),
                           "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
@@ -1786,7 +1816,9 @@ class Api:
         self._next_web = time.time() + 8
         self._days = []
         self._remote = False          # données fournies par le serveur Cotescope
-        self._license_state = ""      # "", "ok", ou raison du refus
+        self._license_state = ""      # "", "ok", "no_plan", ou raison du refus
+        self._account = None          # {"email", "tier", "status", "renews", ...}
+        self._next_account = time.time() + 3
         self._hist = History(config_dir())
         self._next_settle = time.time() + 20
         self._odds_hist = {}
@@ -1828,6 +1860,10 @@ class Api:
                 last_an = now
                 self._stats_dirty = False
                 self._reanalyze()
+            if now >= self._next_account and self._cfg.get("license"):
+                self._next_account = now + 60 if self._license_state == "no_plan" else now + 15 * 60
+                threading.Thread(target=self.account, kwargs={"fresh": self._license_state == "no_plan"},
+                                 daemon=True).start()
             if now >= next_cfg:
                 next_cfg = now + 600
                 threading.Thread(target=remote_config, daemon=True).start()
@@ -1868,13 +1904,18 @@ class Api:
             if demo:
                 time.sleep(0.3)
                 events, quota, errors = demo_events(), None, []
+                TIER["v"] = "elite"
             else:
                 snap = server_call("/api/snapshot", lic)
                 events, quota, errors = snap.get("events", []), None, []
                 self._license_state = "ok"
         except LicenseError as e:
             self._license_state = str(e)
+            if str(e) == "session":
+                self._cfg["license"] = ""
+                save_config(self._cfg)
             events, quota, errors = demo_events(), None, []
+            TIER["v"] = "elite"
             demo = True
         except Exception as e:
             events, quota, errors = None, None, [str(e)]
@@ -1986,14 +2027,14 @@ class Api:
             for ev_id, lst in evs.items():
                 if len(lst) > 1:
                     warnings.append(f"{len(lst)} paris sur le même match ({lst[0]['match']}) : ils sont liés, "
-                                    f"les chances réelles sont différentes du calcul et Betclic peut refuser la combinaison.")
+                                    f"les chances réelles sont différentes du calcul et {book_name(cfg)} peut refuser la combinaison.")
             for x in legs:
                 st = x.get("stats") or {}
                 if st.get("contra"):
                     warnings.append(f"« {x['selection']} » va contre la forme et les stats.")
                 if x.get("estimated") and not x.get("user_odds"):
                     mo = f"{x.get('min_odds', 0):.2f}".replace(".", ",")
-                    warnings.append(f"Cote estimée pour « {x['selection']} » : vérifie qu'elle est d'au moins {mo} sur Betclic.")
+                    warnings.append(f"Cote estimée pour « {x['selection']} » : vérifie qu'elle est d'au moins {mo} chez {book_name(cfg)}.")
                 if x["p"] < 0.40:
                     warnings.append(f"« {x['selection']} » n'a que {x['p'] * 100:.0f} % de chances.")
                 # meilleure alternative sur le même match : cote proche, plus sûre
@@ -2016,6 +2057,8 @@ class Api:
                 "quality": round(sum(qs) / len(qs), 2), "weakest": weakest["uid"],
                 "warnings": warnings, "tips": tips[:6], "n_value": sum(1 for x in legs if is_value(x, cfg)),
             })
+            if not tier_ok("pro"):
+                out.update(tips=[], weakest=None, locked="pro")
         out["bank"] = self.get_bank()
         return out
 
@@ -2049,8 +2092,14 @@ class Api:
         return True
 
     def get_history(self):
+        if not tier_ok("pro"):
+            return {"locked": "pro"}
         out = self._hist.summary()
         out["bank"] = self.get_bank()
+        if not tier_ok("elite"):  # fiabilité mesurée et suivi des « JE JOUE » = Elite
+            out["app_locked"] = "elite"
+            out["app"] = dict(out.get("app") or {}, buckets=[], rate=None, roi=None, n=0, pending=0)
+            out["app_list"] = []
         return out
 
     def settle_now(self):
@@ -2058,6 +2107,8 @@ class Api:
         return True
 
     def get_bank(self):
+        if not tier_ok("elite"):
+            return {"enabled": False, "locked": "elite"}
         cfg = self._cfg
         start = float(cfg.get("bankroll") or 0)
         u = self._hist.summary()["user"]
@@ -2123,6 +2174,7 @@ class Api:
         """Données collectées par le serveur (cotes + stats + web + scores)."""
         with self._lock:
             self._remote = True
+            TIER["v"] = snap.get("tier") if snap.get("tier") in TIER_RANK else "essentiel"
             self._events = snap.get("events", [])
             self._is_demo = False
             self._last_fetch = snap.get("ts") or time.time()
@@ -2135,28 +2187,90 @@ class Api:
         if reanalyze:
             self._reanalyze()
 
-    def activate(self, key):
-        key = str(key or "").strip()
+    # ---- compte Cotescope ----
+    def _session_ok(self, r):
+        sess = r.get("session")
+        with self._lock:
+            if sess:
+                self._cfg["license"] = sess
+            self._cfg["demo"] = False
+            save_config(self._cfg)
+            self._account = {k: r.get(k) for k in ("email", "name", "tier", "status", "renews", "cancel", "manage")}
+            self._license_state = "ok" if r.get("tier") else "no_plan"
+        self.refresh()
+        return {"ok": True, "tier": r.get("tier")}
+
+    def _auth(self, path, body):
         try:
-            r = server_call("/api/check", key, "POST", {"license": key})
+            return self._session_ok(server_call(path, "", "POST", body))
         except LicenseError as e:
             return {"ok": False, "reason": str(e)}
         except Exception as e:
             return {"ok": False, "reason": str(e)}
-        with self._lock:
-            self._cfg["license"] = key
-            self._cfg["demo"] = False
-            save_config(self._cfg)
-            self._license_state = "ok"
-        self.refresh()
-        return {"ok": True, "status": r.get("status")}
 
-    def deactivate(self):
+    def signup(self, email, password, name=""):
+        return self._auth("/api/signup", {"email": email, "password": password, "name": name})
+
+    def login(self, email, password):
+        return self._auth("/api/login", {"email": email, "password": password})
+
+    def forgot(self, email):
+        try:
+            server_call("/api/forgot", "", "POST", {"email": email})
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "reason": str(e)}
+
+    def account(self, fresh=False):
+        sess = self._cfg.get("license", "").strip()
+        if not sess:
+            return {"ok": False, "reason": "session"}
+        try:
+            r = server_call("/api/me" + ("?fresh=1" if fresh else ""), sess)
+        except LicenseError as e:
+            if str(e) == "session":
+                self.logout()
+            return {"ok": False, "reason": str(e)}
+        except Exception as e:
+            return {"ok": False, "reason": str(e)}
+        with self._lock:
+            changed = (self._account or {}).get("tier") != r.get("tier")
+            self._account = {k: r.get(k) for k in ("email", "name", "tier", "status", "renews", "cancel", "manage")}
+            self._license_state = "ok" if r.get("tier") else "no_plan"
+        if changed:
+            self.refresh()
+        return r
+
+    def checkout(self, tier):
+        sess = self._cfg.get("license", "").strip()
+        if not sess:
+            return {"ok": False, "reason": "session"}
+        try:
+            r = server_call("/api/checkout", sess, "POST", {"tier": tier})
+        except Exception as e:
+            return {"ok": False, "reason": str(e)}
+        if r.get("url"):
+            self.open_url(r["url"])
+            with self._lock:
+                self._next_account = time.time() + 20  # on surveille l'activation
+        return r
+
+    def logout(self):
         with self._lock:
             self._cfg["license"] = ""
             save_config(self._cfg)
             self._license_state = ""
+            self._account = None
         self.refresh()
+        return True
+
+    def set_books(self, books):
+        books = [b for b in (books or []) if b in BOOK_NAMES]
+        with self._lock:
+            self._cfg["bookmakers"] = ",".join(books) or "betclic_fr"
+            self._cfg["books_chosen"] = True
+            save_config(self._cfg)
+        self._reanalyze()
         return True
 
     def _stats_key(self):
@@ -2191,9 +2305,12 @@ class Api:
                 self._warning = ""
                 if mine and present and not (mine & present):
                     cfg = dict(cfg, bookmakers="")
-                    self._warning = ("Betclic n'a pas encore publié de cotes pour ces matchs : cotes d'autres "
+                    self._warning = (f"{book_name(cfg).capitalize() if book_name(cfg)[0].islower() else book_name(cfg)} "
+                                     "n'a pas encore publié de cotes pour ces matchs : cotes d'autres "
                                      "bookmakers affichées à titre indicatif.")
                 self._sel = analyze(events, cfg, info=self._info)
+                if not tier_ok("pro"):
+                    self._sel = [x for x in self._sel if x.get("cat") in ESSENTIEL_CATS]
                 self._apply_overrides(cfg)
                 if not self._is_demo:
                     self._apply_moves()
@@ -2235,7 +2352,10 @@ class Api:
             return {
                 "rev": self._rev, "version": APP_VERSION, "demo": self._is_demo, "builder_n": len(self._builder),
                 "license": bool(self._cfg.get("license")), "license_state": self._license_state,
-                "subscribe_url": (_REMOTE_CFG["v"] or {}).get("whop", ""),
+                "account": self._account, "tier": TIER["v"] if not self._is_demo else None,
+                "tier_name": TIER_NAMES.get(TIER["v"], "") if not self._is_demo else "",
+                "books": [b for b in self._cfg.get("bookmakers", "").split(",") if b],
+                "books_chosen": bool(self._cfg.get("books_chosen")), "book_name": book_name(self._cfg),
                 "fetching": self._fetching,
                 "last_fetch": datetime.fromtimestamp(self._last_fetch).strftime("%d/%m à %H:%M")
                 if self._last_fetch else None,

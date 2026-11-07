@@ -35,18 +35,19 @@ class WebApi(b.Api):
     def open_url(self, url):
         return True
 
-    def activate(self, key):
+    def set_account(self, acc):
+        """Compte connecté (la page s'occupe du réseau)."""
+        acc = acc or {}
         with self._lock:
-            self._cfg["license"] = str(key or "").strip()
             self._cfg["demo"] = False
-            b.save_config(self._cfg)
-            self._license_state = "ok"
-        return {"ok": True}
+            self._account = {k: acc.get(k) for k in ("email", "name", "tier", "status", "renews", "cancel", "manage")}
+            self._license_state = "ok" if acc.get("tier") else "no_plan"
+        return True
 
-    def deactivate(self):
+    def logout(self):
         with self._lock:
-            self._cfg["license"] = ""
-            b.save_config(self._cfg)
+            self._account = None
+            self._license_state = ""
         return True
 
     def demo(self):

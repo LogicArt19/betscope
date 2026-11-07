@@ -1,67 +1,71 @@
 /* Cotescope – appli web.
    Même moteur d'analyse que le logiciel (Python), exécuté dans le navigateur avec Pyodide.
-   Le moteur et les données ne sont envoyés par le serveur qu'aux abonnés (clé de licence). */
+   Le moteur et les données ne sont envoyés par le serveur qu'aux comptes abonnés,
+   et chaque forfait ne reçoit que les données qu'il a payées. */
 (function () {
   "use strict";
   const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
-  const LS = "cotescope_license";
+  const LS = "cotescope_session";
   const SNAP_EVERY = 10 * 60 * 1000;
-  const MSG = {
-    invalid: "Clé invalide.", unknown_key: "Clé inconnue. Vérifie que tu l'as bien copiée.",
-    inactive: "Abonnement expiré ou annulé.", whop_unreachable: "Serveur de paiement injoignable, réessaie dans un instant.",
-    server_not_configured: "Le serveur n'est pas encore prêt.", no_data_yet: "Les premières données arrivent, réessaie dans quelques minutes.",
-    network: "Pas de connexion au serveur Cotescope.",
-  };
-  const msg = r => MSG[r] || ("Erreur : " + r);
   const $ = s => document.querySelector(s);
-  let CFG = {}, KEY = "", py = null, web = null, nextSnap = 0, saveT = null;
+  let CFG = {}, SESSION = "", ACCOUNT = null, py = null, web = null, nextSnap = 0, saveT = null, booted = false;
 
   function lsGet() { try { return localStorage.getItem(LS) || ""; } catch (e) { return ""; } }
   function lsSet(v) { try { v ? localStorage.setItem(LS, v) : localStorage.removeItem(LS); } catch (e) { /* navigation privée */ } }
 
-  async function server(path, method, body) {
-    if (!CFG.api) throw new Error("server_not_configured");
+  async function server(path, method, body, raw) {
+    if (!CFG.api) return { ok: false, reason: "server_not_configured" };
     let r;
     try {
       r = await fetch(CFG.api.replace(/\/$/, "") + path, {
-        method: method || "GET",
-        headers: Object.assign({ Authorization: "Bearer " + KEY }, body ? { "Content-Type": "application/json" } : {}),
-        body: body ? JSON.stringify(body) : undefined, cache: "no-store",
+        method: method || "GET", cache: "no-store",
+        headers: Object.assign(SESSION ? { Authorization: "Bearer " + SESSION } : {}, body ? { "Content-Type": "application/json" } : {}),
+        body: body ? JSON.stringify(body) : undefined,
       });
-    } catch (e) { throw new Error("network"); }
-    if (r.status === 403 || r.status === 503) {
-      let j = {}; try { j = await r.json(); } catch (e) { /* vide */ }
-      const err = new Error(j.reason || "inactive"); err.license = r.status === 403; throw err;
-    }
-    if (!r.ok) throw new Error("http_" + r.status);
+    } catch (e) { return { ok: false, reason: "network" }; }
+    if (raw && r.ok) return r;
+    let j = {};
+    try { j = await r.json(); } catch (e) { j = { ok: false, reason: "http_" + r.status }; }
+    if (!r.ok && j.ok === undefined) j.ok = false;
+    if (j.reason === "session") { lsSet(""); SESSION = ""; }
+    return j;
+  }
+  function keep(r) {
+    if (r && r.session) { SESSION = r.session; lsSet(SESSION); }
+    if (r && r.ok && r.email) ACCOUNT = { email: r.email, name: r.name, tier: r.tier, status: r.status, renews: r.renews, cancel: r.cancel, manage: r.manage };
     return r;
   }
 
-  /* ---------- écran d'accès ---------- */
-  function gate(state, text) {
-    const g = $("#cs-gate");
-    g.style.display = "grid";
-    $("#cs-form").style.display = state === "form" ? "" : "none";
-    $("#cs-load").style.display = state === "load" ? "" : "none";
-    if (state === "load") $("#cs-step").textContent = text || "";
-    $("#cs-err").textContent = state === "form" ? (text || "") : "";
-    if (state === "form") setTimeout(() => $("#cs-key").focus(), 50);
+  /* ---------- écran de chargement ---------- */
+  function loading(text, error) {
+    const g = $("#cs-load"); g.style.display = text ? "grid" : "none";
+    if (!text) return;
+    $("#cs-step").textContent = text;
+    $("#cs-retry").style.display = error ? "" : "none";
+    $("#cs-hint").style.display = error ? "none" : "";
+    $("#cs-spin").style.display = error ? "none" : "";
   }
-  function hideGate() { $("#cs-gate").style.display = "none"; }
 
-  async function tryKey(k) {
-    KEY = String(k || "").trim();
-    if (!KEY) return gate("form", "Colle ta clé de licence.");
-    gate("load", "Vérification de ta licence…");
-    try {
-      await server("/api/check", "POST", { license: KEY });
-      lsSet(KEY);
-      await boot();
-    } catch (e) {
-      if (e.license) lsSet("");
-      gate("form", msg(e.message));
-    }
-  }
+  /* ---------- compte : l'interface de Cotescope s'occupe des écrans ---------- */
+  const AUTH = {
+    canSkip: false,
+    login: async (e, p) => keep(await server("/api/login", "POST", { email: e, password: p })),
+    signup: async (e, p) => keep(await server("/api/signup", "POST", { email: e, password: p })),
+    forgot: e => server("/api/forgot", "POST", { email: e }),
+    reset: async (code, p) => { const r = keep(await server("/api/reset", "POST", { code, password: p })); if (r.ok) history.replaceState(null, "", location.pathname); return r; },
+    account: async fresh => keep(await server("/api/me" + (fresh ? "?fresh=1" : ""))),
+    checkout: async tier => {
+      const r = await server("/api/checkout", "POST", { tier, return: location.origin + location.pathname + "#paid" });
+      if (r.ok && r.url) { location.href = r.url; r.redirect = true; }
+      return r;
+    },
+    logout: async () => { lsSet(""); SESSION = ""; ACCOUNT = null; try { call("logout", []); } catch (e) { /* pas encore démarré */ } location.reload(); },
+    done: async r => {
+      window.CotescopeAuth.close();
+      if (!booted) await start();
+      else { call("set_account", [ACCOUNT]); await loadSnapshot(); }
+    },
+  };
 
   /* ---------- moteur ---------- */
   function loadScript(src) {
@@ -76,38 +80,51 @@
     saveT = setTimeout(() => { try { py.FS.syncfs(false, () => {}); } catch (e) { /* ignore */ } }, 400);
   }
   async function loadSnapshot() {
-    const r = await server("/api/snapshot");
+    const r = await server("/api/snapshot", "GET", null, true);
+    if (!(r instanceof Response)) throw Object.assign(new Error(r.reason || "network"), { reason: r.reason });
     web.load_snapshot(await r.text());
     nextSnap = Date.now() + SNAP_EVERY;
   }
 
-  async function boot() {
-    gate("load", "Téléchargement des données du jour…");
-    const [eng, snap] = await Promise.all([
-      server("/api/engine").then(r => r.json()),
-      server("/api/snapshot").then(r => r.text()),
-      window.loadPyodide ? null : loadScript(PYODIDE + "pyodide.js"),
-    ]);
-    gate("load", "Démarrage du moteur d'analyse…");
-    if (!py) {
-      py = await window.loadPyodide({ indexURL: PYODIDE });
-      py.FS.mkdirTree("/data");
-      py.FS.mount(py.FS.filesystems.IDBFS, {}, "/data");
-      await new Promise(ok => py.FS.syncfs(true, () => ok()));
-      py.FS.mkdirTree("/engine");
+  async function start() {
+    try {
+      loading("Téléchargement des données du jour…");
+      const [eng, snap] = await Promise.all([
+        server("/api/engine", "GET", null, true),
+        server("/api/snapshot", "GET", null, true),
+        window.loadPyodide ? null : loadScript(PYODIDE + "pyodide.js"),
+      ]);
+      for (const r of [eng, snap]) if (!(r instanceof Response)) throw Object.assign(new Error(r.reason), { reason: r.reason });
+      const files = (await eng.json()).files || {}, snapText = await snap.text();
+      loading("Démarrage du moteur d'analyse…");
+      if (!py) {
+        py = await window.loadPyodide({ indexURL: PYODIDE });
+        py.FS.mkdirTree("/data");
+        py.FS.mount(py.FS.filesystems.IDBFS, {}, "/data");
+        await new Promise(ok => py.FS.syncfs(true, () => ok()));
+        py.FS.mkdirTree("/engine");
+      }
+      for (const [name, code] of Object.entries(files)) py.FS.writeFile("/engine/" + name, code);
+      py.runPython("import sys\nif '/engine' not in sys.path: sys.path.insert(0, '/engine')\nimport webapi\nwebapi.boot()");
+      web = py.pyimport("webapi");
+      call("set_account", [ACCOUNT]);
+      loading("Analyse de tous les matchs…");
+      await new Promise(r => setTimeout(r, 30));
+      web.load_snapshot(snapText);
+      nextSnap = Date.now() + SNAP_EVERY;
+      persist();
+      loading("");
+      booted = true;
+      window.dispatchEvent(new CustomEvent("cotescope-api-ready", { detail: API }));
+      setInterval(tick, 60 * 1000);
+      setTimeout(() => window.CotescopeAuth.books(), 1500);
+    } catch (e) {
+      loading("");
+      const r = e.reason || e.message;
+      if (r === "no_plan" || r === "inactive") window.CotescopeAuth.open("plans");
+      else if (r === "session") window.CotescopeAuth.open("login");
+      else loading(({ no_data_yet: "Les données du jour arrivent, réessaie dans quelques minutes.", network: "Pas de connexion au serveur Cotescope.", whop_unreachable: "Le service de paiement ne répond pas, réessaie dans un instant." })[r] || ("Erreur : " + r), true);
     }
-    for (const [name, code] of Object.entries(eng.files || {})) py.FS.writeFile("/engine/" + name, code);
-    py.runPython("import sys\nif '/engine' not in sys.path: sys.path.insert(0, '/engine')\nimport webapi\nwebapi.boot()");
-    web = py.pyimport("webapi");
-    call("activate", [KEY]);
-    gate("load", "Analyse de tous les matchs…");
-    await new Promise(r => setTimeout(r, 30));
-    web.load_snapshot(snap);
-    nextSnap = Date.now() + SNAP_EVERY;
-    persist();
-    hideGate();
-    window.dispatchEvent(new CustomEvent("cotescope-api-ready", { detail: API }));
-    setInterval(tick, 60 * 1000);
   }
 
   const READ_ONLY = /^(get_|builder_get|estimate|compute_)/;
@@ -120,28 +137,22 @@
     try {
       if (Date.now() >= nextSnap) await loadSnapshot();
       call("tick", []);
+      if (Math.random() < 0.1) { const a = await AUTH.account(); if (a && a.ok) call("set_account", [ACCOUNT]); else if (a && a.reason === "session") location.reload(); }
     } catch (e) {
-      if (e.license) { lsSet(""); location.reload(); }
+      if (e.reason === "session" || e.reason === "no_plan" || e.reason === "inactive") location.reload();
     }
   }
 
   /* ---------- objet « api » utilisé par l'interface ---------- */
   const SPECIAL = {
-    async activate(k) {
-      const old = KEY; KEY = String(k || "").trim();
-      try { await server("/api/check", "POST", { license: KEY }); }
-      catch (e) { KEY = old; return { ok: false, reason: e.message }; }
-      lsSet(KEY); call("activate", [KEY]); await loadSnapshot();
-      return { ok: true };
-    },
-    async deactivate() { lsSet(""); call("deactivate", []); await new Promise(r => setTimeout(r, 300)); location.reload(); return true; },
+    login: AUTH.login, signup: AUTH.signup, forgot: AUTH.forgot, account: AUTH.account,
+    checkout: AUTH.checkout, logout: AUTH.logout,
     async refresh() { try { await loadSnapshot(); return true; } catch (e) { return false; } },
     async open_url(u) { if (/^https:\/\//.test(u)) window.open(u, "_blank", "noopener"); return true; },
     async get_status() {
       const s = call("get_status", []);
       s.next_in = Math.max(0, Math.round((nextSnap - Date.now()) / 1000));
-      s.subscribe_url = CFG.whop || "";
-      s.frozen = false;
+      s.license = true; s.frozen = false;
       return s;
     },
     async check_updates() { return { update: null, version: (call("get_status", []) || {}).version }; },
@@ -158,14 +169,19 @@
   /* ---------- démarrage ---------- */
   async function init() {
     try { CFG = await (await fetch("../config.json", { cache: "no-store" })).json(); } catch (e) { CFG = {}; }
-    window.__COTESCOPE_CFG__ = CFG;
-    $("#cs-trial").onclick = () => CFG.whop ? window.open(CFG.whop, "_blank", "noopener") : ($("#cs-err").textContent = "Les inscriptions ouvrent très bientôt.");
-    $("#cs-go").onclick = () => tryKey($("#cs-key").value);
-    $("#cs-key").onkeydown = e => { if (e.key === "Enter") $("#cs-go").click(); };
-    const fromUrl = new URLSearchParams(location.hash.slice(1)).get("key");
-    if (fromUrl) history.replaceState(null, "", location.pathname);
-    const k = fromUrl || lsGet();
-    if (k) tryKey(k); else gate("form");
+    window.CotescopeAuth.set(AUTH);
+    const h = new URLSearchParams(location.hash.slice(1));
+    if (h.get("reset")) { window.CotescopeAuth.open("reset", { code: h.get("reset") }); return; }
+    const paid = location.hash === "#paid";
+    if (paid) history.replaceState(null, "", location.pathname);
+    SESSION = lsGet();
+    if (!SESSION) { window.CotescopeAuth.open(h.has("signup") ? "signup" : "login"); return; }
+    loading("Connexion à ton compte…");
+    const me = await AUTH.account(true);
+    loading("");
+    if (!me.ok) { window.CotescopeAuth.open("login"); return; }
+    if (!me.tier) { window.CotescopeAuth.open(paid ? "wait" : "plans"); return; }
+    await start();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

@@ -509,7 +509,7 @@ function vMatchs(){
       <div class="odds3">${["1","N","2"].map((l,i) => { const o = m.odds[i]; return o ? `<button class="ob ${BSET.has(o.uid)?"in":""}" data-add="${esc(o.uid)}" title="${esc(book(o.book))}"><small>${l}</small><b>${fr(o.odds)}</b></button>` : `<span class="ob"><small>${l}</small><b>–</b></span>`; }).join("")}</div>
       <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
     </div>`;
-  const banner = ST.tier === "gratuit" && ACCOUNT ? `<div class="banner">Version gratuite : Ligue 1 et Premier League, résultat du match. Encore ${daysLeft(ACCOUNT.renews)} jour(s).<button class="btn sm go" data-plans>Voir les forfaits</button></div>` : "";
+  const banner = ST.tier === "gratuit" && ACCOUNT ? `<div class="banner">Version gratuite : tous les matchs, pari « résultat du match ». Encore ${daysLeft(ACCOUNT.renews)} jour(s).<button class="btn sm go" data-plans>Voir les forfaits</button></div>` : "";
   return `
     ${banner}
     <h1 class="t">Matchs</h1>
@@ -519,7 +519,7 @@ function vMatchs(){
     ${leagues.length > 1 ? `<div class="chips" style="margin-bottom:6px"><button class="chip ${LEAGUE==="all"?"on":""}" data-lg="all">Tous<b>${MATCHES.filter(m=>m.day===DAY).length}</b></button>${leagues.map(l => `<button class="chip ${LEAGUE===l?"on":""}" data-lg="${esc(l)}">${esc(l)}<b>${MATCHES.filter(m=>m.day===DAY&&m.league===l).length}</b></button>`).join("")}</div>` : ""}
     ${Object.entries(groups).map(([lg, ms]) => `<div class="lg">${esc(lg)}</div>${ms.map(row).join("")}`).join("") ||
       `<div class="panel empty"><b>Aucun match à venir</b>Les cotes arrivent dès que les bookmakers les publient.</div>`}
-    ${rank() < 1 ? lockBox("essentiel", "Plus de championnats et de paris", "LaLiga, Serie A, Bundesliga, Ligue des champions, double chance, nombre de buts…") : ""}`;
+    ${rank() < 1 ? lockBox("essentiel", "Plus de types de paris", "Double chance, nombre de buts, les deux équipes marquent, et la forme des équipes.") : ""}`;
 }
 document.addEventListener("click", e => {
   const d = e.target.closest("[data-day]"); if (d) { DAY = d.dataset.day; render(); }

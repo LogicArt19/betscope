@@ -135,8 +135,6 @@ def tier_snapshot(snap, tier):
             st[k] = {}
         out["events"] = [dict(e, bookmakers=[dict(bk, markets=[m for m in bk.get("markets", []) if m.get("key") != "spreads"])
                                              for bk in e.get("bookmakers", [])]) for e in snap["events"]]
-    if tier == "gratuit":  # version gratuite : Ligue 1 et Premier League, résultat du match
-        out["events"] = [e for e in out["events"] if e.get("sport_key") in FREE_SPORTS]
     out["stats"] = st
     return out
 

@@ -15,3 +15,12 @@ PLAN_IDS = '{"essentiel":"plan_VZOeTCDp6mseX","pro":"plan_xNSa2mwssfxvH","elite"
 # compos officielles : vérification chaque minute (seulement les matchs qui commencent dans l heure)
 [triggers]
 crons = ["* * * * *"]
+
+# votes du public (stockage SQLite d'un Durable Object, inclus dans l'offre gratuite)
+[[durable_objects.bindings]]
+name = "VOTES"
+class_name = "Votes"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Votes"]

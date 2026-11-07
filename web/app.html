@@ -423,7 +423,7 @@ const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un comp
   no_plan:"Aucun forfait actif sur ce compte.", free_over:"Ta version gratuite de 7 jours est terminée.", inactive:"Ton abonnement est terminé.",
   whop_unreachable:"Le service de paiement ne répond pas. Réessaie dans un instant.", plans_not_configured:"Les abonnements ouvrent très bientôt.",
   server_not_configured:"Le serveur Cotescope n'est pas encore prêt.", mail_not_configured:"Écris-nous pour réinitialiser ton mot de passe.",
-  bad_code:"Ce lien a expiré : redemande un e-mail.", telegram_off:"Les alertes Telegram ne sont pas encore activées.", network:"Pas de connexion au serveur Cotescope.", no_data_yet:"Les données du jour arrivent. Réessaie dans quelques minutes."};
+  bad_code:"Ce lien a expiré : redemande un e-mail.", telegram_off:"Les alertes Telegram ne sont pas encore activées.", vote_closed:"Le vote est fermé pour ce match (il ouvre 36 h avant le coup d'envoi).", bad_vote:"Vote invalide.", network:"Pas de connexion au serveur Cotescope.", no_data_yet:"Les données du jour arrivent. Réessaie dans quelques minutes."};
 const errMsg = r => ERR[r] || ("Erreur : " + r);
 
 /* ======================================================================
@@ -637,7 +637,7 @@ function vMatch(id){
   const fin = (nv.rows || []).find(r => r.final), p = fin ? fin.p : m.probs;
   const t = [["analyse","Analyse"],["paris","Tous les paris"],["equipes","Équipes"],["h2h","Face-à-face"],["infos","Infos du match"]];
   let body = "";
-  if (MTAB === "analyse") body = tabAnalyse(e, nv);
+  if (MTAB === "analyse") body = voteBox(e) + tabAnalyse(e, nv);
   else if (MTAB === "paris") body = tabParis(e);
   else if (MTAB === "equipes") body = tabEquipes(e, info);
   else if (MTAB === "h2h") body = tabH2H(e, info);
@@ -654,6 +654,40 @@ function vMatch(id){
     ${body}`;
 }
 document.addEventListener("click", e => { const t = e.target.closest("[data-mtab]"); if (t) { MTAB = t.dataset.mtab; render(); } });
+/* ---------- vote du public ---------- */
+const VOTES = {};
+function loadVotes(eid){
+  if (window.__BRIDGE__) return;
+  const c = VOTES[eid];
+  if (c && Date.now() - c.t < 60000) return;
+  VOTES[eid] = Object.assign(c || {}, {t: Date.now()});
+  server("/api/votes?eids=" + encodeURIComponent(eid)).then(r => { if (r.ok) { VOTES[eid] = Object.assign((r.votes || {})[eid] || {counts:{"1":0,"N":0,"2":0}, mine:null}, {t: Date.now(), loaded: true}); if (route().a === eid) render(); } }).catch(() => {});
+}
+function voteBox(e){
+  loadVotes(e.id);
+  const v = VOTES[e.id] || {}, c = v.counts || {"1":0,"N":0,"2":0}, n = c["1"] + c["N"] + c["2"];
+  const started = e.ts * 1000 <= Date.now(), soon = e.ts * 1000 - Date.now() < 36 * 3600e3;
+  const lab = {"1": e.home, "N": "Match nul", "2": e.away};
+  const ours = (MATCHES.find(m => m.id === e.id) || {}).probs || [];
+  let body;
+  if (!v.mine && !started && soon) body = `<p class="note" style="margin-bottom:10px">Donne ton avis avant le match. Les résultats s'affichent après ton vote.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${["1","N","2"].map(k => `<button class="btn" data-vote="${k}" data-eid="${esc(e.id)}">${esc(lab[k])}</button>`).join("")}</div>`;
+  else if (!v.mine && !started) body = `<p class="note">Le vote ouvre 36 h avant le coup d'envoi.</p>`;
+  else if (n < 30) body = `<p class="note">${v.mine ? `Ton vote : <b>${esc(lab[v.mine])}</b>. ` : ""}${n} vote${n>1?"s":""} pour l'instant : les pourcentages s'affichent à partir de 30 votes, pour qu'ils veuillent dire quelque chose.</p>`;
+  else {
+    const pct = k => c[k] / n, idx = {"1":0,"N":1,"2":2};
+    const over = ["1","N","2"].filter(k => ours[idx[k]] != null && pct(k) - ours[idx[k]] >= .15);
+    body = `${["1","N","2"].map(k => `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>${esc(lab[k])}${v.mine===k?' <span class="pill ok">ton vote</span>':""}</span><span class="num">${pc(pct(k))}${ours[idx[k]] != null ? ` <span class="note">· nos chances ${pc(ours[idx[k]])}</span>` : ""}</span></div><div class="pbar"><i style="width:${pct(k)*100}%"></i></div></div>`).join("")}
+      <p class="note">${n} votes de la communauté Cotescope.</p>
+      ${over.length ? `<div class="warn" style="margin-top:8px">La communauté croit beaucoup plus à « ${esc(lab[over[0]])} » que nos analyses (${pc(pct(over[0]))} des votes contre ${pc(ours[idx[over[0]]])} de chances). Quand la foule surestime une équipe, la cote de l'autre côté peut avoir de la valeur : regarde aussi si la cote bouge.</div>` : ""}`;
+  }
+  return `<div class="panel box" style="margin-bottom:14px"><h3>L'avis de la communauté</h3>${body}</div>`;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-vote]"); if (!b) return;
+  const eid = b.dataset.eid, r = await server("/api/vote", "POST", {eid, pick: b.dataset.vote});
+  if (r.ok) { VOTES[eid] = {counts: r.counts, mine: r.mine, t: Date.now(), loaded: true}; toast("Vote enregistré"); render(); } else toast(errMsg(r.reason));
+});
 function tabAnalyse(e, nv){
   const rows = nv.rows || [], lab = nv.labels || [e.home, "Nul", e.away];
   const rel = nv.reliability ?? 25, rc = rel >= 70 ? "var(--home)" : rel >= 45 ? "var(--draw)" : "var(--bad)";

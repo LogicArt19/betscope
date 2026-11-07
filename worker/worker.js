@@ -404,6 +404,34 @@ async function checkLineups(env) {
   return n;
 }
 
+/* ---------------- vote du public ---------------- */
+// Un seul objet « Votes » (stockage SQLite intégré) : un vote par compte et par match, modifiable jusqu'au coup d'envoi.
+export class Votes {
+  constructor(state) { this.st = state.storage; }
+  async fetch(req) {
+    const b = await req.json();
+    if (b.op === "vote") {
+      const key = `v:${b.eid}:${b.email}`, prev = await this.st.get(key);
+      const c = (await this.st.get("c:" + b.eid)) || { "1": 0, "N": 0, "2": 0 };
+      if (prev && c[prev] > 0) c[prev]--;
+      c[b.pick]++;
+      await this.st.put({ [key]: b.pick, ["c:" + b.eid]: c });
+      return Response.json({ ok: true, counts: c, mine: b.pick });
+    }
+    if (b.op === "get") {
+      const out = {};
+      for (const eid of b.eids.slice(0, 120)) {
+        const c = await this.st.get("c:" + eid);
+        const mine = b.email ? await this.st.get(`v:${eid}:${b.email}`) : null;
+        if (c || mine) out[eid] = { counts: c || { "1": 0, "N": 0, "2": 0 }, mine: mine || null };
+      }
+      return Response.json({ ok: true, votes: out });
+    }
+    return Response.json({ ok: false }, { status: 400 });
+  }
+}
+const votesStub = (env) => env.VOTES.get(env.VOTES.idFromName("global"));
+
 /* ---------------- routes ---------------- */
 export default {
   async scheduled(event, env, ctx) {
@@ -615,6 +643,24 @@ export default {
       if (!buf) return json(req, { ok: false, reason: "no_data_yet" }, 503);
       return new Response(buf, { encodeBody: "manual", headers: { "Content-Type": "application/json; charset=utf-8",
         "Content-Encoding": "gzip", "Cache-Control": "private, max-age=3600", ...SEC, ...cors(req) } });
+    }
+    // vote du public : ouvert à tous les comptes (gratuits compris), seulement avant le coup d'envoi
+    if (p === "/api/vote" && req.method === "POST") {
+      if (!user) return json(req, { ok: false, reason: "session" }, 401);
+      const eid = String(body.eid || "").slice(0, 80), pick = String(body.pick || "");
+      if (!eid || !["1", "N", "2"].includes(pick)) return json(req, { ok: false, reason: "bad_vote" }, 400);
+      const w = await env.KV.get("lineup_watch", "json"), m = w && (w.list || []).find((x) => x.eid === eid);
+      if (!m) return json(req, { ok: false, reason: "vote_closed" }, 400); // vote ouvert dans les 36 h avant le match
+      if (Date.parse(m.start) <= Date.now()) return json(req, { ok: false, reason: "vote_closed" }, 400);
+      if (await tooMany(req, "vote:" + user.email + ":" + eid)) return json(req, { ok: false, reason: "too_many" }, 429);
+      const r = await votesStub(env).fetch("https://votes/", { method: "POST", body: JSON.stringify({ op: "vote", eid, pick, email: user.email }) });
+      return json(req, await r.json());
+    }
+    if (p === "/api/votes") {
+      if (!user) return json(req, { ok: false, reason: "session" }, 401);
+      const eids = String(url.searchParams.get("eids") || "").split(",").map((x) => x.trim().slice(0, 80)).filter(Boolean);
+      const r = await votesStub(env).fetch("https://votes/", { method: "POST", body: JSON.stringify({ op: "get", eids, email: user.email }) });
+      return json(req, await r.json());
     }
     // compos officielles fraîches d'un match (Pro et Elite)
     if (p === "/api/lineup") {

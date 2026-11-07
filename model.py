@@ -126,7 +126,8 @@ def predict(ratings, home_id, away_id, inj_home=(), inj_away=(), scale_home=1.0,
 def p_over(pred, point):
     if not pred:
         return None
-    return sum(v for k, v in pred["totals"].items() if k > point)
+    # les clés deviennent du texte après un passage en JSON (fiches enregistrées) : on les reconvertit
+    return sum(v for k, v in pred["totals"].items() if float(k) > point)
 
 
 def team_form(results, team_id, ref=None, n=5):

@@ -2848,7 +2848,7 @@ class Api:
         res = objective_plan(stake, target, sel, cfg)
         note = ""
         fr_ref = ["winamax_fr", "parionssport_fr", "unibet_fr", "bet365"]
-        if len(res["options"]) < 5 and allowed and not set(fr_ref) <= allowed:
+        if len(res["options"]) < 25 and allowed and not set(fr_ref) <= allowed:
             # peu de vraies cotes chez tes bookmakers (cas de Betclic, absent de nos sources gratuites) : on complète avec
             # les VRAIES cotes des autres bookmakers français, affichées avec leur nom, comme repère
             with self._lock:

@@ -468,6 +468,36 @@ def collect_oddspapi(events, state):
     return n
 
 
+def self_test(snap):
+    """Auto-test : fait tourner le vrai moteur sur les vraies données (comme l'appli d'un abonné Pro) et écrit
+    dans le journal ce qu'un client verrait, bookmaker par bookmaker."""
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    old_dir = b.config_dir
+    b.config_dir = lambda: tmp
+    try:
+        api = b.Api(start_loop=False)
+        api.load_snapshot(json.loads(json.dumps(tier_snapshot(snap, "pro"))))
+        for books in (["betclic_fr", "winamax_fr", "parionssport_fr", "unibet_fr", "bet365"], ["betclic_fr"], ["winamax_fr"],
+                      ["parionssport_fr", "unibet_fr"], ["bet365"]):
+            api.set_books(books)
+            real = sum(1 for x in api._sel if not x.get("estimated"))
+            res = []
+            for tgt in (15, 40, 200):
+                r = api.compute_objective(10, tgt)
+                res.append(f"{tgt} € : {len(r.get('options') or [])}")
+            log(f"AUTO-TEST {'+'.join(books)} : {real} paris à vraie cote ; tickets (10 € ->) " + ", ".join(res))
+        api.set_books(["betclic_fr", "winamax_fr", "parionssport_fr", "unibet_fr", "bet365"])
+        r = api.compute_objective(10, 40)
+        for o in (r.get("options") or [])[:2]:
+            t = o["tickets"][0]
+            log(f"   #{r['options'].index(o) + 1} {round(o['p_hit'] * 100, 1)} % : " + " | ".join(
+                f"{l['selection']} @{l['odds']} ({round(l['p'] * 100)} %, {l.get('book')}) [{l.get('form_h') or '?'} / {l.get('form_a') or '?'}]"
+                for l in t["legs"]))
+    finally:
+        b.config_dir = old_dir
+
+
 def public_record(events, st, state=None):
     """Bilan public : on enregistre chaque pari que Cotescope « jouerait », puis on le vérifie
     avec le résultat officiel. Le résumé est publié sans connexion (preuve pour la vitrine)."""

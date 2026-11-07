@@ -313,8 +313,60 @@ async function newPlaceAlert(env, user, req) {
   }
 }
 
+/* ---------------- compos officielles en 1 à 2 minutes ---------------- */
+// Chaque minute (déclencheur Cloudflare), pour les matchs qui commencent dans l'heure : on interroge ESPN,
+// et dès que les compos tombent on les garde (KV « lu:<match> ») avec les changements par rapport au dernier onze.
+const ESPN = "https://site.api.espn.com/apis/site/v2/sports/soccer/";
+function espnRosters(j) {
+  const out = [];
+  for (const r of j.rosters || []) {
+    const xi = [], bench = [];
+    for (const p of r.roster || []) {
+      const a = p.athlete || {}, n = a.shortName || a.displayName;
+      if (!n) continue;
+      const it = { n, full: a.displayName || n, num: String(p.jersey || ""), pos: String((p.position || {}).abbreviation || "").toUpperCase(),
+                   place: Number(p.formationPlace) || 0 };
+      (p.starter ? xi : bench).push(it);
+    }
+    if (xi.length >= 11) out.push({ team: (r.team || {}).displayName || "", formation: r.formation || "", xi, bench: bench.slice(0, 12), side: r.homeAway });
+  }
+  return out;
+}
+const lastName = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().split(/\s+/).pop();
+async function checkLineups(env) {
+  const w = await env.KV.get("lineup_watch", "json");
+  if (!w || !w.list) return 0;
+  const now = Date.now();
+  const due = w.list.filter((m) => { const t = Date.parse(m.start); return t - 80 * 6e4 <= now && now <= t + 10 * 6e4; }).slice(0, 15);
+  let n = 0;
+  for (const m of due) {
+    if (await env.KV.get("lu:" + m.eid)) continue;
+    try {
+      const r = await fetch(`${ESPN}${m.slug}/summary?event=${encodeURIComponent(m.espn)}`, { cf: { cacheTtl: 30 } });
+      if (!r.ok) continue;
+      const lu = espnRosters(await r.json());
+      if (lu.length < 2) continue;
+      for (const l of lu) { // qui entre / qui sort par rapport au onze du dernier match
+        const exp = (m.expected || {})[l.side] || [];
+        if (exp.length >= 11) {
+          const now_ = new Set(l.xi.map((p) => lastName(p.full)));
+          const was = new Set(exp.map(lastName));
+          l.out = exp.filter((x) => !now_.has(lastName(x)));
+          l.in = l.xi.filter((p) => !was.has(lastName(p.full))).map((p) => p.full);
+        }
+      }
+      await env.KV.put("lu:" + m.eid, JSON.stringify({ ts: now, lineups: lu, home: m.home, away: m.away }), { expirationTtl: 2 * 86400 });
+      n++;
+    } catch (e) { /* on réessaiera à la minute suivante */ }
+  }
+  return n;
+}
+
 /* ---------------- routes ---------------- */
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(checkLineups(env));
+  },
   async fetch(req, env) {
     const url = new URL(req.url);
     const p = url.pathname;
@@ -473,6 +525,14 @@ export default {
       if (!buf) return json(req, { ok: false, reason: "no_data_yet" }, 503);
       return new Response(buf, { encodeBody: "manual", headers: { "Content-Type": "application/json; charset=utf-8",
         "Content-Encoding": "gzip", "Cache-Control": "private, max-age=3600", ...SEC, ...cors(req) } });
+    }
+    // compos officielles fraîches d'un match (Pro et Elite)
+    if (p === "/api/lineup") {
+      if (!user) return json(req, { ok: false, reason: "session" }, 401);
+      const acc = await access(env, user);
+      if (!["pro", "elite"].includes(acc.tier)) return json(req, { ok: false, reason: "locked", need: "pro" }, 403);
+      const v = await env.KV.get("lu:" + String(url.searchParams.get("eid") || "").slice(0, 80), "json");
+      return json(req, v ? { ok: true, ...v } : { ok: false, reason: "not_yet" });
     }
     if (p === "/api/snapshot" || p === "/api/engine") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);

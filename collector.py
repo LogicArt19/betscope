@@ -388,6 +388,37 @@ def _best_team(name, candidates):
     return best if bs >= 0.5 else None
 
 
+def publish_lineup_watch(events, st):
+    """Liste légère des matchs des 36 prochaines heures (identifiant ESPN + onze attendu) : le serveur
+    Cloudflare la lit chaque minute pour récupérer les compos officielles dès leur publication."""
+    now = datetime.now(timezone.utc)
+    board = st.data.get("web_board") or {}
+    web = st.data.get("web") or {}
+    out = []
+    for ev in events:
+        try:
+            t = b.parse_time(ev["commence_time"])
+        except (KeyError, ValueError):
+            continue
+        if not (now - timedelta(hours=1) < t < now + timedelta(hours=36)):
+            continue
+        slug = S.ESPN_SLUGS.get(ev.get("sport_key"))
+        c = board.get(slug) if slug else None
+        if not c:
+            continue
+        m = st._match_one(ev, c["list"])
+        if not m:
+            continue
+        w = (web.get(ev["id"]) or {}).get("v") or {}
+        exp = {}
+        for ro in (w.get("last_xi") or []):
+            exp[ro.get("side")] = [p.get("full") or p.get("n") for p in ro.get("xi") or []]
+        out.append({"eid": ev["id"], "espn": m["id"], "slug": slug, "start": t.isoformat(),
+                    "home": ev.get("home_team"), "away": ev.get("away_team"), "expected": exp})
+    cf_put("lineup_watch", {"built": time.time(), "list": out}, gz=False)
+    return len(out)
+
+
 def add_fd_h2h(events, st):
     """Les 5 dernières confrontations en championnat (football-data.co.uk, gratuit, sans clé) pour chaque match
     qui a une fiche, quand ESPN ne les donne pas."""
@@ -468,6 +499,11 @@ def main():
         add_espn_odds(events, st)
     except Exception as e:
         log("cotes ESPN :", e)
+    try:
+        n = publish_lineup_watch(events, st)
+        log("surveillance des compos :", n, "matchs dans les 36 h")
+    except Exception as e:
+        log("surveillance des compos :", e)
     try:
         n = add_fd_h2h(events, st)
         log("face-à-face (football-data.co.uk) :", n, "matchs complétés")

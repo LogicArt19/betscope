@@ -733,12 +733,26 @@ function pitch(l, away){
   }).join("")).join("");
   return `<div class="pitch ${away?"aw":""}"><div class="ln half"></div><div class="ln circ"></div><div class="ln boxb"></div><div class="ln boxt"></div><div class="ln smb"></div><div class="ln smt"></div>${pls}</div>`;
 }
+// compos fraîches du serveur (vérifiées chaque minute dans l'heure avant le match)
+const LUF = {};
+function freshLineups(eid){
+  if (window.__BRIDGE__ || rank() < 2) return null;
+  const c = LUF[eid];
+  if (!c || (!c.ok && Date.now() - c.t > 60000)) {
+    LUF[eid] = Object.assign(c || {}, {t: Date.now()});
+    server("/api/lineup?eid=" + encodeURIComponent(eid)).then(r => { LUF[eid] = Object.assign(r, {t: Date.now()}); if (r.ok && route().v === "match" && route().a === eid) render(); }).catch(() => {});
+  }
+  return c && c.ok ? c : null;
+}
 function lineupsBlock(e, i){
-  const off = i.lineups || [], last = i.last_xi || [];
+  const fr_ = freshLineups(e.id);
+  const off = (fr_ && fr_.lineups) || i.lineups || [], last = i.last_xi || [];
   const L = off.length ? off : last;
   if (!L.length) return `<div class="panel empty"><b>Pas encore publiées</b>Les compos officielles arrivent environ une heure avant le coup d'envoi.</div>`;
   const ordered = [...L].sort((a, b) => (a.side === "away") - (b.side === "away"));
-  return (off.length ? "" : `<div class="warn" style="margin-bottom:12px">Compos officielles pas encore publiées (environ 1 h avant le match). Voici les onze alignés par chaque équipe à son <b>dernier match</b> : c'est une indication, pas la compo de ce match.</div>`)
+  const changes = off.filter(l => (l.in && l.in.length) || (l.out && l.out.length));
+  const chBox = changes.length ? `<div class="panel box" style="margin-bottom:12px"><h3>Changements par rapport au dernier match</h3>${changes.map(l => `<p class="note"><b>${esc(l.team)}</b> : ${l.in.length ? "entrent " + l.in.map(esc).join(", ") : ""}${l.in.length && l.out.length ? " · " : ""}${l.out.length ? "sortent " + l.out.map(esc).join(", ") : ""}</p>`).join("")}<p class="note" style="margin-top:6px">Un titulaire important sur le banc peut changer les chances : regarde si les cotes ont bougé.</p></div>` : "";
+  return chBox + (off.length ? (fr_ ? `<p class="note" style="margin-bottom:8px">Compos officielles récupérées à ${new Date(fr_.ts).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}.</p>` : "") : `<div class="warn" style="margin-bottom:12px">Compos officielles pas encore publiées (environ 1 h avant le match). Voici les onze alignés par chaque équipe à son <b>dernier match</b> : c'est une indication, pas la compo de ce match.</div>`)
     + `<div class="pitches">${ordered.map(l => `<div class="panel box pitchbox"><h3>${esc(l.team)} <span class="pill">${esc(l.formation||"")}</span>${l.last?` <span class="pill warn">dernier match${l.opp?" · contre "+esc(l.opp):""}</span>`:` <span class="pill ok">officielle</span>`}</h3>
         ${pitch(l, l.side === "away")}
         ${(l.bench||[]).length ? `<div class="bench"><b>Remplaçants :</b> ${l.bench.map(b => esc((b.num?b.num+" ":"") + b.n)).join(", ")}</div>` : ""}</div>`).join("")}</div>`;

@@ -19,6 +19,7 @@ import re
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -270,11 +271,31 @@ OP_EVERY_H = 8   # 3 fois par jour x 2 requêtes ≈ 180 / mois
 
 
 def _op_get(path, **params):
-    params["apiKey"] = os.environ.get("ODDSPAPI_KEY", "").strip()
+    params["apiKey"] = os.environ.get("ODDSPAPI_KEY", "").strip().strip('"').strip("'")
     url = f"{OP_BASE}/{path}?{urllib.parse.urlencode(params)}"
     req = urllib.request.Request(url, headers={"User-Agent": "Cotescope/1.0", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read().decode("utf-8"))
+
+
+def oddspapi_diag():
+    """Diagnostic sans révéler la clé : longueur, caractères suspects, réponse brute de /account."""
+    raw = os.environ.get("ODDSPAPI_KEY", "")
+    k = raw.strip().strip('"').strip("'")
+    log(f"OddsPapi diag : clé de {len(raw)} caractères (après nettoyage {len(k)}), "
+        f"espaces={'oui' if raw != raw.strip() else 'non'}, guillemets={'oui' if k != raw.strip() else 'non'}, "
+        f"début={k[:3]}…")
+    for label, url, headers in (("paramètre apiKey", f"{OP_BASE}/account?apiKey={urllib.parse.quote(k)}", {}),
+                                ("en-tête x-api-key", f"{OP_BASE}/account", {"x-api-key": k}),
+                                ("paramètre apikey", f"{OP_BASE}/account?apikey={urllib.parse.quote(k)}", {})):
+        try:
+            req = urllib.request.Request(url, headers=dict({"User-Agent": "Cotescope/1.0", "Accept": "application/json"}, **headers))
+            with urllib.request.urlopen(req, timeout=30) as r:
+                log(f"OddsPapi diag ({label}) : HTTP {r.status} {r.read().decode()[:300]}")
+        except urllib.error.HTTPError as e:
+            log(f"OddsPapi diag ({label}) : HTTP {e.code} {e.read().decode(errors='replace')[:300]}")
+        except Exception as e:
+            log(f"OddsPapi diag ({label}) : {e}")
 
 
 def collect_oddspapi(events, state):
@@ -698,6 +719,11 @@ def main():
         add_espn_odds(events, st)
     except Exception as e:
         log("cotes ESPN :", e)
+    if os.environ.get("ODDSPAPI_KEY") and not state.get("oddspapi", {}).get("boards"):
+        try:
+            oddspapi_diag()
+        except Exception as e:
+            log("OddsPapi diag :", e)
     try:
         collect_oddspapi(events, state)
     except Exception as e:

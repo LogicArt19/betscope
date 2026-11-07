@@ -218,6 +218,27 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .opt.sm{padding:13px 16px;margin-bottom:8px}
 .opt .body{margin-top:10px}
 .avg{font-size:12.5px;color:var(--fog);margin-top:8px}
+.lab{display:grid;grid-template-columns:minmax(300px,380px) minmax(0,1fr);gap:18px;align-items:start}
+.lab .rule{padding:18px}
+.cond{display:grid;grid-template-columns:70px minmax(0,1fr) 34px;gap:6px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed var(--rim)}
+.cond select[data-cv]{grid-column:1/-1}
+.cond select,.cond input,.lab select.in{min-width:0}
+.sel2{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--rim2);background:var(--night);color:var(--chalk);font:inherit;font-size:14px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.kpi2{padding:14px 16px}
+.kpi2 small{color:var(--fog);font-size:12px;font-weight:600;display:block}
+.kpi2 b{font-family:var(--disp);font-size:24px}
+.verdict{padding:14px 16px;border-radius:12px;margin-bottom:12px;font-size:14px;line-height:1.45}
+.verdict.good{background:rgba(38,224,184,.07);border:1px solid rgba(38,224,184,.35)}
+.verdict.mid{background:rgba(242,184,75,.07);border:1px solid rgba(242,184,75,.35)}
+.verdict.bad{background:rgba(255,107,122,.06);border:1px solid rgba(255,107,122,.3)}
+.curve{width:100%;height:190px;display:block}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.tbl td,.tbl th{padding:8px 6px;border-top:1px solid var(--rim);text-align:right}
+.tbl th{color:var(--fog);font-weight:600;font-size:12px}
+.tbl td:first-child,.tbl th:first-child{text-align:left}
+.pos{color:var(--home)} .neg{color:var(--bad)}
+@media (max-width:900px){.lab{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
 .gleg{cursor:pointer;border-radius:8px}
 .pitches{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .pitchbox h3{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
@@ -377,15 +398,16 @@ const ICON = {
   goal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>',
   ticket:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/></svg>',
   bilan:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  lab:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7 15h10"/></svg>',
   lock:'<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
 };
-const VIEWS = [["matchs","Matchs"],["picks","Pronostics"],["goal","Objectif"],["ticket","Mon ticket"],["bilan","Bilan"]];
+const VIEWS = [["matchs","Matchs"],["picks","Pronostics"],["goal","Objectif"],["lab","Stratégies"],["ticket","Mon ticket"],["bilan","Bilan"]];
 const PLAN_NAME = {gratuit:"Gratuit", essentiel:"Essentiel", pro:"Pro", elite:"Elite"};
 const RANK = {gratuit:0, essentiel:1, pro:2, elite:3};
 const PLANS = [
   {id:"essentiel", name:"Essentiel", price:"9,99", feats:["Les 6 grands championnats","Paris principaux : 1N2, double chance, buts, les 2 marquent","Objectif : les 5 tickets qui ont le plus de chances","Mon ticket : cote, chances, gain","Forme et classement"]},
   {id:"pro", name:"Pro", price:"19,99", hot:"Le plus choisi", feats:["Tout Essentiel","Tous les paris : buteurs, handicaps, score exact…","Page match complète : absents, compos, face-à-face, météo","Objectif : des dizaines de tickets, triés et filtrés","Bilan de tes tickets"]},
-  {id:"elite", name:"Elite", price:"49,99", feats:["Tout Pro","Paris value et sélection de Cotescope","Mouvement des cotes","Actus de dernière minute","Fiabilité mesurée et bankroll"]},
+  {id:"elite", name:"Elite", price:"49,99", feats:["Tout Pro","Paris value et sélection de Cotescope","Mouvement des cotes","Actus de dernière minute","Simulateur de stratégies sur 5 saisons","Fiabilité mesurée et bankroll"]},
 ];
 const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["unibet_fr","Unibet"],["pmu_fr","PMU"],["parionssport_fr","Parions Sport"],["netbet_fr","NetBet"]];
 const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un compte existe déjà avec cet e-mail : connecte-toi.",
@@ -917,6 +939,226 @@ document.addEventListener("click", e => {
 document.addEventListener("keydown", e => { if (e.key === "Enter" && (e.target.id === "gl-s" || e.target.id === "gl-t")) $("#gl-go").click(); });
 
 /* ======================================================================
+   Vue : Stratégies (backtesting sur l'historique football-data.co.uk)
+   ====================================================================== */
+const LAB = {data:null, loading:false, err:null, res:null, today:null,
+  rule:{bet:"H", odds:"avg", lg:null, s0:null, s1:null, omin:"", omax:"", conds:[{v:"h_vpts5", op:">=", x:"10"}]}};
+const BTS = {H:["Victoire domicile","H",(r,c)=>r[c.hg]>r[c.ag]], D:["Match nul","D",(r,c)=>r[c.hg]===r[c.ag]], A:["Victoire extérieur","A",(r,c)=>r[c.hg]<r[c.ag]],
+  O:["Plus de 2,5 buts","O",(r,c)=>r[c.hg]+r[c.ag]>2], U:["Moins de 2,5 buts","U",(r,c)=>r[c.hg]+r[c.ag]<3]};
+const ODDSRC = {avg:"Cote moyenne du marché", max:"Meilleure cote du marché", ps:"Cote Pinnacle"};
+const LV = [
+  ["h_pts5","Domicile : points sur ses 5 derniers matchs"], ["h_vpts5","Domicile : points sur ses 5 derniers à domicile"],
+  ["h_gf5","Domicile : buts marqués (5 derniers)"], ["h_ga5","Domicile : buts encaissés (5 derniers)"],
+  ["h_vgf5","Domicile : buts marqués à domicile (5 derniers)"], ["h_vga5","Domicile : buts encaissés à domicile (5 derniers)"],
+  ["h_o255","Domicile : matchs à plus de 2,5 buts (sur 5)"], ["h_btts5","Domicile : matchs où les 2 ont marqué (sur 5)"],
+  ["h_sot5","Domicile : tirs cadrés par match (5 derniers)"], ["h_rank","Domicile : classement"], ["h_rest","Domicile : jours de repos"],
+  ["a_pts5","Extérieur : points sur ses 5 derniers matchs"], ["a_vpts5","Extérieur : points sur ses 5 derniers à l'extérieur"],
+  ["a_gf5","Extérieur : buts marqués (5 derniers)"], ["a_ga5","Extérieur : buts encaissés (5 derniers)"],
+  ["a_vgf5","Extérieur : buts marqués à l'extérieur (5 derniers)"], ["a_vga5","Extérieur : buts encaissés à l'extérieur (5 derniers)"],
+  ["a_o255","Extérieur : matchs à plus de 2,5 buts (sur 5)"], ["a_btts5","Extérieur : matchs où les 2 ont marqué (sur 5)"],
+  ["a_sot5","Extérieur : tirs cadrés par match (5 derniers)"], ["a_rank","Extérieur : classement"], ["a_rest","Extérieur : jours de repos"],
+  ["rankgap","Écart de classement (extérieur − domicile)"], ["gf_sum","Buts marqués par les 2 équipes (5 derniers chacune)"],
+  ["ga_sum","Buts encaissés par les 2 équipes (5 derniers chacune)"], ["played","Journée du championnat"],
+  ["oddH","Cote victoire domicile"], ["oddD","Cote match nul"], ["oddA","Cote victoire extérieur"],
+];
+const LV_NAME = Object.fromEntries(LV);
+const PRESETS = [
+  ["Favori en forme à domicile", {bet:"H", omin:"1.4", omax:"2.2", conds:[{v:"h_vpts5",op:">=",x:"10"},{v:"a_pts5",op:"<=",x:"7"}]}],
+  ["Festival de buts", {bet:"O", omin:"", omax:"", conds:[{v:"gf_sum",op:">=",x:"16"},{v:"ga_sum",op:">=",x:"12"}]}],
+  ["Deux défenses solides", {bet:"U", omin:"", omax:"", conds:[{v:"ga_sum",op:"<=",x:"8"}]}],
+  ["Outsider mieux classé", {bet:"A", omin:"2.4", omax:"", conds:[{v:"rankgap",op:"<=",x:"-6"}]}],
+];
+function labCols(d){ const c = {}; d.cols.forEach((k, i) => c[k] = i); return c; }
+function labVal(r, c, v){
+  if (v === "rankgap") return r[c.a_rank] != null && r[c.h_rank] != null ? r[c.a_rank] - r[c.h_rank] : null;
+  if (v === "gf_sum") return r[c.h_gf5] != null && r[c.a_gf5] != null ? r[c.h_gf5] + r[c.a_gf5] : null;
+  if (v === "ga_sum") return r[c.h_ga5] != null && r[c.a_ga5] != null ? r[c.h_ga5] + r[c.a_ga5] : null;
+  if (v === "oddH" || v === "oddD" || v === "oddA") return r[c["avg" + v.slice(3)]];
+  const x = r[c[v]];
+  return x == null ? null : (v.endsWith("_sot5") ? x / 10 : x);
+}
+const labOk = (val, op, x) => val != null && (op === ">=" ? val >= x : op === "<=" ? val <= x : val === x);
+function labOddsCol(c, bet, src){ const k = {H:"H",D:"D",A:"A",O:"O",U:"U"}[bet]; return c[src + k]; }
+function normCdf(z){ const t = 1 / (1 + .2316419 * Math.abs(z)), d = .3989423 * Math.exp(-z * z / 2);
+  const p = d * t * (.3193815 + t * (-.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - p : p; }
+function labRun(){
+  const d = LAB.data, c = labCols(d), R = LAB.rule, win = BTS[R.bet][2];
+  const oc = labOddsCol(c, R.bet, R.odds), lg = new Set(R.lg || Object.keys(d.leagues));
+  const omin = parseFloat(String(R.omin).replace(",", ".")) || 0, omax = parseFloat(String(R.omax).replace(",", ".")) || 1e9;
+  const conds = R.conds.filter(k => k.v && String(k.x).trim() !== "").map(k => ({...k, x: parseFloat(String(k.x).replace(",", "."))})).filter(k => !isNaN(k.x));
+  const bets = [];
+  for (const r of d.rows) {
+    if (!lg.has(r[c.lg])) continue;
+    if (R.s0 && r[c.season] < R.s0) continue;
+    if (R.s1 && r[c.season] > R.s1) continue;
+    if (r[c.h_n] < 3 || r[c.a_n] < 3) continue; // pas assez d'historique avant le match
+    const o = r[oc]; if (!o || o < omin || o > omax) continue;
+    let ok = true; for (const k of conds) { if (!labOk(labVal(r, c, k.v), k.op, k.x)) { ok = false; break; } }
+    if (!ok) continue;
+    bets.push({day: r[c.day], s: r[c.season], lg: r[c.lg], o, w: win(r, c), h: r[c.h], a: r[c.a], sc: r[c.hg] + "-" + r[c.ag]});
+  }
+  bets.sort((x, y) => x.day - y.day);
+  let cum = 0, peak = 0, dd = 0, streak = 0, worst = 0, wins = 0, so = 0, sq = 0;
+  const curve = [], bySeason = {}, byLg = {};
+  for (const b of bets) {
+    const pr = b.w ? b.o - 1 : -1; cum += pr; so += pr; sq += pr * pr; if (b.w) wins++;
+    peak = Math.max(peak, cum); dd = Math.max(dd, peak - cum);
+    streak = b.w ? 0 : streak + 1; worst = Math.max(worst, streak); curve.push(cum);
+    for (const [m, k] of [[bySeason, b.s], [byLg, b.lg]]) { const x = m[k] = m[k] || {n:0, w:0, p:0, o:0}; x.n++; x.w += b.w ? 1 : 0; x.p += pr; x.o += b.o; }
+  }
+  const n = bets.length, mean = n ? so / n : 0, sd = n > 1 ? Math.sqrt(Math.max(1e-9, (sq - n * mean * mean) / (n - 1))) : 0;
+  const pChance = n > 1 ? 1 - normCdf(mean / (sd / Math.sqrt(n))) : 1;
+  const seasonsAll = [...new Set(d.rows.map(r => r[c.season]))].sort(), recent = seasonsAll.slice(-2);
+  const part = f => { const xs = bets.filter(f); const p = xs.reduce((s, b) => s + (b.w ? b.o - 1 : -1), 0); return {n: xs.length, roi: xs.length ? p / xs.length : 0}; };
+  LAB.res = {n, wins, profit: cum, roi: mean, dd, worst, avgO: n ? bets.reduce((s, b) => s + b.o, 0) / n : 0, pChance, curve, bySeason, byLg, bets,
+    old: part(b => !recent.includes(b.s)), rec: part(b => recent.includes(b.s)), recent};
+  LAB.today = labToday(conds);
+}
+const normName = t => String(t||"").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  .replace(/\b(fc|cf|ac|afc|sc|as|ss|ssc|us|rc|sv|vfb|vfl|tsg|ogc|stade|club|de|real|the|calcio|1\.|cd|ud|sd|rcd)\b/g, " ")
+  .replace(/\bman\b/g, "manchester").replace(/\butd\b/g, "united").replace(/\bst\b/g, "saint").replace(/\bath\b/g, "athletic")
+  .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+const NAME_ALIAS = {"paris sg":"paris saint germain", "psg":"paris saint germain", "nottm forest":"nottingham forest", "wolves":"wolverhampton wanderers", "spurs":"tottenham",
+  "athletic madrid":"atletico madrid", "athletic bilbao":"athletic bilbao", "betis":"betis", "sociedad":"sociedad", "inter":"inter milan", "milan":"milan",
+  "m gladbach":"borussia monchengladbach", "ein frankfurt":"eintracht frankfurt", "dortmund":"borussia dortmund", "leverkusen":"bayer leverkusen",
+  "sheffield united":"sheffield united", "newcastle":"newcastle united", "brighton":"brighton and hove albion", "west ham":"west ham united"};
+function labTeamId(name, code){
+  const d = LAB.data; let n0 = normName(name); n0 = NAME_ALIAS[n0] ? normName(NAME_ALIAS[n0]) : n0; let best = null, bs = 0;
+  d.teams.forEach((t, i) => {
+    const st = d.now[String(i)]; if (!st || st.lg !== code) return;
+    let n1 = normName(t); n1 = NAME_ALIAS[n1] ? normName(NAME_ALIAS[n1]) : n1;
+    if (n1 === n0) { best = i; bs = 9; return; }
+    const A = new Set(n0.split(" ")), B = n1.split(" ").filter(Boolean);
+    const sc = B.filter(w => A.has(w) || [...A].some(a => a.length > 3 && (a.startsWith(w) || w.startsWith(a)))).length / Math.max(B.length, A.size);
+    if (sc > bs) { bs = sc; best = i; }
+  });
+  return bs >= .5 ? best : null;
+}
+function labToday(conds){
+  const d = LAB.data, c = labCols(d), R = LAB.rule, out = [];
+  const code = {}; Object.entries(d.leagues).forEach(([k, v]) => code[v.key] = k);
+  const lg = new Set(R.lg || Object.keys(d.leagues)), epoch = Date.UTC(2000, 0, 1);
+  for (const m of (MATCHES || [])) {
+    const lc = code[m.sport_key]; if (!lc || !lg.has(lc)) continue;
+    const hi = labTeamId(m.home, lc), ai = labTeamId(m.away, lc); if (hi == null || ai == null) continue;
+    const H = d.now[String(hi)], A = d.now[String(ai)], day = Math.floor((m.ts * 1000 - epoch) / 864e5);
+    const r = new Array(d.cols.length).fill(null);
+    const put = (pre, snap) => ["n","pts5","gf5","ga5","o255","btts5","sot5","vpts5","vgf5","vga5"].forEach((k, j) => r[c[pre + k]] = snap[j]);
+    put("h_", H.home); put("a_", A.away);
+    r[c.h_rank] = H.rank; r[c.a_rank] = A.rank; r[c.played] = H.played;
+    r[c.h_rest] = H.last != null ? Math.min(30, day - H.last) : null; r[c.a_rest] = A.last != null ? Math.min(30, day - A.last) : null;
+    const od = (m.odds || []).map(x => x && x.odds); r[c.avgH] = od[0]; r[c.avgD] = od[1]; r[c.avgA] = od[2];
+    if (r[c.h_n] < 3 || r[c.a_n] < 3) continue;
+    if (!conds.every(k => labOk(labVal(r, c, k.v), k.op, k.x))) continue;
+    const o = {H: od[0], D: od[1], A: od[2]}[R.bet] || null;
+    const omin = parseFloat(String(R.omin).replace(",", ".")) || 0, omax = parseFloat(String(R.omax).replace(",", ".")) || 1e9;
+    if (o && (o < omin || o > omax)) continue;
+    out.push({m, o});
+  }
+  return out;
+}
+function curveSvg(cv){
+  if (!cv.length) return "";
+  const W = 600, H = 190, mn = Math.min(0, ...cv), mx = Math.max(0, ...cv), sp = (mx - mn) || 1;
+  const X = i => (i / Math.max(1, cv.length - 1)) * W, Y = v => H - 10 - ((v - mn) / sp) * (H - 20);
+  const pts = cv.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const col = cv[cv.length - 1] >= 0 ? "var(--home)" : "var(--bad)";
+  return `<svg class="curve" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Courbe des gains">
+    <line x1="0" x2="${W}" y1="${Y(0)}" y2="${Y(0)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="4 4"/>
+    <polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+}
+const sgn = (x, d=1) => (x >= 0 ? "+" : "−") + fr(Math.abs(x), d);
+function labVerdict(R){
+  if (R.n < 50) return ["bad", `<b>Trop peu de paris (${R.n}) pour conclure.</b> En dessous de 50 paris, le résultat dépend surtout de la chance. Élargis les championnats ou assouplis les conditions.`];
+  const pc_ = Math.round(R.pChance * 100);
+  const split = R.old.n >= 20 && R.rec.n >= 20 ? ` Avant ${R.recent[0]} : ${sgn(R.old.roi * 100)} % · depuis : ${sgn(R.rec.roi * 100)} %.` : "";
+  if (R.roi > 0 && R.pChance < .05 && R.n >= 100) return ["good", `<b>Rentable, et statistiquement solide.</b> Il y a environ ${pc_ < 1 ? "moins de 1" : pc_} % de chances qu'un tel résultat soit dû au hasard.${split} Attention quand même : plus on ajoute de conditions pour coller au passé, moins ça marche à l'avenir.`];
+  if (R.roi > 0) return ["mid", `<b>Rentable sur le papier, mais ça peut être de la chance.</b> Environ ${pc_} % de chances qu'un tel résultat arrive par hasard. Il faudrait plus de paris pour en être sûr.${split}`];
+  return ["bad", `<b>Pas rentable.</b> Sur ${R.n} paris, cette stratégie aurait perdu ${fr(Math.abs(R.roi * 100), 1)} % de ce qui a été misé.${split}`];
+}
+function vLab(){
+  const head = `<h1 class="t">Stratégies</h1><p class="lead">Invente ta règle de pari et vois en quelques secondes si elle aurait été rentable sur les saisons passées, puis quels matchs à venir la respectent.</p>`;
+  if (rank() < 3) return head + lockBox("elite", "Le simulateur de stratégies", "Teste tes propres règles sur plus de 5 saisons de résultats et de cotes réelles, avec la rentabilité, la pire série de défaites et la part de chance.");
+  if (!LAB.data) {
+    if (!LAB.loading && !LAB.err) labLoad();
+    return head + (LAB.err ? `<div class="panel empty"><b>${esc(errMsg(LAB.err))}</b>La base historique se met à jour chaque lundi.</div>` : `<div class="panel loader" style="padding:40px"><div class="scan">${spec([.45,.27,.28])}</div>Chargement de l'historique…</div>`);
+  }
+  const d = LAB.data, R = LAB.rule, lgs = Object.entries(d.leagues), selL = new Set(R.lg || lgs.map(x => x[0]));
+  const seasons = [...new Set(d.rows.map(r => r[labCols(d).season]))].sort();
+  const sopt = (v, cur) => seasons.map(y => `<option value="${y}" ${cur == y ? "selected" : ""}>${y}-${String(y + 1).slice(2)}</option>`).join("");
+  const form = `<div class="panel rule">
+    <label class="f">Exemples pour démarrer</label><div class="tgl" style="margin-bottom:14px">${PRESETS.map((p, i) => `<button class="chip" data-preset="${i}">${esc(p[0])}</button>`).join("")}</div>
+    <label class="f">Je parie sur</label><select class="sel2" id="lb-bet">${Object.entries(BTS).map(([k, v]) => `<option value="${k}" ${R.bet===k?"selected":""}>${v[0]}</option>`).join("")}</select>
+    <label class="f" style="margin-top:12px">Quand…</label>
+    <div id="lb-conds">${R.conds.map((k, i) => `<div class="cond"><select class="sel2" data-cv="${i}">${LV.map(([v, l]) => `<option value="${v}" ${k.v===v?"selected":""}>${esc(l)}</option>`).join("")}</select>
+      <select class="sel2" data-co="${i}">${[">=","<=","="].map(o => `<option value="${o}" ${k.op===o?"selected":""}>${o === ">=" ? "≥" : o === "<=" ? "≤" : "="}</option>`).join("")}</select>
+      <input class="sel2" data-cx="${i}" inputmode="decimal" value="${esc(k.x)}"><button class="btn sm" data-cdel="${i}" title="Retirer">×</button></div>`).join("")}</div>
+    <button class="btn sm" id="lb-add" style="margin-bottom:12px">+ Ajouter une condition</button>
+    <label class="f">Cote du pari</label><div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><input class="sel2" id="lb-omin" placeholder="min" value="${esc(R.omin)}" style="width:80px"><span class="note">à</span><input class="sel2" id="lb-omax" placeholder="max" value="${esc(R.omax)}" style="width:80px"></div>
+    <label class="f">Cotes utilisées</label><select class="sel2" id="lb-odds">${Object.entries(ODDSRC).map(([k, v]) => `<option value="${k}" ${R.odds===k?"selected":""}>${v}</option>`).join("")}</select>
+    <label class="f" style="margin-top:12px">Saisons</label><div style="display:flex;gap:8px;align-items:center"><select class="sel2" id="lb-s0">${sopt(0, R.s0 || seasons[0])}</select><span class="note">à</span><select class="sel2" id="lb-s1">${sopt(0, R.s1 || seasons[seasons.length - 1])}</select></div>
+    <label class="f" style="margin-top:12px">Championnats</label><div class="tgl" id="lb-lg">${lgs.map(([k, v]) => `<button class="chip ${selL.has(k)?"on":""}" data-k="${k}">${esc(v.name)}</button>`).join("")}</div>
+    <button class="btn go" id="lb-go" style="width:100%;margin-top:16px">Tester ma stratégie</button>
+    <p class="note" style="margin-top:10px">${d.rows.length.toLocaleString("fr-FR")} matchs, mis à jour le ${new Date(d.built * 1000).toLocaleDateString("fr-FR")}. Source : football-data.co.uk. Seuls les matchs où les deux équipes ont déjà au moins 3 matchs d'historique sont comptés : aucune information du futur n'est utilisée.</p></div>`;
+  return head + `<div class="lab">${form}<div id="lb-out">${labResults()}</div></div>`;
+}
+function labResults(){
+  const R = LAB.res;
+  if (!R) return `<div class="panel empty"><b>Choisis un exemple ou crée ta règle</b>Puis clique sur « Tester ma stratégie ».</div>`;
+  const [cls, txt] = labVerdict(R);
+  const rows = (m, lab) => Object.entries(m).sort().map(([k, x]) => `<tr><td>${esc(lab(k))}</td><td>${x.n}</td><td>${pc(x.w / x.n)}</td><td>${fr(x.o / x.n)}</td><td class="${x.p >= 0 ? "pos" : "neg"}">${sgn(x.p / x.n * 100)} %</td></tr>`).join("");
+  const lastBets = R.bets.slice(-12).reverse().map(b => `<tr><td>${esc(LAB.data.teams[b.h])} – ${esc(LAB.data.teams[b.a])}</td><td>${esc(b.sc)}</td><td>${fr(b.o)}</td><td class="${b.w ? "pos" : "neg"}">${b.w ? "gagné" : "perdu"}</td></tr>`).join("");
+  const T = LAB.today || [];
+  return `<div class="verdict ${cls}">${txt}</div>
+    <div class="kpis">
+      <div class="panel kpi2"><small>Paris</small><b class="num">${R.n}</b></div>
+      <div class="panel kpi2"><small>Rentabilité</small><b class="num ${R.roi >= 0 ? "pos" : "neg"}">${sgn(R.roi * 100)} %</b></div>
+      <div class="panel kpi2"><small>Gagnés</small><b class="num">${R.n ? pc(R.wins / R.n) : "–"}</b></div>
+      <div class="panel kpi2"><small>Cote moyenne</small><b class="num">${fr(R.avgO)}</b></div>
+      <div class="panel kpi2"><small>Gain pour 1 € par pari</small><b class="num ${R.profit >= 0 ? "pos" : "neg"}">${sgn(R.profit, 2)} €</b></div>
+      <div class="panel kpi2"><small>Pire série de défaites</small><b class="num">${R.worst}</b></div>
+      <div class="panel kpi2"><small>Plus forte baisse</small><b class="num">−${fr(R.dd, 1)} €</b></div>
+      <div class="panel kpi2"><small>Part de chance</small><b class="num">${R.n > 1 ? (R.pChance < .01 ? "< 1 %" : pc(R.pChance)) : "–"}</b></div>
+    </div>
+    <div class="panel box"><h3>Évolution des gains (1 € par pari)</h3>${curveSvg(R.curve)}</div>
+    <h2 class="s">Matchs à venir qui respectent ta règle</h2>
+    ${T.length ? `<div class="panel">${T.map(({m, o}) => `<div class="bet" data-go="match" data-arg="${esc(m.id)}" style="cursor:pointer;grid-template-columns:minmax(0,1fr) auto"><div class="sel">${esc(m.home)} – ${esc(m.away)}<small>${esc(m.league)} · ${esc(m.date)} · ${esc(BTS[LAB.rule.bet][0])}</small></div><b class="num">${o ? fr(o) : "cote à vérifier"}</b></div>`).join("")}</div>` : `<div class="panel empty"><b>Aucun match à venir ne respecte ta règle pour l'instant</b>Seuls les championnats suivis par Cotescope peuvent être repérés.</div>`}
+    <h2 class="s">Par saison</h2><div class="panel box"><table class="tbl"><tr><th>Saison</th><th>Paris</th><th>Gagnés</th><th>Cote moy.</th><th>Rentabilité</th></tr>${rows(R.bySeason, k => k + "-" + String(+k + 1).slice(2))}</table></div>
+    <h2 class="s">Par championnat</h2><div class="panel box"><table class="tbl"><tr><th>Championnat</th><th>Paris</th><th>Gagnés</th><th>Cote moy.</th><th>Rentabilité</th></tr>${rows(R.byLg, k => (LAB.data.leagues[k] || {}).name || k)}</table></div>
+    <h2 class="s">Derniers paris de la stratégie</h2><div class="panel box"><table class="tbl"><tr><th>Match</th><th>Score</th><th>Cote</th><th>Résultat</th></tr>${lastBets}</table></div>
+    <p class="note" style="margin-top:12px">Les bookmakers français paient souvent un peu moins que la moyenne du marché : compte environ 2 à 4 points de rentabilité en moins. Les résultats passés ne garantissent pas les résultats futurs.</p>`;
+}
+async function labLoad(){
+  LAB.loading = true;
+  try {
+    const r = await server("/api/history", "GET", null, true);
+    if (r instanceof Response) LAB.data = await r.json(); else LAB.err = r.reason || "network";
+  } catch(e) { LAB.err = "network"; }
+  LAB.loading = false;
+  if (route().v === "lab") render();
+}
+function labRead(){
+  const R = LAB.rule;
+  R.bet = $("#lb-bet").value; R.odds = $("#lb-odds").value; R.omin = $("#lb-omin").value.trim(); R.omax = $("#lb-omax").value.trim();
+  R.s0 = +$("#lb-s0").value; R.s1 = +$("#lb-s1").value; if (R.s0 > R.s1) [R.s0, R.s1] = [R.s1, R.s0];
+  R.lg = $$("#lb-lg .chip.on").map(x => x.dataset.k);
+  R.conds = R.conds.map((k, i) => ({v: $(`[data-cv="${i}"]`).value, op: $(`[data-co="${i}"]`).value, x: $(`[data-cx="${i}"]`).value}));
+}
+document.addEventListener("click", e => {
+  if (!$("#lb-go")) return;
+  const pr = e.target.closest("[data-preset]");
+  if (pr) { labRead(); Object.assign(LAB.rule, JSON.parse(JSON.stringify(PRESETS[+pr.dataset.preset][1]))); labRun(); render(); return; }
+  if (e.target.closest("#lb-add")) { labRead(); LAB.rule.conds.push({v:"a_pts5", op:"<=", x:"6"}); render(); return; }
+  const dl = e.target.closest("[data-cdel]"); if (dl) { labRead(); LAB.rule.conds.splice(+dl.dataset.cdel, 1); render(); return; }
+  if (e.target.closest("#lb-go")) {
+    labRead();
+    if (!LAB.rule.lg.length) { toast("Coche au moins un championnat"); return; }
+    $("#lb-out").innerHTML = `<div class="panel loader" style="padding:40px"><div class="scan">${spec([.45,.27,.28])}</div>Calcul sur tout l'historique…</div>`;
+    setTimeout(() => { labRun(); render(); }, 20);
+  }
+});
+
+/* ======================================================================
    Vue : Mon ticket
    ====================================================================== */
 let TSTAKE = "10";
@@ -1037,7 +1279,7 @@ function render(){
   if (!web && !window.__BRIDGE__) return;
   refreshState();
   const r = route();
-  const V = {matchs:vMatchs, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, ticket:vTicket, bilan:vBilan, compte:vCompte};
+  const V = {matchs:vMatchs, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, lab:vLab, ticket:vTicket, bilan:vBilan, compte:vCompte};
   $("#view").innerHTML = (V[r.v] || vMatchs)();
   chrome();
   if (r.v === "compte" && !window.__BRIDGE__) loadDevices();

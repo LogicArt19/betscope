@@ -1,0 +1,37 @@
+name: Base historique (backtesting)
+on:
+  schedule:
+    - cron: "23 5 * * 1"   # chaque lundi matin : les résultats du week-end sont publiés
+  workflow_dispatch:
+concurrency:
+  group: history
+  cancel-in-progress: true
+jobs:
+  history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CONFIGURED: ${{ secrets.CF_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.CONFIGURED == 'true'
+      - uses: actions/setup-python@v5
+        if: env.CONFIGURED == 'true'
+        with:
+          python-version: "3.12"
+      - name: Espace de stockage
+        if: env.CONFIGURED == 'true'
+        id: kv
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || '248f03341b6e3ba1b8392e98d98f9844' }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          id=$(python ci/kv_id.py)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Téléchargement et calcul
+        if: env.CONFIGURED == 'true'
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || '248f03341b6e3ba1b8392e98d98f9844' }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_KV_ID: ${{ steps.kv.outputs.id }}
+        run: python ci/history_data.py

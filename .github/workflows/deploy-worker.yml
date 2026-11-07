@@ -25,7 +25,9 @@ jobs:
         env:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || '248f03341b6e3ba1b8392e98d98f9844' }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: echo "id=$(python3 ci/kv_id.py)" >> "$GITHUB_OUTPUT"
+        run: |
+          id=$(python3 ci/kv_id.py)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
       - name: Déploiement
         if: env.CONFIGURED == 'true'
         id: dep
@@ -40,6 +42,7 @@ jobs:
           S_WHOP_WEBHOOK_SECRET: ${{ secrets.WHOP_WEBHOOK_SECRET }}
           S_RESEND_KEY: ${{ secrets.RESEND_KEY }}
         run: |
+          export CLOUDFLARE_API_TOKEN="$(printf %s "$CLOUDFLARE_API_TOKEN" | tr -d "[:space:]")"
           sed -i "s/__KV_ID__/${{ steps.kv.outputs.id }}/" wrangler.toml
           npx --yes wrangler@3.114.0 deploy 2>&1 | tee deploy.log
           url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)

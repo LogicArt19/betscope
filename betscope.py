@@ -167,6 +167,8 @@ DEFAULT_CONFIG = {
     "day_filter": "all",
     "license": "",           # clé de licence Cotescope (abonnement)
     "web_info": True,
+    "hide_sports": [],       # championnats masqués par l'utilisateur
+    "books_chosen": False,
     "auto_refresh": True,
     "bankroll": 0.0,         # capital de départ (0 = pas de suivi)
     "daily_max_pct": 10.0,   # mise max par jour, en % du capital actuel
@@ -2176,6 +2178,7 @@ class Api:
         with self._lock:
             self._remote = True
             TIER["v"] = snap.get("tier") if snap.get("tier") in TIER_RANK else "essentiel"
+            self._covered = list(snap.get("sports") or sorted({e.get("sport_key") for e in snap.get("events", [])}))
             self._events = snap.get("events", [])
             self._is_demo = False
             self._last_fetch = snap.get("ts") or time.time()
@@ -2300,7 +2303,9 @@ class Api:
                 use = (self._remote or bool(self._stats_key()) or cfg.get("web_info", True)) and not self._is_demo
                 self._info = self._stats.info_for(self._events) if use else {}
                 self._days = day_options(self._events, self._info)
-                events = filter_events(self._events, cfg.get("day_filter", "all"), self._info)
+                hidden = set(cfg.get("hide_sports") or [])
+                events = [e for e in self._events if e.get("sport_key") not in hidden] if hidden else self._events
+                events = filter_events(events, cfg.get("day_filter", "all"), self._info)
                 present = {bk.get("key") for ev in self._events for bk in ev.get("bookmakers", [])}
                 mine = {b.strip().lower() for b in cfg.get("bookmakers", "").split(",") if b.strip()}
                 self._warning = ""
@@ -2471,7 +2476,10 @@ class Api:
         with self._lock:
             cfg = dict(self._cfg)
         cfg["_cats"] = [{"key": k, "label": v} for k, v in mk.CATEGORIES.items()]
-        cfg["_sports"] = [{"key": k, "label": v} for k, v in SPORTS.items()]
+        covered = getattr(self, "_covered", None) or sorted({e.get("sport_key") for e in self._events if e.get("sport_key")})
+        present = {e.get("sport_key") for e in self._events}
+        cfg["_sports"] = [{"key": k, "label": SPORTS.get(k, k), "n": sum(1 for e in self._events if e.get("sport_key") == k)}
+                          for k in covered if k in present or not self._is_demo]
         cfg["_credits_month"] = credits_per_month(self._cfg)
         return cfg
 
@@ -2505,8 +2513,8 @@ class Api:
             except ValueError:
                 return {"ok": False, "error": f"Valeur invalide : {k}"}
             cfg[k] = v
-        source_changed = any(cfg[k] != self._cfg[k] for k in
-                             ("api_key", "source_books", "regions", "markets", "sports", "extra_sports", "demo"))
+        source_changed = not self._remote and any(cfg[k] != self._cfg[k] for k in
+                                                  ("api_key", "source_books", "regions", "markets", "sports", "extra_sports", "demo"))
         if cfg.get("football_key") != self._cfg.get("football_key") or cfg.get("fd_key") != self._cfg.get("fd_key"):
             self._next_stats = time.time() + 1
         with self._lock:

@@ -182,6 +182,18 @@ async function tooMany(req, key) {
   return n >= 10;
 }
 
+// version gratuite : 3 comptes max par connexion internet et par jour (contre les comptes à la chaîne)
+async function freeQuota(req, add) {
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  if (!cache) return false;
+  const ip = req.headers.get("CF-Connecting-IP") || "x";
+  const ck = new Request("https://cache.cotescope/free/" + encodeURIComponent(ip));
+  const hit = await cache.match(ck);
+  const n = hit ? Number(await hit.text()) : 0;
+  if (add) await cache.put(ck, new Response(String(n + 1), { headers: { "Cache-Control": "max-age=86400" } }));
+  return n >= 3;
+}
+
 async function sendMail(env, to, subject, html) {
   if (!env.RESEND_KEY) return false;
   const r = await fetch("https://api.resend.com/emails", {
@@ -225,10 +237,12 @@ export default {
       if (pw.length < 8 || pw.length > 200) return json(req, { ok: false, reason: "weak_password" }, 400);
       if (await tooMany(req, "signup")) return json(req, { ok: false, reason: "too_many" }, 429);
       if (await getUser(env, email)) return json(req, { ok: false, reason: "email_taken" }, 409);
+      if (await freeQuota(req, false)) return json(req, { ok: false, reason: "too_many_accounts" }, 429);
       const salt = rand(16);
       const user = { email, name: String(body.name || "").slice(0, 60), salt, hash: await hashPassword(pw, salt), pv: 1,
                      created: Date.now(), memberships: [] };
       await putUser(env, user);
+      await freeQuota(req, true);
       return json(req, { ...pub(user, await access(env, user)), session: await makeSession(env, user) });
     }
     if (p === "/api/login" && req.method === "POST") {

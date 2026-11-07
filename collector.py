@@ -395,6 +395,47 @@ def collect_oddspapi(events, state):
     return n
 
 
+def self_test(snap):
+    """Auto-test : fait tourner le vrai moteur sur les vraies données (comme l'appli d'un abonné Pro avec
+    Betclic, Winamax, FDJ et Bet365) et écrit dans le journal ce qu'un client verrait."""
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    old_dir = b.config_dir
+    b.config_dir = lambda: tmp
+    try:
+        api = b.Api(start_loop=False)
+        api.load_snapshot(json.loads(json.dumps(tier_snapshot(snap, "pro"))))
+        api.set_books(["betclic_fr", "winamax_fr", "parionssport_fr", "unibet_fr", "bet365"])
+        ms = api.get_matches()
+        log(f"AUTO-TEST : {len(ms)} matchs, {len(api._sel)} paris analysés, "
+            f"{sum(1 for x in api._sel if not x.get('estimated'))} avec une vraie cote")
+        fav = und = 0
+        for stake, tgt in ((10, 15), (10, 40), (10, 200)):
+            r = api.compute_objective(stake, tgt)
+            opts = r.get("options") or []
+            log(f"AUTO-TEST Objectif {stake} € -> {tgt} € : {len(opts)} tickets"
+                + (f" (erreur : {r.get('error')})" if r.get("error") else "") + (f" verrou {r.get('locked')}" if r.get("locked") else ""))
+            for o in opts[:2]:
+                t = o["tickets"][0]
+                legs = []
+                for l in t["legs"]:
+                    side = l.get("side")
+                    tag = ""
+                    if side in ("home", "away"):
+                        mine, other = (l.get("form_h"), l.get("form_a")) if side == "home" else (l.get("form_a"), l.get("form_h"))
+                        tag = f" [{mine or '?'} vs {other or '?'}]"
+                        # outsider = l'équipe soutenue a moins de chances que l'autre selon le marché
+                    if l["odds"] >= 2.6 and l.get("market") == "Résultat":
+                        und += 1
+                    elif l.get("market") == "Résultat":
+                        fav += 1
+                    legs.append(f"{l['selection']} @{l['odds']} ({round(l['p'] * 100)} %, {l.get('book')}){tag}")
+                log(f"   #{opts.index(o) + 1} {round(o['p_hit'] * 100, 1)} % : " + " | ".join(legs))
+        log(f"AUTO-TEST : victoires choisies : {fav} favoris, {und} outsiders (cote ≥ 2,6)")
+    finally:
+        b.config_dir = old_dir
+
+
 def public_record(events, st, state=None):
     """Bilan public : on enregistre chaque pari que Cotescope « jouerait », puis on le vérifie
     avec le résultat officiel. Le résumé est publié sans connexion (preuve pour la vitrine)."""
@@ -897,6 +938,11 @@ def main():
     log(f"snapshot : {len(events)} matchs, {len(snap['stats'].get('web', {}))} fiches web")
     for tier in TIERS:
         cf_put("snapshot_" + tier, tier_snapshot(snap, tier))
+    try:
+        self_test(snap)
+    except Exception as e:
+        import traceback
+        log("AUTO-TEST : plantage", e, traceback.format_exc()[-600:])
 
     try:
         public_record(events, st, state)

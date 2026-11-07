@@ -35,8 +35,10 @@ jobs:
           echo "sha=$(sha256sum dist/Cotescope.exe | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "size=$(stat -c%s dist/Cotescope.exe)" >> "$GITHUB_OUTPUT"
       # Le logiciel 3.x exige le serveur Cotescope : on ne publie le .exe que quand le serveur est en ligne
+      # Logiciel Windows en pause : on se concentre sur le site (remettre DESKTOP=on pour republier le .exe)
       - name: Serveur Cotescope en ligne ?
         id: live
+        if: vars.DESKTOP == 'on'
         shell: bash
         run: |
           api=$(curl -fsSL "https://logicart19.github.io/cotescope/config.json" 2>/dev/null | python -c "import sys,json; print(json.load(sys.stdin).get('api',''))" 2>/dev/null || true)

@@ -296,7 +296,7 @@ async function verifyWebhook(env, req, raw) {
 function pub(user, acc) {
   return { ok: true, email: user.email, name: user.name || "", tier: acc.tier, status: acc.status,
            renews: acc.renews || null, cancel: !!acc.cancel, manage: acc.manage || null,
-           trial_used: !!(user.memberships || []).length };
+           trial_used: !!(user.memberships || []).length, pause: user.pause && user.pause > Date.now() ? user.pause : null };
 }
 // alerte e-mail quand le compte est ouvert depuis un nouveau pays (si les e-mails sont configurés)
 async function newPlaceAlert(env, user, req) {
@@ -417,6 +417,15 @@ export default {
     if (p === "/api/me") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
       return json(req, pub(user, await access(env, user, url.searchParams.has("fresh"))));
+    }
+    // pause volontaire (jeu responsable) : 1, 7 ou 30 jours, impossible à raccourcir une fois lancée
+    if (p === "/api/pause" && req.method === "POST") {
+      if (!user) return json(req, { ok: false, reason: "session" }, 401);
+      const days = [1, 7, 30].includes(Number(body.days)) ? Number(body.days) : 0;
+      if (!days) return json(req, { ok: false, reason: "bad_days" }, 400);
+      user.pause = Math.max(user.pause || 0, Date.now() + days * 864e5);
+      await putUser(env, user);
+      return json(req, { ok: true, pause: user.pause });
     }
     // appareils connectés : voir, déconnecter un appareil, ou tous
     if (p === "/api/devices") {

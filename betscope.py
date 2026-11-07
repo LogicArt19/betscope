@@ -2308,6 +2308,26 @@ class Api:
         self._hist.delete_ticket(tid)
         return True
 
+    def coach(self):
+        if not tier_ok("essentiel"):
+            return {"locked": "essentiel"}
+        return self._hist.coach()
+
+    def log_manual(self, stake, odds, n_legs=1, status="pending"):
+        try:
+            stake = float(str(stake).replace(",", ".").replace("€", "").strip())
+            odds = float(str(odds).replace(",", ".").strip())
+        except ValueError:
+            return {"ok": False, "error": "Mise ou cote invalide"}
+        if stake <= 0 or odds < 1.01:
+            return {"ok": False, "error": "Mise ou cote invalide"}
+        self._hist.log_manual(stake, odds, n_legs, status if status in ("won", "lost", "pending") else "pending")
+        return {"ok": True}
+
+    def set_ticket_result(self, tid, status):
+        self._hist.set_result(tid, status)
+        return True
+
     def get_history(self):
         if not tier_ok("pro"):
             return {"locked": "pro"}

@@ -135,6 +135,110 @@ class History:
             self.save()
             return t
 
+    def log_manual(self, stake, odds, n_legs=1, status="pending", label="", when=None):
+        """Pari pris ailleurs, saisi à la main (pour le coach : il compte comme les autres)."""
+        with self.lock:
+            t = {"id": f"m{int(time.time() * 1000)}", "created": float(when or time.time()), "stake": float(stake),
+                 "label": label, "legs": [], "manual": True, "odds": float(odds), "n_legs": int(n_legs or 1),
+                 "status": status, "payout": round(float(stake) * float(odds), 2) if status == "won" else (0.0 if status == "lost" else None)}
+            self.data["user"].append(t)
+            self.save()
+            return t
+
+    def set_result(self, tid, status):
+        with self.lock:
+            for t in self.data["user"]:
+                if t["id"] == tid and t.get("manual") and status in ("won", "lost", "pending"):
+                    t["status"] = status
+                    t["payout"] = round(t["stake"] * t["odds"], 2) if status == "won" else (0.0 if status == "lost" else None)
+            self.save()
+
+    @staticmethod
+    def ticket_odds(t):
+        if t.get("manual"):
+            return float(t.get("odds") or 1)
+        o = 1.0
+        for l in t.get("legs") or []:
+            o *= float(l.get("odds") or 1)
+        return o
+
+    def coach(self):
+        """Le coach : ce que tes propres paris disent de tes habitudes (heures, jours, combinés, cotes, mises
+        après une perte). Rien n'est affiché sans assez de paris pour que ce soit fiable."""
+        with self.lock:
+            user = [dict(t) for t in self.data["user"]]
+        done = sorted([t for t in user if t["status"] in ("won", "lost")], key=lambda t: t["created"])
+        n = len(done)
+        prof = lambda ts: sum((t["payout"] or 0) - t["stake"] for t in ts)
+        stk = lambda ts: sum(t["stake"] for t in ts)
+        roi = lambda ts: prof(ts) / stk(ts) if stk(ts) else 0.0
+        out = {"n": n, "n_all": len(user), "enough": n >= 20, "insights": [], "good": [], "tilt": None}
+        if not n:
+            return out
+        stakes = sorted(t["stake"] for t in done)
+        med = stakes[len(stakes) // 2]
+        cur = worst = 0
+        for t in done:
+            cur = cur + 1 if t["status"] == "lost" else 0
+            worst = max(worst, cur)
+        out.update(roi=roi(done), profit=round(prof(done), 2), staked=round(stk(done), 2), med_stake=med,
+                   wins=sum(t["status"] == "won" for t in done), lose_streak=cur, worst_streak=worst)
+        base = roi(done)
+
+        def scan(label, groups, min_n=6):
+            for name, ts in groups:
+                if len(ts) < min_n:
+                    continue
+                r = roi(ts)
+                if r < base - 0.15 and r < 0:
+                    out["insights"].append({"kind": label, "text": f"Tes paris {name} : {r * 100:+.0f} % de rentabilité sur {len(ts)} paris, contre {base * 100:+.0f} % en moyenne.".replace(".", ",", 0)})
+                elif r > base + 0.15 and r > 0 and len(ts) >= 15 and not any(k in name for k in ("4 ou plus", "grosse cote", "nuit")):
+                    # jamais d'encouragement sur les paris risqués (gros combinés, grosses cotes, la nuit)
+                    out["good"].append({"kind": label, "text": f"Tes paris {name} marchent mieux : {r * 100:+.0f} % sur {len(ts)} paris (avec peu de paris, ça peut aussi être de la chance)."})
+
+        if n >= 20:
+            hour = lambda t: datetime.fromtimestamp(t["created"]).hour
+            scan("heure", [("pris la nuit (22 h – 6 h)", [t for t in done if hour(t) >= 22 or hour(t) < 6]),
+                           ("pris le matin", [t for t in done if 6 <= hour(t) < 12]),
+                           ("pris l'après-midi", [t for t in done if 12 <= hour(t) < 18]),
+                           ("pris en soirée", [t for t in done if 18 <= hour(t) < 22])])
+            JN = ["du lundi", "du mardi", "du mercredi", "du jeudi", "du vendredi", "du samedi", "du dimanche"]
+            scan("jour", [(JN[d], [t for t in done if datetime.fromtimestamp(t["created"]).weekday() == d]) for d in range(7)])
+            nl = lambda t: int(t.get("n_legs") or len(t.get("legs") or []) or 1)
+            scan("combinés", [("en simple (1 sélection)", [t for t in done if nl(t) == 1]),
+                              ("en combiné de 2 ou 3", [t for t in done if 2 <= nl(t) <= 3]),
+                              ("en combiné de 4 ou plus", [t for t in done if nl(t) >= 4])])
+            od = self.ticket_odds
+            scan("cotes", [("à petite cote (moins de 1,8)", [t for t in done if od(t) < 1.8]),
+                           ("à cote moyenne (1,8 à 3)", [t for t in done if 1.8 <= od(t) < 3]),
+                           ("à grosse cote (3 à 10)", [t for t in done if 3 <= od(t) < 10]),
+                           ("à très grosse cote (10 et plus)", [t for t in done if od(t) >= 10])])
+        # se refaire après une perte : la mise grimpe juste après un ticket perdu
+        after = [done[i + 1]["stake"] / max(0.01, med) for i in range(n - 1) if done[i]["status"] == "lost"]
+        chase = sum(after) / len(after) if len(after) >= 4 else None
+        if chase and chase >= 1.3:
+            out["insights"].insert(0, {"kind": "tilt", "text": f"Après une perte, tu mises en moyenne {chase:.1f} fois ta mise habituelle. C'est le signe n° 1 du « tilt » : vouloir se refaire tout de suite.".replace(".", ",", 1)})
+        # signaux des 7 derniers jours
+        now = time.time()
+        week = [t for t in user if now - t["created"] < 7 * 86400]
+        today = [t for t in user if datetime.fromtimestamp(t["created"]).date() == datetime.now().date()]
+        sig = []
+        if len(today) >= 8:
+            sig.append(f"{len(today)} paris aujourd'hui")
+        if today and stk(today) > 3 * med * max(1, min(len(today), 3)):
+            sig.append("mises du jour bien au-dessus de tes habitudes")
+        if cur >= 4:
+            sig.append(f"{cur} tickets perdus d'affilée")
+        night = [t for t in week if datetime.fromtimestamp(t["created"]).hour < 6]
+        if len(night) >= 3:
+            sig.append(f"{len(night)} paris entre minuit et 6 h cette semaine")
+        recent_after = [done[i + 1]["stake"] / max(0.01, med) for i in range(n - 1)
+                        if done[i]["status"] == "lost" and now - done[i + 1]["created"] < 7 * 86400]
+        if recent_after and max(recent_after) >= 2:
+            sig.append("mise doublée juste après une perte cette semaine")
+        out["tilt"] = {"level": "alerte" if len(sig) >= 2 else ("vigilance" if sig else "calme"), "signals": sig}
+        return out
+
     def delete_ticket(self, tid):
         with self.lock:
             self.data["user"] = [t for t in self.data["user"] if t["id"] != tid]
@@ -245,7 +349,7 @@ class History:
                 l["score"] = f"{r['h']}-{r['a']}"
                 l["status"] = st_ or "unknown"
             for t in self.data["user"]:
-                if t["status"] != "pending":
+                if t["status"] != "pending" or t.get("manual") or not t["legs"]:
                     continue
                 sts = [l["status"] for l in t["legs"]]
                 if "lost" in sts:

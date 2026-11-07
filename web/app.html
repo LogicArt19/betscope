@@ -452,7 +452,7 @@ async function server(path, method, body, raw){
 }
 function keep(r){
   if (r && r.session) { SESSION = r.session; lsSet(SESSION); }
-  if (r && r.ok && r.email) ACCOUNT = {email:r.email, tier:r.tier, status:r.status, renews:r.renews, cancel:r.cancel, manage:r.manage};
+  if (r && r.ok && r.email) ACCOUNT = {email:r.email, tier:r.tier, status:r.status, renews:r.renews, cancel:r.cancel, manage:r.manage, pause:r.pause || null};
   return r;
 }
 const Auth = {
@@ -468,6 +468,7 @@ const Auth = {
   },
   logout: async all => { try { await server("/api/logout","POST",all ? {all:true} : {}); } catch(e) {} lsSet(""); SESSION = ""; ACCOUNT = null; location.hash = ""; location.reload(); },
   devices: () => server("/api/devices"),
+  pause: days => server("/api/pause","POST",{days}),
   kick: id => server("/api/logout","POST",{id}),
 };
 function loadScript(src){ return new Promise((ok, ko) => { const s=document.createElement("script"); s.src=src; s.crossOrigin="anonymous"; if (PYODIDE_SRI && src.endsWith("pyodide.js")) s.integrity=PYODIDE_SRI; s.onload=ok; s.onerror=()=>ko(Object.assign(new Error("network"),{reason:"network"})); document.head.appendChild(s); }); }
@@ -1210,11 +1211,49 @@ document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.cl
    Vue : Bilan
    ====================================================================== */
 const STATUS = {won:["Gagné","ok"], lost:["Perdu","bad"], void:["Remboursé",""], pending:["En attente","warn"], unknown:["Non vérifiable",""]};
+function vPaused(){
+  const d = new Date(ACCOUNT.pause);
+  return `<div class="panel empty" style="padding:50px 24px"><b style="font-size:20px">Tu es en pause jusqu'au ${d.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})} à ${d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</b>
+    Pronostics, Objectif, Stratégies et Mon ticket sont fermés pendant la pause, comme tu l'as choisi. Tu peux toujours consulter les matchs et ton bilan.
+    <p class="note" style="margin-top:14px">Besoin d'en parler ? <b>Joueurs Info Service : 09 74 75 13 13</b> (appel non surtaxé, 7 j/7) ou joueurs-info-service.fr</p></div>`;
+}
+let PAUSE_SURE = 0, MAN = {stake:"", odds:"", legs:"1", st:"pending"};
+function coachBox(){
+  const c = call("coach");
+  const pauseCard = `<div class="panel box"><h3>Faire une pause</h3><p class="note" style="margin-bottom:12px">Pendant la pause, les pronostics, l'Objectif, les stratégies et Mon ticket sont fermés. <b>Une pause lancée ne peut pas être raccourcie.</b></p>
+    ${ACCOUNT && ACCOUNT.pause > Date.now() ? `<p><b>Pause en cours jusqu'au ${new Date(ACCOUNT.pause).toLocaleDateString("fr-FR",{day:"numeric",month:"long"})}.</b></p>` :
+    `<div style="display:flex;gap:8px;flex-wrap:wrap">${[[1,"24 h"],[7,"7 jours"],[30,"30 jours"]].map(([d,l]) => `<button class="btn ${PAUSE_SURE===d?"go":""}" data-pause="${d}">${PAUSE_SURE===d?"Confirmer : pause "+l:"Pause "+l}</button>`).join("")}</div>`}
+    <p class="note" style="margin-top:12px">Joueurs Info Service : 09 74 75 13 13 (7 j/7, non surtaxé).</p></div>`;
+  if (c.locked) return `<h2 class="s" style="margin-top:0">Mon coach</h2>` + lockBox("essentiel", "Le coach anti-tilt", "Il analyse tes paris : heures, jours, combinés, cotes, et surtout tes mises après une perte.") + pauseCard;
+  const T = c.tilt || {level:"calme", signals:[]};
+  const lv = {calme:["ok","Calme","Rien d'inquiétant dans tes derniers paris."], vigilance:["warn","Vigilance","Un signal à surveiller :"], alerte:["bad","Alerte tilt","Plusieurs signaux en même temps. Une pause serait une bonne idée."]}[T.level];
+  const manual = `<div class="panel box"><h3>Ajouter un pari pris ailleurs</h3><p class="note" style="margin-bottom:10px">Le coach analyse tous tes paris : ajoute aussi ceux que tu prends sans passer par Cotescope.</p>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+      <div><label class="f">Mise (€)</label><input class="sel2" id="mn-s" inputmode="decimal" value="${esc(MAN.stake)}"></div>
+      <div><label class="f">Cote</label><input class="sel2" id="mn-o" inputmode="decimal" value="${esc(MAN.odds)}"></div>
+      <div><label class="f">Sélections</label><input class="sel2" id="mn-l" inputmode="numeric" value="${esc(MAN.legs)}"></div>
+      <div><label class="f">Résultat</label><select class="sel2" id="mn-r"><option value="pending">En attente</option><option value="won">Gagné</option><option value="lost">Perdu</option></select></div>
+    </div><button class="btn go" id="mn-go" style="margin-top:10px">Ajouter</button></div>`;
+  const stats = c.n ? `<div class="stats" style="margin-bottom:12px">
+      <div class="panel stat"><small>Paris analysés</small><b>${c.n}</b></div>
+      <div class="panel stat"><small>Rentabilité</small><b style="color:${c.roi>=0?"var(--home)":"var(--bad)"}">${sgn((c.roi||0)*100)} %</b></div>
+      <div class="panel stat"><small>Mise habituelle</small><b>${eur(c.med_stake)}</b></div>
+      <div class="panel stat"><small>Pire série perdue</small><b>${c.worst_streak}</b></div></div>` : "";
+  return `<h2 class="s" style="margin-top:0">Mon coach</h2>
+    <div class="verdict ${lv[0]==="ok"?"good":lv[0]==="warn"?"mid":"bad"}"><b>${lv[1]}</b> · ${lv[2]}${T.signals.length ? `<ul class="args" style="margin-top:6px">${T.signals.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}${T.level==="alerte" ? `<p style="margin-top:6px">Si le jeu devient difficile à contrôler : <b>Joueurs Info Service, 09 74 75 13 13</b>.</p>` : ""}</div>
+    ${stats}
+    ${c.enough ? ((c.insights.length || c.good.length) ? `<div class="panel box"><h3>Ce que disent tes paris</h3><ul class="args">${c.insights.map(x => `<li>⚠️ ${esc(x.text)}</li>`).join("")}${c.good.map(x => `<li>✅ ${esc(x.text)}</li>`).join("")}</ul></div>` : `<div class="panel box"><h3>Ce que disent tes paris</h3><p class="note">Aucune habitude ne ressort nettement : pas d'heure, de jour ou de type de pari qui te fasse perdre beaucoup plus que les autres.</p></div>`)
+      : `<div class="panel empty"><b>Encore ${Math.max(0, 20 - c.n)} paris terminés avant d'analyser tes habitudes</b>En dessous de 20 paris, les tendances ne veulent rien dire : le coach préfère se taire plutôt que d'inventer.</div>`}
+    <div class="grid2" style="margin-top:12px">${manual}${pauseCard}</div>`;
+}
 function vBilan(){
   const h = call("get_history");
-  if (h.locked) return `<h1 class="t">Bilan</h1>` + lockBox("pro", "Bilan automatique de tes tickets", "Chaque ticket est vérifié tout seul après les matchs : gains, rentabilité, taux de réussite.");
+  const coach = coachBox();
+  if (h.locked) return `<h1 class="t">Bilan</h1><p class="lead">Ton coach, et le suivi de tes tickets.</p>` + coach + `<h2 class="s">Mes tickets</h2>` + lockBox("pro", "Bilan automatique de tes tickets", "Chaque ticket est vérifié tout seul après les matchs : gains, rentabilité, taux de réussite.");
   const u = h.user, a = h.app;
-  return `<h1 class="t">Bilan</h1><p class="lead">Tes tickets sont vérifiés automatiquement avec les résultats officiels.</p>
+  return `<h1 class="t">Bilan</h1><p class="lead">Ton coach, et tes tickets vérifiés automatiquement avec les résultats officiels.</p>
+    ${coach}
+    <h2 class="s">Mes résultats</h2>
     <div class="stats">
       <div class="panel stat"><small>Tickets joués</small><b>${u.n}</b></div>
       <div class="panel stat"><small>Gagnés</small><b>${u.wins}</b></div>
@@ -1222,13 +1261,31 @@ function vBilan(){
       <div class="panel stat"><small>Rentabilité</small><b>${u.roi==null?"–":sg(u.roi)}</b></div>
     </div>
     <h2 class="s">Mes tickets</h2>
-    ${h.tickets.length ? `<div class="panel">${h.tickets.map(t => { const s = STATUS[t.status] || [t.status,""]; return `<div class="bet" style="grid-template-columns:minmax(0,1fr) auto auto">
-      <div class="sel">${t.legs.map(l => esc(l.selection)).join(" + ")}<small>${new Date(t.created*1000).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})} · mise ${eur(t.stake)} · cote ${fr(t.legs.reduce((x,l)=>x*l.odds,1))}</small></div>
-      <span class="pill ${s[1]}">${s[0]}</span><button class="btn sm" data-del="${t.id}">Supprimer</button></div>`; }).join("")}</div>` : `<div class="panel empty"><b>Aucun ticket enregistré</b>Clique sur « Je le joue » sur un ticket pour le suivre ici.</div>`}
+    ${h.tickets.length ? `<div class="panel">${h.tickets.map(t => { const s = STATUS[t.status] || [t.status,""]; const man = t.manual;
+      return `<div class="bet" style="grid-template-columns:minmax(0,1fr) auto auto">
+      <div class="sel">${man ? `Pari saisi à la main · ${t.n_legs} sélection${t.n_legs>1?"s":""}` : t.legs.map(l => esc(l.selection)).join(" + ")}<small>${new Date(t.created*1000).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})} · mise ${eur(t.stake)} · cote ${fr(man ? t.odds : t.legs.reduce((x,l)=>x*l.odds,1))}</small></div>
+      ${man && t.status === "pending" ? `<span style="display:flex;gap:6px"><button class="btn sm" data-res="${t.id}~won">Gagné</button><button class="btn sm" data-res="${t.id}~lost">Perdu</button></span>` : `<span class="pill ${s[1]}">${s[0]}</span>`}<button class="btn sm" data-del="${t.id}">Supprimer</button></div>`; }).join("")}</div>` : `<div class="panel empty"><b>Aucun ticket enregistré</b>Clique sur « Je le joue » sur un ticket pour le suivre ici.</div>`}
     <h2 class="s">Fiabilité de Cotescope</h2>
     ${h.app_locked ? lockBox("elite", "Fiabilité mesurée", "Quand Cotescope annonce 60 %, est-ce que ça passe vraiment 6 fois sur 10 ? Vérifié match après match.") :
       (a.buckets||[]).length ? `<div class="panel box"><table class="src"><tr><th>Annoncé</th><th>Paris</th><th>Prévu</th><th>Réel</th></tr>${a.buckets.map(b => `<tr><td>${esc(b.label)}</td><td class="num">${b.n}</td><td class="num">${pc(b.pred)}</td><td class="num"><b>${pc(b.real)}</b></td></tr>`).join("")}</table></div>` : `<div class="panel empty"><b>Pas encore assez de matchs vérifiés</b>Le tableau se remplit au fil des journées.</div>`}`;
 }
+document.addEventListener("click", async e => {
+  const pz = e.target.closest("[data-pause]");
+  if (pz) {
+    const d = +pz.dataset.pause;
+    if (PAUSE_SURE !== d) { PAUSE_SURE = d; render(); return; }
+    PAUSE_SURE = 0;
+    const r = window.__BRIDGE__ ? {ok:true, pause: Date.now() + d * 864e5} : await Auth.pause(d);
+    if (r.ok) { ACCOUNT.pause = r.pause; toast("Pause activée"); } else toast(errMsg(r.reason));
+    render(); return;
+  }
+  if (e.target.closest("#mn-go")) {
+    MAN = {stake: $("#mn-s").value, odds: $("#mn-o").value, legs: $("#mn-l").value, st: $("#mn-r").value};
+    const r = call("log_manual", MAN.stake, MAN.odds, MAN.legs || 1, MAN.st);
+    if (r.ok) { MAN = {stake:"", odds:"", legs:"1", st:"pending"}; toast("Pari ajouté"); render(); } else toast(r.error || "Erreur");
+  }
+  const rs = e.target.closest("[data-res]"); if (rs) { const [id, st] = rs.dataset.res.split("~"); call("set_ticket_result", id, st); render(); }
+});
 document.addEventListener("click", e => { const d = e.target.closest("[data-del]"); if (d) { call("delete_ticket", d.dataset.del); render(); } });
 
 /* ======================================================================
@@ -1286,7 +1343,8 @@ function render(){
   refreshState();
   const r = route();
   const V = {matchs:vMatchs, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, lab:vLab, ticket:vTicket, bilan:vBilan, compte:vCompte};
-  $("#view").innerHTML = (V[r.v] || vMatchs)();
+  const paused = ACCOUNT && ACCOUNT.pause && ACCOUNT.pause > Date.now();
+  $("#view").innerHTML = paused && ["picks","goal","ticket","lab"].includes(r.v) ? vPaused() : (V[r.v] || vMatchs)();
   chrome();
   if (r.v === "compte" && !window.__BRIDGE__) loadDevices();
 }

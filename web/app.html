@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!--CSP-->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#060A12">
+<link rel="apple-touch-icon" href="../img/logo.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Cotescope">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#060A12">
 <title>Cotescope</title>
@@ -407,12 +412,11 @@ const ICON = {
   lock:'<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
 };
 const VIEWS = [["matchs","Matchs"],["picks","Pronostics"],["goal","Objectif"],["lab","Stratégies"],["ticket","Mon ticket"],["bilan","Bilan"]];
-const PLAN_NAME = {gratuit:"Gratuit", essentiel:"Essentiel", pro:"Pro", elite:"Elite"};
-const RANK = {gratuit:0, essentiel:1, pro:2, elite:3};
+const PLAN_NAME = {gratuit:"Gratuit", essentiel:"Essentiel", pro:"Pro", elite:"Pro"};
+const RANK = {gratuit:0, essentiel:2, pro:3, elite:3}; // Essentiel = ancien niveau Pro, Pro = ancien Elite
 const PLANS = [
-  {id:"essentiel", name:"Essentiel", price:"9,99", feats:["Les 6 grands championnats","Paris principaux : 1N2, double chance, buts, les 2 marquent","Objectif : les 5 tickets qui ont le plus de chances","Mon ticket : cote, chances, gain","Forme et classement"]},
-  {id:"pro", name:"Pro", price:"19,99", hot:"Le plus choisi", feats:["Tout Essentiel","Tous les paris : buteurs, handicaps, score exact…","Page match complète : absents, compos, face-à-face, météo","Objectif : des dizaines de tickets, triés et filtrés","Bilan de tes tickets"]},
-  {id:"elite", name:"Elite", price:"49,99", feats:["Tout Pro","Paris value et sélection de Cotescope","Mouvement des cotes","Actus de dernière minute","Simulateur de stratégies sur 5 saisons","Fiabilité mesurée et bankroll"]},
+  {id:"essentiel", name:"Essentiel", price:"9,99", hot:"Le plus choisi", feats:["Tous les championnats, tous les types de paris","Objectif illimité : des dizaines de tickets, tri et filtres","Page match complète : absents, compos sur le terrain, cartons et arbitre, enjeu","Pronostics, cotes boostées, Loto Foot, combiné express","Mon ticket et bilan automatique","Appli sur ton téléphone"]},
+  {id:"pro", name:"Pro", price:"19,99", feats:["Tout Essentiel","Alertes Telegram en temps réel : value, cotes qui chutent, compos","Paris value et sélection de Cotescope","Simulateur de stratégies sur 5 saisons","Capital et mise conseillée","Mouvement des cotes, actus de dernière minute, fiabilité mesurée"]},
 ];
 const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["parionssport_fr,unibet_fr","FDJ (Parions Sport · Unibet)"],["bet365","Bet365"]];
 const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un compte existe déjà avec cet e-mail : connecte-toi.",
@@ -420,7 +424,7 @@ const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un comp
   pwned_password:"Ce mot de passe apparaît dans des fuites de données connues sur internet : choisis-en un autre, que tu n'utilises nulle part ailleurs.",
   locked:"Trop d'essais ratés : ce compte est bloqué 30 minutes par sécurité.", forbidden:"Requête refusée.", too_big:"Requête trop longue.", too_many:"Trop d'essais. Réessaie dans 15 minutes.",
   too_many_accounts:"Trop de comptes créés depuis cette connexion aujourd'hui.", session:"Session expirée : reconnecte-toi.",
-  no_plan:"Aucun forfait actif sur ce compte.", free_over:"Ta version gratuite de 7 jours est terminée.", inactive:"Ton abonnement est terminé.",
+  no_plan:"Aucun forfait actif sur ce compte.", free_over:"Ta version gratuite est terminée.", inactive:"Ton abonnement est terminé.",
   whop_unreachable:"Le service de paiement ne répond pas. Réessaie dans un instant.", plans_not_configured:"Les abonnements ouvrent très bientôt.",
   server_not_configured:"Le serveur Cotescope n'est pas encore prêt.", mail_not_configured:"Écris-nous pour réinitialiser ton mot de passe.",
   bad_code:"Ce lien a expiré : redemande un e-mail.", telegram_off:"Les alertes Telegram ne sont pas encore activées.", vote_closed:"Le vote est fermé pour ce match (il ouvre 36 h avant le coup d'envoi).", bad_vote:"Vote invalide.", network:"Pas de connexion au serveur Cotescope.", no_data_yet:"Les données du jour arrivent. Réessaie dans quelques minutes."};
@@ -555,7 +559,7 @@ $("#me").onclick = () => go("compte");
 $("#tfab").onclick = () => go("ticket");
 
 function lockBox(need, title, text){
-  return `<div class="lock"><span class="ic">${ICON.lock}</span><div><b>${esc(title)}</b><small>${esc(text)} Inclus dans ${need==="essentiel"?"tous les forfaits payants":need==="pro"?"Pro et Elite":"Elite"}.</small></div><button class="btn sm go" data-plans>Voir les forfaits</button></div>`;
+  return `<div class="lock"><span class="ic">${ICON.lock}</span><div><b>${esc(title)}</b><small>${esc(text)} Inclus dans ${need==="elite"?"Pro":"Essentiel et Pro"}.</small></div><button class="btn sm go" data-plans>Voir les forfaits</button></div>`;
 }
 document.addEventListener("click", e => { if (e.target.closest("[data-plans]")) gate("plans"); });
 
@@ -1027,16 +1031,15 @@ let GOAL = {stake:"10", target:"40", res:null, leagues:null, types:null, min:"",
 const CATS = [["1n2","Résultat"],["dc","Double chance"],["dnb","Remboursé si nul"],["total","Nombre de buts"],["team","Buts par équipe"],["btts","Les 2 marquent"],["hcp","Handicap"],["exact","Score exact"],["mtft","Mi-temps / fin"],["scorer","Buteurs"],["decisive","Joueurs décisifs"]];
 const CAT_TIER = {essentiel:["1n2","dc","total","btts"]};
 function vGoal(){
-  if (rank() < 1) return `<h1 class="t">Objectif</h1><p class="lead">« Je mise 10 €, je veux gagner 40 € » : Cotescope cherche parmi tous les paris de tous les matchs le ticket le plus sûr pour y arriver.</p>` + lockBox("essentiel", "Le mode Objectif", "Donne ta mise et ce que tu veux gagner, Cotescope te construit les meilleurs tickets avec leurs risques.");
   const num = v => parseFloat(String(v).replace(",", "."));
   const need = (num(GOAL.target) + num(GOAL.stake)) / num(GOAL.stake);
   const leagues = [...new Map(MATCHES.map(m => [m.sport_key, m.league])).entries()];
-  const okCats = rank() >= 2 ? CATS.map(c => c[0]) : CAT_TIER.essentiel;
+  const okCats = rank() >= 2 ? CATS.map(c => c[0]) : ["1n2"];
   const selL = new Set(GOAL.leagues || leagues.map(l => l[0])), selT = new Set(GOAL.types || okCats);
   const r = GOAL.res;
   let out = "";
   if (r) {
-    if (r.locked) out = lockBox("essentiel", "Le mode Objectif", "Disponible avec tous les forfaits payants.");
+    if (r.locked) out = r.daily_used ? lockBox("pro", "Ton ticket gratuit du jour est utilisé", "La version gratuite donne 1 ticket Objectif par jour. Avec Essentiel : des dizaines de tickets, sans limite.") : lockBox("pro", "Le mode Objectif", "Disponible avec Essentiel et Pro.");
     else if (r.error) out = `<div class="panel empty"><b>${esc(r.error)}</b></div>`;
     else if (!r.options.length) out = `<div class="panel empty"><b>Aucun ticket possible avec ces réglages</b>Coche plus de championnats ou de types de paris, ou laisse le nombre de matchs libre.</div>`;
     else out = goalList(r);
@@ -1510,7 +1513,7 @@ function vCompte(){
   const a = ACCOUNT || {}, cfg = call("get_config") || {};
   const books = new Set((cfg.bookmakers || "").split(",").filter(Boolean)), hid = new Set(cfg.hide_sports || []);
   const d = x => x ? new Date(x).toLocaleDateString("fr-FR", {day:"numeric", month:"long"}) : "";
-  const st = a.status === "free" ? `Version gratuite jusqu'au ${d(a.renews)}` : a.status === "owner" ? "Accès propriétaire" : a.cancel ? `Se termine le ${d(a.renews)}` : a.renews ? `Renouvellement le ${d(a.renews)}` : "";
+  const st = a.status === "free" ? "Version gratuite : Ligue 1, Premier League, Liga, 1 ticket Objectif par jour" : a.status === "owner" ? "Accès propriétaire" : a.cancel ? `Se termine le ${d(a.renews)}` : a.renews ? `Renouvellement le ${d(a.renews)}` : "";
   return `<h1 class="t">Mon compte</h1><p class="lead">${esc(a.email || "")}</p>
     <div class="grid2">
       <div class="panel box"><h3>Forfait</h3><div class="pr num" style="font-size:26px;font-weight:700">${PLAN_NAME[a.tier] || "Aucun"}</div><p class="note" style="margin:4px 0 14px">${esc(st)}</p>
@@ -1527,8 +1530,8 @@ function vCompte(){
 }
 function tgPanel(){
   const a = ACCOUNT || {};
-  const what = `<ul class="args" style="margin:8px 0 12px"><li>📋 Compos officielles et changements, dès leur publication <span class="pill">Pro</span></li><li>💎 Paris value des prochaines 24 h <span class="pill v">Elite</span></li><li>📉 Cotes Pinnacle qui chutent (l'argent des pros) <span class="pill v">Elite</span></li></ul>`;
-  if (rank() < 2) return `<div class="panel box"><h3>Alertes Telegram</h3>${what}${lockBox("pro", "Alertes sur ton téléphone", "Reçois les compos officielles et les opportunités directement sur Telegram.")}</div>`;
+  const what = `<ul class="args" style="margin:8px 0 12px"><li>📋 Compos officielles et changements, dès leur publication </li><li>💎 Paris value des prochaines 24 h</li><li>📉 Cotes Pinnacle qui chutent (l'argent des pros)</li></ul>`;
+  if (rank() < 3) return `<div class="panel box"><h3>Alertes Telegram</h3>${what}${lockBox("elite", "Alertes sur ton téléphone", "Reçois les compos officielles et les opportunités directement sur Telegram.")}</div>`;
   if (!a.tg_bot && !window.__BRIDGE__) return `<div class="panel box"><h3>Alertes Telegram</h3>${what}<p class="note">Les alertes ouvrent très bientôt.</p></div>`;
   return `<div class="panel box"><h3>Alertes Telegram ${a.tg ? '<span class="pill ok">activées</span>' : ""}</h3>${what}
     ${a.tg ? `<button class="btn" id="tg-off">Arrêter les alertes</button>` : `<button class="btn go" id="tg-on">Recevoir les alertes sur Telegram</button><p class="note" style="margin-top:8px">Telegram s'ouvre : appuie sur « Démarrer », c'est tout.</p>`}</div>`;
@@ -1618,7 +1621,7 @@ function gate(v, x){
       <div class="msg" id="g-msg"></div><button class="btn go" id="g-go" style="width:100%">Se connecter</button>
       <div class="alt"><button data-gv="forgot">Mot de passe oublié ?</button></div>
       <div class="alt">Pas encore de compte ? <button data-gv="signup">Créer un compte gratuit</button></div></div>`;
-  else if (v === "signup") c.innerHTML = logo + `<div class="panel gbox"><h2>Créer mon compte</h2><p>7 jours gratuits, sans carte bancaire.</p>
+  else if (v === "signup") c.innerHTML = logo + `<div class="panel gbox"><h2>Créer mon compte</h2><p>Gratuit, sans carte bancaire et sans limite de durée.</p>
       ${field("g-em","E-mail","email","toi@exemple.fr")}${field("g-pw2","Mot de passe","password","8 caractères minimum")}
       <label class="chk"><input type="checkbox" id="g-ok"><span>J'ai 18 ans ou plus et j'accepte les <a href="../cgv.html" target="_blank">conditions de vente</a>.</span></label>
       <div class="msg" id="g-msg"></div><button class="btn go" id="g-go" style="width:100%">Créer mon compte</button>

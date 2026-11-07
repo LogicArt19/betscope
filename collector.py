@@ -114,28 +114,33 @@ TIERS = ("gratuit", "essentiel", "pro", "elite")
 FREE_SPORTS = {"soccer_france_ligue_one", "soccer_epl"}
 
 
+FREE_SPORTS_NEW = {"soccer_france_ligue_one", "soccer_epl", "soccer_spain_la_liga"}
+
+
 def tier_snapshot(snap, tier):
     """Chaque forfait ne reçoit que les données qu'il a payées (impossible de débloquer en trichant).
-    - Essentiel : cotes, résultats, classements, forme (pas d'absents, compos, face-à-face, buteurs, météo, actus)
-    - Pro : tout sauf les actus de dernière minute
-    - Elite : tout"""
+    - Gratuit (permanent) : Ligue 1, Premier League, Liga ; cotes 1N2, forme, classement, face-à-face, enjeu
+    - Essentiel : tout sauf les actus de dernière minute
+    - Pro (et l'ancien Elite) : tout"""
     out = dict(snap, tier=tier)
-    if tier == "elite":
+    if tier in ("pro", "elite"):
         return out
     st = dict(snap["stats"])
     web = {}
     for eid, w in (st.get("web") or {}).items():
         v = dict(w.get("v") or {})
         v["news"] = []
-        if tier in ("gratuit", "essentiel"):
-            v.update(inj_home=[], inj_away=[], lineups=[], last_xi=[], weather=None)
+        if tier == "gratuit":
+            v.update(inj_home=[], inj_away=[], lineups=[], last_xi=[], weather=None, cards=None, referee="")
         web[eid] = dict(w, v=v)
     st["web"] = web
-    if tier in ("gratuit", "essentiel"):
-        for k in ("h2h", "scorers", "inj_day", "pred", "lineups"):
+    if tier == "gratuit":
+        for k in ("scorers", "inj_day", "pred", "lineups"):
             st[k] = {}
-        out["events"] = [dict(e, bookmakers=[dict(bk, markets=[m for m in bk.get("markets", []) if m.get("key") != "spreads"])
-                                             for bk in e.get("bookmakers", [])]) for e in snap["events"]]
+        out["events"] = [dict(e, bookmakers=[dict(bk, markets=[m for m in bk.get("markets", []) if m.get("key") == "h2h"])
+                                             for bk in e.get("bookmakers", [])])
+                         for e in snap["events"] if e.get("sport_key") in FREE_SPORTS_NEW]
+        out["sports"] = [s for s in snap.get("sports", []) if s in FREE_SPORTS_NEW]
     out["stats"] = st
     return out
 

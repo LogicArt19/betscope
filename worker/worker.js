@@ -14,7 +14,7 @@ const ALLOWED_ORIGINS = [
   "https://logicart19.github.io",
 ];
 const APP_URL = "https://cotescope.fr/app/";
-const TIERS = ["essentiel", "pro", "elite"];
+const TIERS = ["essentiel", "pro", "elite"]; // « elite » : ancien forfait, plus vendu (traité comme Pro)
 const FREE_DAYS = 7; // version gratuite : 7 jours après la création du compte, sans carte
 const OK_STATUSES = new Set(["active", "trialing", "completed", "past_due"]);
 const ACCESS_CACHE_SECONDS = 300;
@@ -215,9 +215,8 @@ async function access(env, user, fresh = false) {
       if (String(e.message).startsWith("whop_5")) return { tier: null, status: "whop_unreachable" };
     }
   }
-  if (!best.tier && user.created && Date.now() - user.created < FREE_DAYS * 864e5) {
-    best = { tier: "gratuit", status: "free", renews: new Date(user.created + FREE_DAYS * 864e5).toISOString() };
-  } else if (!best.tier && best.status === "none" && user.created) best.status = "free_over";
+  // version gratuite permanente (Ligue 1, Premier League, Liga, 1 ticket Objectif par jour)
+  if (!best.tier) best = { tier: "gratuit", status: "free", renews: null, prev: best.status };
   if (cache) await cache.put(ck, new Response(JSON.stringify(best), { headers: { "Cache-Control": "max-age=" + ACCESS_CACHE_SECONDS } }));
   return best;
 }
@@ -328,7 +327,7 @@ async function tgSend(env, chat, text) {
 // abonnés : { email: { chat, tier } } (une seule clé KV, écrite seulement quand quelqu'un se relie / se délie / change de forfait)
 const tgSubs = async (env) => (await env.KV.get("tg_subs", "json")) || {};
 async function tgBroadcast(env, minTier, text) {
-  const subs = await tgSubs(env), rank = { gratuit: 0, essentiel: 1, pro: 2, elite: 3 };
+  const subs = await tgSubs(env), rank = { gratuit: 0, essentiel: 1, pro: 2, elite: 2 }; // alertes = forfait Pro
   let n = 0;
   for (const s of Object.values(subs)) {
     if ((rank[s.tier] || 0) >= rank[minTier] && n < 40) { if (await tgSend(env, s.chat, text)) n++; }
@@ -345,7 +344,7 @@ async function sendQueuedAlerts(env) {
   const done = new Set((await env.KV.get("alerts_done", "json")) || []);
   const todo = q.items.filter((a) => !done.has(a.id));
   if (!todo.length) return 0;
-  for (const a of todo) { await tgBroadcast(env, "elite", a.text + "\n\nJoue de façon responsable."); done.add(a.id); }
+  for (const a of todo) { await tgBroadcast(env, "pro", a.text + "\n\nJoue de façon responsable."); done.add(a.id); }
   await env.KV.put("alerts_done", JSON.stringify([...done].slice(-800)));
   return todo.length;
 }
@@ -461,7 +460,7 @@ export default {
         const acc = await access(env, u), subs = await tgSubs(env);
         subs[u.email] = { chat, tier: acc.tier || "gratuit" };
         await env.KV.put("tg_subs", JSON.stringify(subs));
-        await tgSend(env, chat, `✅ <b>Compte Cotescope relié</b> (${escH(u.email)}).\nTu recevras ici les alertes de ton forfait : compos officielles (Pro), paris value et cotes qui chutent (Elite).\nEnvoie /stop pour arrêter.\n\nJoue de façon responsable. Joueurs Info Service : 09 74 75 13 13.`);
+        await tgSend(env, chat, `✅ <b>Compte Cotescope relié</b> (${escH(u.email)}).\nTu recevras ici les alertes de ton forfait : compos officielles, paris value et cotes qui chutent (forfait Pro).\nEnvoie /stop pour arrêter.\n\nJoue de façon responsable. Joueurs Info Service : 09 74 75 13 13.`);
       } else if (/^\/stop/.test(text)) {
         const subs = await tgSubs(env);
         for (const [e, s] of Object.entries(subs)) if (s.chat === chat) { delete subs[e]; const u = await getUser(env, e); if (u) { delete u.tg; await putUser(env, u); } }
@@ -612,7 +611,7 @@ export default {
     }
     if (p === "/api/checkout" && req.method === "POST") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
-      const tier = TIERS.includes(body.tier) ? body.tier : "";
+      const tier = ["essentiel", "pro"].includes(body.tier) ? body.tier : "";
       const plan = plans(env)[tier];
       if (!plan || !env.WHOP_API_KEY) return json(req, { ok: false, reason: "plans_not_configured" }, 503);
       const ret = ALLOWED_ORIGINS.some((o) => String(body.return || "").startsWith(o + "/")) ? body.return : APP_URL;
@@ -637,7 +636,7 @@ export default {
     if (p === "/api/history") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
       const acc = await access(env, user);
-      if (acc.tier !== "elite") return json(req, { ok: false, reason: "locked", need: "elite" }, 403);
+      if (!["pro", "elite"].includes(acc.tier)) return json(req, { ok: false, reason: "locked", need: "pro" }, 403);
       // le fichier est déjà compressé : envoyé tel quel (aucun calcul côté serveur, le navigateur le décompresse)
       const buf = await env.KV.get("bt_data", "arrayBuffer");
       if (!buf) return json(req, { ok: false, reason: "no_data_yet" }, 503);
@@ -666,7 +665,7 @@ export default {
     if (p === "/api/lineup") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
       const acc = await access(env, user);
-      if (!["pro", "elite"].includes(acc.tier)) return json(req, { ok: false, reason: "locked", need: "pro" }, 403);
+      if (!["essentiel", "pro", "elite"].includes(acc.tier)) return json(req, { ok: false, reason: "locked", need: "essentiel" }, 403);
       const v = await env.KV.get("lu:" + String(url.searchParams.get("eid") || "").slice(0, 80), "json");
       return json(req, v ? { ok: true, ...v } : { ok: false, reason: "not_yet" });
     }

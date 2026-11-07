@@ -72,15 +72,18 @@ class LicenseError(Exception):
 # --------------------------------------------------------------------------
 # Forfaits : ce qui est débloqué à chaque niveau
 # --------------------------------------------------------------------------
-TIER_RANK = {"gratuit": 0, "essentiel": 1, "pro": 2, "elite": 3}
-TIER_NAMES = {"gratuit": "Gratuit", "essentiel": "Essentiel", "pro": "Pro", "elite": "Elite"}
+# Nouvelle grille (nov. 2026) : Gratuit permanent, Essentiel 9,99 € (= ancien Pro), Pro 19,99 € (= ancien Elite).
+# Les vérifications internes gardent les anciens niveaux : tier_ok("pro") = Essentiel et plus, tier_ok("elite") = Pro.
+TIER_RANK = {"gratuit": 0, "essentiel": 2, "pro": 3, "elite": 3}    # niveau de l'abonné
+NEED_RANK = {"gratuit": 0, "essentiel": 1, "pro": 2, "elite": 3}    # niveau demandé par une fonction (ancienne échelle)
+TIER_NAMES = {"gratuit": "Gratuit", "essentiel": "Essentiel", "pro": "Pro", "elite": "Pro"}
 TIER = {"v": "elite"}                     # forfait des données chargées (démo = tout visible)
 ESSENTIEL_CATS = {"1n2", "dc", "total", "btts"}
 GRATUIT_CATS = {"1n2"}
 
 
 def tier_ok(need):
-    return TIER_RANK.get(TIER["v"], 3) >= TIER_RANK[need]
+    return TIER_RANK.get(TIER["v"], 3) >= NEED_RANK[need]
 
 
 BOOK_NAMES = {"betclic_fr": "Betclic", "winamax_fr": "Winamax", "unibet_fr": "Unibet (FDJ)",
@@ -2321,9 +2324,7 @@ class Api:
         self._hist.delete_ticket(tid)
         return True
 
-    def coach(self):
-        if not tier_ok("essentiel"):
-            return {"locked": "essentiel"}
+    def coach(self):  # jeu responsable : le coach est offert à tous, version gratuite comprise
         return self._hist.coach()
 
     def log_manual(self, stake, odds, n_legs=1, status="pending"):
@@ -2757,8 +2758,11 @@ class Api:
         return out
 
     def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None, leagues=None):
-        if not tier_ok("essentiel"):
-            return {"locked": "essentiel"}
+        free = not tier_ok("pro")
+        if free:  # version gratuite : 1 ticket Objectif par jour (le meilleur)
+            today = datetime.now().strftime("%Y-%m-%d")
+            if self._cfg.get("free_obj_day") == today:
+                return {"locked": "pro", "daily_used": True}
         try:
             stake = float(str(stake).replace(",", ".").replace("€", "").strip())
             target = float(str(target).replace(",", ".").replace("€", "").strip())
@@ -2799,6 +2803,13 @@ class Api:
                 res = dict(r3, need_odds=need, max_odds=res["max_odds"])
         out = ser_objective(res, cfg)
         out["note"], out["closest"] = note, closest
+        if free and out.get("options"):
+            out["locked_more"] = max(0, (out.get("n_found") or len(out["options"])) - 1)
+            out["options"] = out["options"][:1]
+            out["free_daily"] = True
+            with self._lock:
+                self._cfg["free_obj_day"] = datetime.now().strftime("%Y-%m-%d")
+                save_config(self._cfg)
         out["bank"] = self.get_bank()
         return out
 

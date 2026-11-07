@@ -355,7 +355,7 @@ def collect_oddspapi(events, state):
     soon = {e.get("sport_key") for e in events if now < b.parse_time(e["commence_time"]) < now + timedelta(hours=48)}
     tids = [OP_TOURNAMENTS[k] for k in OP_TOURNAMENTS if k in soon]
     # on n'attend 8 h entre deux appels que si on a déjà des cotes (un appel raté se retente à l'heure suivante)
-    fresh = bool(op.get("boards")) and all("extra" in k for k in op["boards"]) \
+    fresh = op.get("books_seen") and bool(op.get("boards")) and all("extra" in k for k in op["boards"]) \
         and time.time() - op.get("last", 0) < OP_EVERY_H * 3600
     calls = []
     if tids and not fresh:
@@ -375,6 +375,17 @@ def collect_oddspapi(events, state):
                 log(f"OddsPapi : {len(op['names'])} équipes en cache")
             except Exception as e:
                 log("OddsPapi (équipes) :", e)
+        if not op.get("books_seen"):  # liste des bookmakers d'OddsPapi (1 seule requête) : y a-t-il les français ?
+            op["books_seen"] = True
+            try:
+                bl = _op_get("bookmakers")
+                op["used"] += 1
+                bl = bl if isinstance(bl, list) else (bl or {}).get("data", [])
+                fr = [f"{x.get('slug') or x.get('bookmaker')} ({x.get('bookmakerName') or x.get('name') or ''})" for x in bl
+                      if any(k in str(x).lower() for k in ("betclic", "winamax", "unibet", "parions", "fdj", "pmu", "netbet", "zebet", "betsson", "france", ".fr"))]
+                log(f"OddsPapi : {len(bl)} bookmakers, dont liés à la France : " + "; ".join(fr[:30]))
+            except Exception as e:
+                log("OddsPapi (bookmakers) :", e)
         if not op.get("mk"):  # catalogue des marchés (1 seule requête, gardé)
             try:
                 op["mk"] = op_market_map(_op_get("markets"))

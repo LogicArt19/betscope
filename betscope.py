@@ -1050,6 +1050,11 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
         odds, min_odds = mk.estimated_odds(cat, p_market)
         # vraie cote publiée (Bet365 via OddsPapi) quand on l'a et que l'utilisateur joue chez ce bookmaker
         real = (ev.get("_real") or {}).get(key)
+        # plusieurs bookmakers possibles : la meilleure vraie cote parmi ceux où l'utilisateur joue
+        cands = [(v[0], bk_, v[1]) for bk_, v in ((ev.get("_real_all") or {}).get(key) or {}).items() if not allowed or bk_ in allowed]
+        if cands:
+            pr_, bk_, ti_ = max(cands)
+            real = [pr_, bk_, ti_]
         is_real = bool(real) and (not allowed or real[1] in allowed)
         if is_real:
             odds, min_odds = float(real[0]), None

@@ -342,182 +342,130 @@ def op_market_map(markets):
     return out
 
 
+# bookmakers français disponibles sur OddsPapi -> clé Cotescope et nom affiché (Betclic n'y est pas)
+OP_BOOKS = {"bet365.fr": ("bet365", "Bet365"), "winamax.fr": ("winamax_fr", "Winamax"),
+            "unibet.fr": ("unibet_fr", "Unibet (FDJ)"), "fdj": ("parionssport_fr", "Parions Sport (FDJ)")}
+
+
+def _op_parse(f, slug, op):
+    """Un match OddsPapi -> cotes 1N2, plus/moins de 2,5 et autres paris (clés Cotescope)."""
+    mk = (((f.get("bookmakerOdds") or {}).get(slug) or {}).get("markets") or {})
+    m = mk.get("101") or mk.get("10728")
+    if not m:
+        return None
+    price = lambda oid: (((m.get("outcomes") or {}).get(oid) or {}).get("players") or {}).get("0", {}).get("price")
+    h, d, a = price("101"), price("102"), price("103")
+    if not (h and d and a):
+        return None
+    extra, tot25 = {}, None
+    for mid, meta in (op.get("mk") or {}).items():
+        mm = mk.get(mid)
+        if not mm:
+            continue
+        for oid, lab in meta["outcomes"].items():
+            pl = (((mm.get("outcomes") or {}).get(oid) or {}).get("players") or {}).get("0") or {}
+            pr = pl.get("price")
+            if not pr or pl.get("active") is False:
+                continue
+            if meta["kind"] == "total" and meta.get("line") == 2.5:
+                tot25 = dict(tot25 or {}, **{lab: float(pr)})
+            elif lab:
+                extra[lab] = float(pr)
+    return {"extra": extra, "tot25": tot25 if tot25 and len(tot25) == 2 else None,
+            "start": f.get("startTime") or f.get("trueStartTime"),
+            "home": f.get("participant1Name") or (op.get("names") or {}).get(str(f.get("participant1Id")), ""),
+            "away": f.get("participant2Name") or (op.get("names") or {}).get(str(f.get("participant2Id")), ""),
+            "h": float(h), "d": float(d), "a": float(a), "ts": time.time()}
+
+
 def collect_oddspapi(events, state):
-    """Ajoute Bet365 comme bookmaker réel (1N2). Respecte le quota gratuit : budget mensuel suivi,
-    rafraîchissement toutes les 8 h, et seulement les championnats qui jouent dans les 48 h."""
+    """Vraies cotes de Bet365, Winamax, Unibet et Parions Sport (FDJ) pour tous les types de paris, via OddsPapi.
+    Quota gratuit (250 requêtes / mois) : le rythme est calculé chaque jour selon ce qu'il reste, et seuls les
+    championnats qui jouent dans les 48 h sont demandés."""
     if not os.environ.get("ODDSPAPI_KEY"):
         return 0
+    import calendar
     op = state.setdefault("oddspapi", {})
-    month = datetime.now(timezone.utc).strftime("%Y-%m")
+    now = datetime.now(timezone.utc)
+    month = now.strftime("%Y-%m")
     if op.get("month") != month:
         op.update(month=month, used=0)
-    now = datetime.now(timezone.utc)
     soon = {e.get("sport_key") for e in events if now < b.parse_time(e["commence_time"]) < now + timedelta(hours=48)}
     tids = [OP_TOURNAMENTS[k] for k in OP_TOURNAMENTS if k in soon]
-    # on n'attend 8 h entre deux appels que si on a déjà des cotes (un appel raté se retente à l'heure suivante)
-    fresh = op.get("books_seen") and bool(op.get("boards")) and all("extra" in k for k in op["boards"]) \
-        and time.time() - op.get("last", 0) < OP_EVERY_H * 3600
-    calls = []
-    if tids and not fresh:
-        calls = [tids[i:i + 3] for i in range(0, len(tids), 3)]
-    need = len(calls) + (0 if op.get("names_tried") else 1)
-    if calls and op["used"] + need > OP_MONTHLY - 5:
-        log(f"OddsPapi : quota du mois presque atteint ({op['used']}/{OP_MONTHLY}), pause jusqu'au mois prochain")
-        calls = []
-    if calls:
-        if not op.get("names_tried"):  # noms des équipes (1 seule requête : les cotes contiennent déjà les noms)
-            op["names_tried"] = True
-            try:
-                parts = _op_get("participants", sportId=10)
-                op["used"] += 1
-                op["names"] = {str(p.get("participantId")): p.get("participantName") or p.get("name") or ""
-                               for p in (parts if isinstance(parts, list) else parts.get("data") or [])}
-                log(f"OddsPapi : {len(op['names'])} équipes en cache")
-            except Exception as e:
-                log("OddsPapi (équipes) :", e)
-        if not op.get("books_seen"):  # liste des bookmakers d'OddsPapi (1 seule requête) : y a-t-il les français ?
-            op["books_seen"] = True
-            try:
-                bl = _op_get("bookmakers")
-                op["used"] += 1
-                bl = bl if isinstance(bl, list) else (bl or {}).get("data", [])
-                fr = [f"{x.get('slug') or x.get('bookmaker')} ({x.get('bookmakerName') or x.get('name') or ''})" for x in bl
-                      if any(k in str(x).lower() for k in ("betclic", "winamax", "unibet", "parions", "fdj", "pmu", "netbet", "zebet", "betsson", "france", ".fr"))]
-                log(f"OddsPapi : {len(bl)} bookmakers, dont liés à la France : " + "; ".join(fr[:30]))
-            except Exception as e:
-                log("OddsPapi (bookmakers) :", e)
+    chunks = [tids[i:i + 3] for i in range(0, len(tids), 3)]
+    per_refresh = len(chunks) * len(OP_BOOKS)
+    days_left = calendar.monthrange(now.year, now.month)[1] - now.day + 1
+    left = OP_MONTHLY - 6 - op.get("used", 0)
+    per_day = max(0.0, left / days_left)
+    refreshes = max(1, int(per_day // per_refresh)) if per_refresh else 0  # au moins 1 fois par jour si possible
+    every_h = 24 / refreshes if refreshes else 24
+    have = op.get("by") or {}
+    fresh = bool(have) and all(have.get(s) for s in OP_BOOKS) and time.time() - op.get("last", 0) < every_h * 3600
+    if chunks and not fresh and left >= per_refresh:
         if not op.get("mk"):  # catalogue des marchés (1 seule requête, gardé)
             try:
                 op["mk"] = op_market_map(_op_get("markets"))
                 op["used"] += 1
-                log(f"OddsPapi : {len(op['mk'])} marchés reconnus ({', '.join(sorted({v['kind'] for v in op['mk'].values()}))})")
             except Exception as e:
                 log("OddsPapi (marchés) :", e)
-        boards = []
-        for chunk in calls:
-            try:
-                boards += _op_get("odds-by-tournaments", tournamentIds=",".join(map(str, chunk)), bookmaker="bet365", verbosity=3) or []
-                op["used"] += 1
-                time.sleep(1.2)  # délai minimum entre deux appels
-            except Exception as e:
-                log("OddsPapi (cotes) :", e)
-        op["last"] = time.time()
-        keep = []
-        for f in boards:
-            mk = (((f.get("bookmakerOdds") or {}).get("bet365") or {}).get("markets") or {})
-            m = mk.get("101") or mk.get("10728")
-            if not m:
-                continue
-            price = lambda oid: (((m.get("outcomes") or {}).get(oid) or {}).get("players") or {}).get("0", {}).get("price")
-            h, d, a = price("101"), price("102"), price("103")
-            if not (h and d and a):
-                continue
-            extra, tot25 = {}, None
-            for mid, meta in (op.get("mk") or {}).items():
-                mm = mk.get(mid)
-                if not mm:
-                    continue
-                for oid, lab in meta["outcomes"].items():
-                    pl = (((mm.get("outcomes") or {}).get(oid) or {}).get("players") or {}).get("0") or {}
-                    pr = pl.get("price")
-                    if not pr or pl.get("active") is False:
-                        continue
-                    if meta["kind"] == "total" and meta.get("line") == 2.5:
-                        tot25 = dict(tot25 or {}, **{lab: float(pr)})
-                    elif lab:
-                        extra[lab] = float(pr)
-            keep.append({"extra": extra, "tot25": tot25 if tot25 and len(tot25) == 2 else None,
-                         "start": f.get("startTime") or f.get("trueStartTime"), "home": f.get("participant1Name") or (op.get("names") or {}).get(str(f.get("participant1Id")), ""),
-                         "away": f.get("participant2Name") or (op.get("names") or {}).get(str(f.get("participant2Id")), ""),
-                         "h": float(h), "d": float(d), "a": float(a)})
-        op["boards"] = keep
-        log(f"OddsPapi : {len(keep)} matchs avec cotes Bet365 ({op['used']}/{OP_MONTHLY} requêtes ce mois)")
-    # on (ré)applique les dernières cotes connues à chaque collecte
+        by, ok = {}, 0
+        for slug in OP_BOOKS:
+            rows = []
+            for chunk in chunks:
+                try:
+                    for f in _op_get("odds-by-tournaments", tournamentIds=",".join(map(str, chunk)), bookmaker=slug, verbosity=3) or []:
+                        x = _op_parse(f, slug, op)
+                        if x:
+                            rows.append(x)
+                    op["used"] += 1
+                    ok += 1
+                    time.sleep(1.2)  # délai minimum entre deux appels
+                except Exception as e:
+                    log(f"OddsPapi ({slug}) :", e)
+            by[slug] = rows or have.get(slug) or []
+        if ok:
+            op["last"] = time.time()
+        op["by"] = by
+        log("OddsPapi : " + ", ".join(f"{OP_BOOKS[s][1]} {len(r)} matchs" for s, r in by.items())
+            + f" ({op['used']}/{OP_MONTHLY} requêtes ce mois, prochain relevé dans {every_h:.0f} h)")
+    elif chunks and left < per_refresh:
+        log(f"OddsPapi : quota du mois presque atteint ({op.get('used')}/{OP_MONTHLY}), on garde les dernières cotes")
+    # on applique les dernières cotes connues de chaque bookmaker à chaque collecte
     n = 0
     for e in events:
         try:
             t = b.parse_time(e["commence_time"])
         except (KeyError, ValueError):
             continue
-        cands = []
-        for k in op.get("boards") or []:
-            try:
-                kt = datetime.fromisoformat(str(k["start"]).replace("Z", "+00:00"))
-            except ValueError:
+        real_all = {}
+        for slug, (key, title) in OP_BOOKS.items():
+            hit = None
+            for k in (op.get("by") or {}).get(slug) or []:
+                try:
+                    kt = datetime.fromisoformat(str(k["start"]).replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if abs((kt - t).total_seconds()) <= 20 * 60 and _best_team(e["home_team"], [k["home"]]) and _best_team(e["away_team"], [k["away"]]):
+                    hit = k
+                    break
+            if not hit:
                 continue
-            if abs((kt - t).total_seconds()) <= 20 * 60:
-                cands.append(k)
-        if not cands:
-            continue
-        hit = None
-        for k in cands:
-            if _best_team(e["home_team"], [k["home"]]) and _best_team(e["away_team"], [k["away"]]):
-                hit = k
-                break
-        if not hit and len(cands) == 1 and not cands[0]["home"]:
-            hit = cands[0]
-        if not hit:
-            continue
-        e["bookmakers"] = [bk for bk in e.get("bookmakers", []) if bk.get("key") != "bet365"]
-        mkts = [{"key": "h2h", "outcomes": [
-            {"name": e["home_team"], "price": hit["h"]}, {"name": e["away_team"], "price": hit["a"]},
-            {"name": "Draw", "price": hit["d"]}]}]
-        if hit.get("tot25"):
-            mkts.append({"key": "totals", "outcomes": [{"name": "Over", "price": hit["tot25"]["Over"], "point": 2.5},
-                                                       {"name": "Under", "price": hit["tot25"]["Under"], "point": 2.5}]})
-        e["bookmakers"].append({"key": "bet365", "title": "Bet365", "markets": mkts})
-        # vraies cotes Bet365 des autres paris (double chance, les 2 marquent, buts…) : remplacent nos estimations
-        e["_real"] = {k: [v, "bet365", "Bet365"] for k, v in (hit.get("extra") or {}).items()}
-        n += 1
+            mkts = [{"key": "h2h", "outcomes": [{"name": e["home_team"], "price": hit["h"]}, {"name": e["away_team"], "price": hit["a"]},
+                                                {"name": "Draw", "price": hit["d"]}]}]
+            if hit.get("tot25"):
+                mkts.append({"key": "totals", "outcomes": [{"name": "Over", "price": hit["tot25"]["Over"], "point": 2.5},
+                                                           {"name": "Under", "price": hit["tot25"]["Under"], "point": 2.5}]})
+            # OddsPapi est plus récent que la source principale pour ces bookmakers : il remplace leur entrée
+            e["bookmakers"] = [bk for bk in e.get("bookmakers", []) if bk.get("key") != key]
+            e["bookmakers"].append({"key": key, "title": title, "markets": mkts, "_ts": hit.get("ts")})
+            for lab, pr in (hit.get("extra") or {}).items():
+                real_all.setdefault(lab, {})[key] = [pr, title]
+            n += 1
+        if real_all:
+            e["_real_all"] = real_all
     if n:
-        log(f"cotes Bet365 ajoutées : {n} matchs")
+        log(f"cotes OddsPapi ajoutées : {n} (match x bookmaker)")
     return n
-
-
-def self_test(snap):
-    """Auto-test : fait tourner le vrai moteur sur les vraies données (comme l'appli d'un abonné Pro avec
-    Betclic, Winamax, FDJ et Bet365) et écrit dans le journal ce qu'un client verrait."""
-    import tempfile
-    tmp = tempfile.mkdtemp()
-    old_dir = b.config_dir
-    b.config_dir = lambda: tmp
-    try:
-        api = b.Api(start_loop=False)
-        api.load_snapshot(json.loads(json.dumps(tier_snapshot(snap, "pro"))))
-        api.set_books(["betclic_fr", "winamax_fr", "parionssport_fr", "unibet_fr", "bet365"])
-        ms = api.get_matches()
-        log(f"AUTO-TEST : {len(ms)} matchs, {len(api._sel)} paris analysés, "
-            f"{sum(1 for x in api._sel if not x.get('estimated'))} avec une vraie cote")
-        fav = und = 0
-        for stake, tgt in ((10, 15), (10, 40), (10, 200)):
-            r = api.compute_objective(stake, tgt)
-            opts = r.get("options") or []
-            log(f"AUTO-TEST Objectif {stake} € -> {tgt} € : {len(opts)} tickets"
-                + (f" (erreur : {r.get('error')})" if r.get("error") else "") + (f" verrou {r.get('locked')}" if r.get("locked") else ""))
-            for o in opts[:2]:
-                t = o["tickets"][0]
-                legs = []
-                for l in t["legs"]:
-                    side = l.get("side")
-                    tag = ""
-                    if side in ("home", "away"):
-                        mine, other = (l.get("form_h"), l.get("form_a")) if side == "home" else (l.get("form_a"), l.get("form_h"))
-                        tag = f" [{mine or '?'} vs {other or '?'}]"
-                        # outsider = l'équipe soutenue a moins de chances que l'autre selon le marché
-                    if l["odds"] >= 2.6 and l.get("market") == "Résultat":
-                        und += 1
-                    elif l.get("market") == "Résultat":
-                        fav += 1
-                    legs.append(f"{l['selection']} @{l['odds']} ({round(l['p'] * 100)} %, {l.get('book')}){tag}")
-                log(f"   #{opts.index(o) + 1} {round(o['p_hit'] * 100, 1)} % : " + " | ".join(legs))
-        log(f"AUTO-TEST : victoires choisies : {fav} favoris, {und} outsiders (cote ≥ 2,6)")
-        for books in (["betclic_fr"], ["winamax_fr"], ["parionssport_fr", "unibet_fr"], ["bet365"]):
-            api.set_books(books)
-            r = api.compute_objective(10, 40)
-            log(f"AUTO-TEST bookmakers {'+'.join(books)} : {len(r.get('options') or [])} tickets, "
-                f"{(r.get('diag') or {}).get('n_real')} paris à vraie cote sur {(r.get('diag') or {}).get('n_matches')} matchs")
-    finally:
-        b.config_dir = old_dir
 
 
 def public_record(events, st, state=None):
@@ -987,7 +935,7 @@ def main():
         add_espn_odds(events, st)
     except Exception as e:
         log("cotes ESPN :", e)
-    if os.environ.get("ODDSPAPI_KEY") and not state.get("oddspapi", {}).get("boards"):
+    if False:  # diagnostic de clé : plus nécessaire (clé validée)
         try:
             oddspapi_diag()
         except Exception as e:

@@ -556,20 +556,27 @@ def _norm_team(t):
     return _norm_team(_TEAM_ALIAS[t]) if t in _TEAM_ALIAS and _TEAM_ALIAS[t] != t else t
 
 
-def _best_team(name, candidates):
-    n0 = _norm_team(name)
+def _team_score(name, cand):
+    """0..1 : ressemblance entre deux noms d'équipe (« FSV Mainz 05 » / « Mainz » = 0,9)."""
+    n0, n1 = _norm_team(name), _norm_team(cand)
+    if not n0 or not n1:
+        return 0.0
+    if n0 == n1:
+        return 1.0
+    A, B = n0.split(), n1.split()
+    hit = sum(1 for w in B if w in A or any(len(x) > 3 and len(w) > 3 and (x.startswith(w) or w.startswith(x)) for x in A))
+    if not hit:
+        return 0.0
+    return hit / len(B) * (0.85 + 0.15 * min(1.0, hit / len(A)))
+
+
+def _best_team(name, candidates, need=0.6):
     best, bs = None, 0.0
-    A = set(n0.split())
     for c in candidates:
-        n1 = _norm_team(c)
-        if n1 == n0:
-            return c
-        B = n1.split()
-        hit = sum(1 for w in B if w in A or any(len(a) > 3 and (a.startswith(w) or w.startswith(a)) for a in A))
-        sc = hit / max(len(B), len(A), 1)
+        sc = _team_score(name, c)
         if sc > bs:
             best, bs = c, sc
-    return best if bs >= 0.5 else None
+    return best if bs >= need else None
 
 
 def publish_lineup_watch(events, st):
@@ -618,21 +625,8 @@ def fd_enrich(w, rows, hn, an, code, ev):
         pr = M.predict(rt, hn, an) if rt else None
         if pr:
             w["model"] = pr
-    # 2) forme : 5 derniers matchs de championnat
-    form = w.setdefault("form", {})
     for side, t in (("home", hn), ("away", an)):
-        if form.get(side):
-            continue
-        g = [r for r in rows if t in (r["h"], r["a"])][-8:]
-        games = []
-        for r in g:
-            home = r["h"] == t
-            gf, ga = (r["hg"], r["ag"]) if home else (r["ag"], r["hg"])
-            games.append({"res": "V" if gf > ga else ("N" if gf == ga else "D"), "gf": gf, "ga": ga,
-                          "opp": r["a"] if home else r["h"], "home": home, "date": r["d"].isoformat(),
-                          "comp": ev.get("sport_title") or code})
-        if games:
-            form[side] = list(reversed(games))
+        fd_enrich_side(w, side, rows, t, code, ev, table=False)
     # 3) classement de la saison en cours, et enjeu
     cur = [r for r in rows if r["d"] >= season_start]
     if cur:
@@ -654,6 +648,48 @@ def fd_enrich(w, rows, hn, an, code, ev):
         if not w.get("stakes"):
             slug = {"F1": "fra.1", "E0": "eng.1", "SP1": "esp.1", "I1": "ita.1", "D1": "ger.1", "N1": "ned.1", "P1": "por.1"}.get(code, "")
             w["stakes"] = SS.season_stakes(table_all, {"home": hn, "away": an}, slug)
+
+
+def _fd_table(rows):
+    today = datetime.now(timezone.utc).date()
+    season_start = datetime(today.year if today.month >= 7 else today.year - 1, 7, 1).date()
+    tab = {}
+    for r in rows:
+        if r["d"] < season_start:
+            continue
+        for t, gf, ga in ((r["h"], r["hg"], r["ag"]), (r["a"], r["ag"], r["hg"])):
+            x = tab.setdefault(t, [0, 0, 0, 0])
+            x[0] += 3 if gf > ga else (1 if gf == ga else 0)
+            x[1] += gf
+            x[2] += ga
+            x[3] += 1
+    order = sorted(tab.items(), key=lambda kv: (-kv[1][0], -(kv[1][1] - kv[1][2]), -kv[1][1]))
+    return [{"tid": t, "name": t, "rank": i + 1, "pts": v[0], "played": v[3]} for i, (t, v) in enumerate(order)]
+
+
+def fd_enrich_side(w, side, rows, t, code, ev, table=True):
+    """Forme (5 derniers matchs de championnat) et classement d'UNE équipe, depuis son propre championnat."""
+    import sys as _s
+    _s.path.insert(0, os.path.join(HERE, "ci"))
+    import history_data as H
+    lname = H.LEAGUES.get(code, (code,))[0]
+    form = w.setdefault("form", {})
+    if not form.get(side):
+        g = [r for r in rows if t in (r["h"], r["a"])][-8:]
+        games = []
+        for r in g:
+            home = r["h"] == t
+            gf, ga = (r["hg"], r["ag"]) if home else (r["ag"], r["hg"])
+            games.append({"res": "V" if gf > ga else ("N" if gf == ga else "D"), "gf": gf, "ga": ga,
+                          "opp": r["a"] if home else r["h"], "home": home, "date": r["d"].isoformat(), "comp": lname})
+        if games:
+            form[side] = list(reversed(games))
+    if table:
+        tb = w.setdefault("table", {})
+        if not tb.get(side):
+            row = next((x for x in _fd_table(rows) if x["tid"] == t), None)
+            if row:
+                tb[side] = {"rank": row["rank"], "points": row["pts"], "league": lname}
 
 
 def cards_profile(rows, hn, an, referee):
@@ -695,28 +731,19 @@ def cards_profile(rows, hn, an, referee):
 
 
 def add_fd_h2h(events, st):
-    """Les 5 dernières confrontations en championnat (football-data.co.uk, gratuit, sans clé) pour chaque match
-    qui a une fiche, quand ESPN ne les donne pas."""
+    """Complète chaque match avec football-data.co.uk (gratuit, sans clé) : face-à-face sur toutes les divisions,
+    forme, classement, modèle de buts et cartons. Marche aussi pour les coupes (chaque équipe est cherchée dans
+    son propre championnat parmi les 16 couverts)."""
     sys.path.insert(0, os.path.join(HERE, "ci"))
     import history_data as H
     code_of = {v[1]: k for k, v in H.LEAGUES.items()}
     cdir = os.path.join(CACHE, "fd_csv")
     os.makedirs(cdir, exist_ok=True)
     seas = H.seasons()[-5:]
-    games_by_code = {}
-    web = st.data.get("web") or {}
-    n = 0
-    for ev in events:
-        eid, code = ev.get("id"), code_of.get(ev.get("sport_key"))
-        if not code:
-            continue
-        if eid not in web or not (web[eid] or {}).get("v"):
-            # pas de fiche ESPN : on en crée une avec les données gratuites de football-data.co.uk
-            web[eid] = {"ts": 0, "v": {"inj_home": [], "inj_away": [], "lineups": [], "news": [], "form": {}, "h2h": [],
-                                       "table": {}, "fmt": 0, "src": "football-data.co.uk"}}
-            st.data["web"] = web
-        w = web[eid]["v"]
-        if code not in games_by_code:
+    cache = {}
+
+    def load(code):
+        if code not in cache:
             rows = []
             for se in seas:
                 fp = os.path.join(cdir, f"{se}_{code}.csv")
@@ -727,31 +754,66 @@ def add_fd_h2h(events, st):
                         open(fp, "wb").write(raw)
                 if os.path.exists(fp):
                     rows += H.read_rows(open(fp, "rb").read())
-            games_by_code[code] = rows
-        rows = games_by_code[code]
-        if not rows:
-            continue
-        teams = {r["h"] for r in rows[-400:]} | {r["a"] for r in rows[-400:]}
-        hn, an = _best_team(ev.get("home_team"), teams), _best_team(ev.get("away_team"), teams)
-        if not hn or not an or hn == an:
+            rows.sort(key=lambda r: r["d"])
+            cache[code] = rows
+        return cache[code]
+
+    def teams_of(code):
+        rows = load(code)
+        return {r["h"] for r in rows[-500:]} | {r["a"] for r in rows[-500:]}
+
+    def resolve(name, pref):
+        # d'abord le championnat du match, sinon les 16 championnats couverts
+        if pref:
+            t = _best_team(name, teams_of(pref))
+            if t:
+                return pref, t
+        best, bc, bs = None, None, 0.0
+        for c in H.LEAGUES:
+            for t in teams_of(c):
+                sc = _team_score(name, t)
+                if sc > bs:
+                    best, bc, bs = t, c, sc
+        return (bc, best) if bs >= 0.75 else (None, None)
+
+    web = st.data.get("web") or {}
+    n = 0
+    for ev in events:
+        eid, pref = ev.get("id"), code_of.get(ev.get("sport_key"))
+        if eid not in web or not (web[eid] or {}).get("v"):
+            # pas de fiche ESPN : on en crée une avec les données gratuites de football-data.co.uk
+            web[eid] = {"ts": 0, "v": {"inj_home": [], "inj_away": [], "lineups": [], "news": [], "form": {}, "h2h": [],
+                                       "table": {}, "fmt": 0, "src": "football-data.co.uk"}}
+            st.data["web"] = web
+        w = web[eid]["v"]
+        ch, hn = resolve(ev.get("home_team"), pref)
+        ca, an = resolve(ev.get("away_team"), pref)
+        if not hn and not an:
             continue
         try:
-            w["cards"] = cards_profile(rows, hn, an, w.get("referee") or "")
-        except Exception:
-            pass
-        try:
-            fd_enrich(w, rows, hn, an, code, ev)
+            if ch and ch == ca and hn != an:   # même championnat : tout, y compris le modèle de buts et les cartons
+                rows = load(ch)
+                w["cards"] = cards_profile(rows, hn, an, w.get("referee") or "") or w.get("cards")
+                fd_enrich(w, rows, hn, an, ch, ev)
+            else:                              # coupe ou divisions différentes : forme et classement de chacun
+                for side, c, t in (("home", ch, hn), ("away", ca, an)):
+                    if c and t:
+                        fd_enrich_side(w, side, load(c), t, c, ev)
         except Exception as e:
             log("enrichissement football-data :", e)
-        meet = [r for r in rows if {r["h"], r["a"]} == {hn, an}]
-        meet.sort(key=lambda r: r["d"], reverse=True)
-        if not meet:
-            n += 1
-            continue
-        lname = H.LEAGUES[code][0]
-        w["h2h"] = [{"date": r["d"].isoformat(), "home": ev.get("home_team") if r["h"] == hn else ev.get("away_team"),
-                     "away": ev.get("away_team") if r["h"] == hn else ev.get("home_team"),
-                     "gh": r["hg"], "ga": r["ag"], "comp": lname} for r in meet[:5]]
+        if hn and an and len(w.get("h2h") or []) < 5:
+            pool = []
+            for c in {x for x in (ch, ca) if x}:
+                pool += load(c)
+            seen, meet = set(), []
+            for r in sorted(pool, key=lambda r: r["d"], reverse=True):
+                if {r["h"], r["a"]} == {hn, an} and (r["d"], r["h"]) not in seen:
+                    seen.add((r["d"], r["h"]))
+                    meet.append(r)
+            if meet:
+                w["h2h"] = [{"date": r["d"].isoformat(), "home": ev.get("home_team") if r["h"] == hn else ev.get("away_team"),
+                             "away": ev.get("away_team") if r["h"] == hn else ev.get("home_team"),
+                             "gh": r["hg"], "ga": r["ag"], "comp": "championnat"} for r in meet[:5]]
         n += 1
     if n:
         st._save()

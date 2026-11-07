@@ -730,7 +730,7 @@ function tabParis(e){
 }
 function formBox(name, f, tbl){
   if (!f) return `<div class="panel box"><h3>${esc(name)}</h3><p class="note">Forme indisponible.</p></div>`;
-  return `<div class="panel box"><h3>${esc(name)}${tbl&&tbl.rank?` <span class="pill">${tbl.rank}e · ${tbl.points} pts</span>`:""}</h3>
+  return `<div class="panel box"><h3>${esc(name)}${tbl&&tbl.rank?` <span class="pill">${tbl.rank}e · ${tbl.points} pts${tbl.league?" · "+esc(tbl.league):""}</span>`:""}</h3>
     <div class="flist">${(f.last||[]).map(g => `<div class="fg"><span class="fr ${g.res}">${g.res}</span><div class="fm"><b>${{V:"Victoire",N:"Nul",D:"Défaite"}[g.res]||""} ${esc(g.score)}</b> ${g.home?"contre":"chez"} ${esc(g.opp)}<small>${esc(g.date||"")}${g.comp?" · "+esc(g.comp):""} · ${g.home?"domicile":"extérieur"}</small></div></div>`).join("")}</div>
     <p class="note" style="margin-top:10px">${esc(f.streak_txt||"")}${f.home_rec?` · domicile ${esc(f.home_rec)} · extérieur ${esc(f.away_rec)}`:""}</p></div>`;
 }

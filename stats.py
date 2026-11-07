@@ -417,7 +417,7 @@ class Stats:
                     t = datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00"))
                 except (KeyError, ValueError):
                     continue
-                if now - timedelta(hours=2) < t < now + timedelta(days=7):
+                if now - timedelta(hours=2) < t < now + timedelta(days=12):
                     by_sport.setdefault(ev.get("_sport_key") or ev.get("sport_key"), []).append((t, ev))
             for sk, lst in by_sport.items():
                 slug = ESPN_SLUGS.get(sk)

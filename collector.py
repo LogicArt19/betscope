@@ -284,7 +284,7 @@ def oddspapi_diag():
     k = raw.strip().strip('"').strip("'")
     log(f"OddsPapi diag : clé de {len(raw)} caractères (après nettoyage {len(k)}), "
         f"espaces={'oui' if raw != raw.strip() else 'non'}, guillemets={'oui' if k != raw.strip() else 'non'}, "
-        f"début={k[:3]}…")
+        f"début={k[:3]}…, identique à la clé The Odds API (ODDS_KEY) : {'OUI' if k == os.environ.get('ODDS_KEY', '').strip() else 'non'}")
     for label, url, headers in (("paramètre apiKey", f"{OP_BASE}/account?apiKey={urllib.parse.quote(k)}", {}),
                                 ("en-tête x-api-key", f"{OP_BASE}/account", {"x-api-key": k}),
                                 ("paramètre apikey", f"{OP_BASE}/account?apikey={urllib.parse.quote(k)}", {})):

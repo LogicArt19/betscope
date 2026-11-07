@@ -459,10 +459,11 @@ export default {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
       const acc = await access(env, user);
       if (acc.tier !== "elite") return json(req, { ok: false, reason: "locked", need: "elite" }, 403);
-      const text = await kvJson(env, "bt_data");
-      if (!text) return json(req, { ok: false, reason: "no_data_yet" }, 503);
-      return new Response(text, { headers: { "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "private, max-age=3600", ...SEC, ...cors(req) } });
+      // le fichier est déjà compressé : envoyé tel quel (aucun calcul côté serveur, le navigateur le décompresse)
+      const buf = await env.KV.get("bt_data", "arrayBuffer");
+      if (!buf) return json(req, { ok: false, reason: "no_data_yet" }, 503);
+      return new Response(buf, { encodeBody: "manual", headers: { "Content-Type": "application/json; charset=utf-8",
+        "Content-Encoding": "gzip", "Cache-Control": "private, max-age=3600", ...SEC, ...cors(req) } });
     }
     if (p === "/api/snapshot" || p === "/api/engine") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);

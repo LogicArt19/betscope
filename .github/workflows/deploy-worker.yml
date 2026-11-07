@@ -28,6 +28,12 @@ jobs:
         run: |
           id=$(python3 ci/kv_id.py)
           echo "id=$id" >> "$GITHUB_OUTPUT"
+      - name: Adresse workers.dev
+        if: env.CONFIGURED == 'true'
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || '248f03341b6e3ba1b8392e98d98f9844' }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: python3 ci/cf_subdomain.py
       - name: Déploiement
         if: env.CONFIGURED == 'true'
         id: dep

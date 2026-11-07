@@ -310,12 +310,14 @@ export default {
       if (!plan || !env.WHOP_API_KEY) return json(req, { ok: false, reason: "plans_not_configured" }, 503);
       const ret = ALLOWED_ORIGINS.some((o) => String(body.return || "").startsWith(o + "/")) ? body.return : APP_URL;
       let r;
+      const base = { metadata: { cotescope_account: user.email }, redirect_url: ret };
       try {
-        r = await whop(env, "/checkout_configurations", {
-          method: "POST",
-          body: JSON.stringify({ plan_id: plan,
-                                 metadata: { cotescope_account: user.email }, redirect_url: ret }),
-        });
+        try { // versions récentes de l'API Whop : variant_id ; anciennes : plan_id
+          r = await whop(env, "/checkout_configurations", { method: "POST", body: JSON.stringify({ ...base, variant_id: plan }) });
+        } catch (e) {
+          if (e.status !== 400) throw e;
+          r = await whop(env, "/checkout_configurations", { method: "POST", body: JSON.stringify({ ...base, plan_id: plan }) });
+        }
       } catch (e) {
         return json(req, { ok: false, reason: e.status ? "whop_error" : "whop_unreachable", status: e.status || 0,
                            detail: e.detail || String(e.message || e) }, 502);

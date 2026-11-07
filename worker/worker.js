@@ -313,7 +313,7 @@ export default {
       try {
         r = await whop(env, "/checkout_configurations", {
           method: "POST",
-          body: JSON.stringify({ plan_id: plan, company_id: env.WHOP_COMPANY_ID || undefined,
+          body: JSON.stringify({ plan_id: plan,
                                  metadata: { cotescope_account: user.email }, redirect_url: ret }),
         });
       } catch (e) {

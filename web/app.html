@@ -423,7 +423,7 @@ const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un comp
   no_plan:"Aucun forfait actif sur ce compte.", free_over:"Ta version gratuite de 7 jours est terminée.", inactive:"Ton abonnement est terminé.",
   whop_unreachable:"Le service de paiement ne répond pas. Réessaie dans un instant.", plans_not_configured:"Les abonnements ouvrent très bientôt.",
   server_not_configured:"Le serveur Cotescope n'est pas encore prêt.", mail_not_configured:"Écris-nous pour réinitialiser ton mot de passe.",
-  bad_code:"Ce lien a expiré : redemande un e-mail.", network:"Pas de connexion au serveur Cotescope.", no_data_yet:"Les données du jour arrivent. Réessaie dans quelques minutes."};
+  bad_code:"Ce lien a expiré : redemande un e-mail.", telegram_off:"Les alertes Telegram ne sont pas encore activées.", network:"Pas de connexion au serveur Cotescope.", no_data_yet:"Les données du jour arrivent. Réessaie dans quelques minutes."};
 const errMsg = r => ERR[r] || ("Erreur : " + r);
 
 /* ======================================================================
@@ -452,7 +452,7 @@ async function server(path, method, body, raw){
 }
 function keep(r){
   if (r && r.session) { SESSION = r.session; lsSet(SESSION); }
-  if (r && r.ok && r.email) ACCOUNT = {email:r.email, tier:r.tier, status:r.status, renews:r.renews, cancel:r.cancel, manage:r.manage, pause:r.pause || null};
+  if (r && r.ok && r.email) ACCOUNT = {email:r.email, tier:r.tier, status:r.status, renews:r.renews, cancel:r.cancel, manage:r.manage, pause:r.pause || null, tg:!!r.tg, tg_bot:r.tg_bot || null};
   return r;
 }
 const Auth = {
@@ -469,6 +469,8 @@ const Auth = {
   logout: async all => { try { await server("/api/logout","POST",all ? {all:true} : {}); } catch(e) {} lsSet(""); SESSION = ""; ACCOUNT = null; location.hash = ""; location.reload(); },
   devices: () => server("/api/devices"),
   pause: days => server("/api/pause","POST",{days}),
+  tgLink: () => server("/api/telegram/link","POST",{}),
+  tgUnlink: () => server("/api/telegram/unlink","POST",{}),
   kick: id => server("/api/logout","POST",{id}),
 };
 function loadScript(src){ return new Promise((ok, ko) => { const s=document.createElement("script"); s.src=src; s.crossOrigin="anonymous"; if (PYODIDE_SRI && src.endsWith("pyodide.js")) s.integrity=PYODIDE_SRI; s.onload=ok; s.onerror=()=>ko(Object.assign(new Error("network"),{reason:"network"})); document.head.appendChild(s); }); }
@@ -1376,11 +1378,29 @@ function vCompte(){
         <div class="books" id="c-books">${BOOKS.map(([k,n]) => { const on = k.split(",").some(x => books.has(x)); return `<label class="${on?"on":""}"><input type="checkbox" value="${k}" ${on?"checked":""}>${n}</label>`; }).join("")}</div></div>
       <div class="panel box"><h3>Championnats affichés</h3><div class="books" id="c-lg">${(cfg._sports||[]).map(s => `<label class="${hid.has(s.key)?"":"on"}"><input type="checkbox" value="${s.key}" ${hid.has(s.key)?"":"checked"}>${esc(s.label)}</label>`).join("") || '<p class="note">Aucun championnat couvert pour l\'instant.</p>'}</div></div>
       ${capitalPanel()}
+      ${tgPanel()}
       <div class="panel box"><h3>Appareils connectés</h3><p class="note" style="margin-bottom:10px">5 appareils maximum. Un appareil que tu ne reconnais pas ? Déconnecte-le, puis change ton mot de passe.</p>
         <div id="c-dev"><p class="note">Chargement…</p></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" id="c-out">Se déconnecter</button><button class="btn" id="c-outall">Déconnecter tous les appareils</button></div></div>
     </div>`;
 }
+function tgPanel(){
+  const a = ACCOUNT || {};
+  const what = `<ul class="args" style="margin:8px 0 12px"><li>📋 Compos officielles et changements, dès leur publication <span class="pill">Pro</span></li><li>💎 Paris value des prochaines 24 h <span class="pill v">Elite</span></li><li>📉 Cotes Pinnacle qui chutent (l'argent des pros) <span class="pill v">Elite</span></li></ul>`;
+  if (rank() < 2) return `<div class="panel box"><h3>Alertes Telegram</h3>${what}${lockBox("pro", "Alertes sur ton téléphone", "Reçois les compos officielles et les opportunités directement sur Telegram.")}</div>`;
+  if (!a.tg_bot && !window.__BRIDGE__) return `<div class="panel box"><h3>Alertes Telegram</h3>${what}<p class="note">Les alertes ouvrent très bientôt.</p></div>`;
+  return `<div class="panel box"><h3>Alertes Telegram ${a.tg ? '<span class="pill ok">activées</span>' : ""}</h3>${what}
+    ${a.tg ? `<button class="btn" id="tg-off">Arrêter les alertes</button>` : `<button class="btn go" id="tg-on">Recevoir les alertes sur Telegram</button><p class="note" style="margin-top:8px">Telegram s'ouvre : appuie sur « Démarrer », c'est tout.</p>`}</div>`;
+}
+document.addEventListener("click", async e => {
+  if (e.target.closest("#tg-on")) {
+    const w = window.open("about:blank", "_blank");
+    const r = await Auth.tgLink();
+    if (r.ok) { if (w) w.location = r.url; else location.href = r.url; toast("Appuie sur « Démarrer » dans Telegram"); setTimeout(async () => { await Auth.me(true); render(); }, 15000); }
+    else { if (w) w.close(); toast(errMsg(r.reason)); }
+  }
+  if (e.target.closest("#tg-off")) { const r = await Auth.tgUnlink(); if (r.ok) { ACCOUNT.tg = false; toast("Alertes arrêtées"); render(); } }
+});
 function capitalPanel(){
   if (rank() < 3) return `<div class="panel box"><h3>Mon capital</h3>${lockBox("elite", "Capital et mise conseillée", "Indique ton capital : Cotescope te dit combien miser sur chaque pari, avec une limite par jour et un stop-loss.")}</div>`;
   const cfg = call("get_config") || {}, b = call("get_bank") || {};

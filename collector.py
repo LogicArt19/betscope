@@ -254,7 +254,7 @@ def add_espn_odds(events, st):
         log(f"cotes ESPN ajoutées : {n}")
 
 
-def public_record(events, st):
+def public_record(events, st, state=None):
     """Bilan public : on enregistre chaque pari que Cotescope « jouerait », puis on le vérifie
     avec le résultat officiel. Le résumé est publié sans connexion (preuve pour la vitrine)."""
     from history import History
@@ -268,6 +268,12 @@ def public_record(events, st):
     soon = datetime.now(timezone.utc) + timedelta(hours=30)
     safe = [x for x in b.most_probable(sel, cfg) if not x.get("estimated") and x["start"] <= soon and x["p"] >= 0.6]
     picks += safe[:3]
+    if state is not None:
+        try:
+            n_al = queue_alerts(sel, cfg, state)
+            log("alertes Telegram préparées :", n_al)
+        except Exception as e:
+            log("alertes :", e)
     h.log_app(picks)
     h.settle_all(S.ESPN_SLUGS)
     summ = h.summary()["app"]
@@ -287,6 +293,43 @@ def public_record(events, st):
         log("registre public certifié :", n_new, "nouveau(x) pronostic(s)")
     except Exception as e:
         log("registre public :", e)
+
+
+def queue_alerts(sel, cfg, state):
+    """Alertes Elite envoyées sur Telegram par le serveur : paris value des prochaines 24 h et cotes Pinnacle
+    qui chutent (l'argent des parieurs pros arrive). Chaque alerte n'est envoyée qu'une fois."""
+    now = datetime.now(timezone.utc)
+    hist = state.setdefault("pin_hist", {})
+    sent = set(state.get("alerts_sent", []))
+    out = []
+    fr = lambda x: f"{x:.2f}".replace(".", ",")
+    for x in sel:
+        if x.get("estimated") or x.get("suspect") or not (now < x["start"] < now + timedelta(hours=48)):
+            continue
+        pin = (x.get("all_prices") or {}).get("pinnacle")
+        if pin:
+            h = hist.setdefault(x["uid"], {"f": pin[0], "t": now.timestamp()})
+            drop = (pin[0] - h["f"]) / h["f"]
+            aid = "drop:" + x["uid"]
+            if drop <= -0.10 and aid not in sent:
+                out.append({"id": aid, "ev": -drop, "text":
+                    f"📉 <b>Cote qui chute</b> · {x['match']}\n{x['selection']} : Pinnacle passe de {fr(h['f'])} à {fr(pin[0])} ({drop * 100:.0f} %). "
+                    f"L'argent des parieurs pros arrive sur ce pari.\nMeilleure cote chez toi : {fr(x['odds'])} ({x['book']}) · nos chances : {x['p'] * 100:.0f} %"})
+        aid = "value:" + x["uid"]
+        if b.is_value(x, cfg) and x["p"] >= 0.3 and x["start"] < now + timedelta(hours=24) and aid not in sent:
+            out.append({"id": aid, "ev": x["ev"], "text":
+                f"💎 <b>Pari value</b> · {x['match']}\n{x['selection']} à {fr(x['odds'])} chez {x['book']}. "
+                f"Nos chances : {x['p'] * 100:.0f} %, juste prix {fr(1 / x['p'])} (+{x['ev'] * 100:.0f} % sur la durée)."})
+    out.sort(key=lambda a: -a["ev"])
+    out = out[:6]
+    for a in out:
+        sent.add(a["id"])
+    state["alerts_sent"] = list(sent)[-800:]
+    keep = {u for u in hist if any(u == x["uid"] for x in sel)}
+    state["pin_hist"] = {u: hist[u] for u in keep}
+    if out:
+        cf_put("alerts_out", {"built": time.time(), "items": [{"id": a["id"], "text": a["text"]} for a in out]}, gz=False)
+    return len(out)
 
 
 LEDGER_URL = "https://raw.githubusercontent.com/LogicArt19/cotescope/main/bilan/registre.json"
@@ -527,7 +570,7 @@ def main():
         cf_put("snapshot_" + tier, tier_snapshot(snap, tier))
 
     try:
-        public_record(events, st)
+        public_record(events, st, state)
     except Exception as e:  # le bilan public ne doit jamais bloquer la collecte
         log("bilan public :", e)
 

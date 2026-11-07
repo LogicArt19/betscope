@@ -296,7 +296,7 @@ async function verifyWebhook(env, req, raw) {
 function pub(user, acc) {
   return { ok: true, email: user.email, name: user.name || "", tier: acc.tier, status: acc.status,
            renews: acc.renews || null, cancel: !!acc.cancel, manage: acc.manage || null,
-           trial_used: !!(user.memberships || []).length, pause: user.pause && user.pause > Date.now() ? user.pause : null };
+           trial_used: !!(user.memberships || []).length, pause: user.pause && user.pause > Date.now() ? user.pause : null, tg: !!user.tg };
 }
 // alerte e-mail quand le compte est ouvert depuis un nouveau pays (si les e-mails sont configurés)
 async function newPlaceAlert(env, user, req) {
@@ -311,6 +311,43 @@ async function newPlaceAlert(env, user, req) {
          <p>Si c'est toi, tout va bien. Sinon, change ton mot de passe tout de suite dans l'appli (Mon compte) : tous les appareils seront déconnectés.</p>`).catch(() => {});
     }
   }
+}
+
+/* ---------------- alertes Telegram ---------------- */
+const tgToken = (env) => String(env.TELEGRAM_BOT_TOKEN || "").replace(/\s/g, "");
+const tgName = (env) => String(env.TELEGRAM_BOT_NAME || "").replace(/[\s@]/g, "");
+async function sha256hex(t) { return [...new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(t)))].map((b) => b.toString(16).padStart(2, "0")).join(""); }
+async function tgSend(env, chat, text) {
+  if (!tgToken(env)) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${tgToken(env)}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, text, parse_mode: "HTML", disable_web_page_preview: true }) });
+    return r.ok;
+  } catch (e) { return false; }
+}
+// abonnés : { email: { chat, tier } } (une seule clé KV, écrite seulement quand quelqu'un se relie / se délie / change de forfait)
+const tgSubs = async (env) => (await env.KV.get("tg_subs", "json")) || {};
+async function tgBroadcast(env, minTier, text) {
+  const subs = await tgSubs(env), rank = { gratuit: 0, essentiel: 1, pro: 2, elite: 3 };
+  let n = 0;
+  for (const s of Object.values(subs)) {
+    if ((rank[s.tier] || 0) >= rank[minTier] && n < 40) { if (await tgSend(env, s.chat, text)) n++; }
+  }
+  return n;
+}
+const escH = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+// alertes préparées par la collecte horaire (paris value, cotes qui chutent) : envoyées une seule fois aux abonnés Elite
+async function sendQueuedAlerts(env) {
+  if (!tgToken(env)) return 0;
+  const q = await env.KV.get("alerts_out", "json");
+  if (!q || !q.items || !q.items.length) return 0;
+  const done = new Set((await env.KV.get("alerts_done", "json")) || []);
+  const todo = q.items.filter((a) => !done.has(a.id));
+  if (!todo.length) return 0;
+  for (const a of todo) { await tgBroadcast(env, "elite", a.text + "\n\nJoue de façon responsable."); done.add(a.id); }
+  await env.KV.put("alerts_done", JSON.stringify([...done].slice(-800)));
+  return todo.length;
 }
 
 /* ---------------- compos officielles en 1 à 2 minutes ---------------- */
@@ -357,6 +394,11 @@ async function checkLineups(env) {
       }
       await env.KV.put("lu:" + m.eid, JSON.stringify({ ts: now, lineups: lu, home: m.home, away: m.away }), { expirationTtl: 2 * 86400 });
       n++;
+      const ch = lu.filter((l) => (l.in && l.in.length) || (l.out && l.out.length));
+      const lines = ch.map((l) => `<b>${escH(l.team)}</b> : ${l.in.length ? "entrent " + escH(l.in.join(", ")) : ""}${l.in.length && l.out.length ? " · " : ""}${l.out.length ? "sortent " + escH(l.out.join(", ")) : ""}`);
+      await tgBroadcast(env, "pro", `📋 <b>Compos officielles</b> : ${escH(m.home)} – ${escH(m.away)}\n` +
+        (lines.length ? lines.join("\n") + "\n\nRegarde si les cotes ont bougé avant de parier." : "Pas de changement par rapport au dernier match.") +
+        `\n${APP_URL}#/match/${encodeURIComponent(m.eid)}`);
     } catch (e) { /* on réessaiera à la minute suivante */ }
   }
   return n;
@@ -365,7 +407,7 @@ async function checkLineups(env) {
 /* ---------------- routes ---------------- */
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(checkLineups(env));
+    ctx.waitUntil(Promise.all([checkLineups(env), sendQueuedAlerts(env)]));
   },
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -373,6 +415,35 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: { ...SEC, ...cors(req) } });
     if (!["GET", "POST"].includes(req.method)) return json(req, { ok: false, reason: "method" }, 405);
     if (p === "/api/health") return json(req, { ok: true, time: Date.now() });
+    if (p === "/api/telegram/webhook" && req.method === "POST") {
+      // seul Telegram connaît ce secret (posé au déploiement) : les fausses requêtes sont refusées
+      const want = (await sha256hex(tgToken(env))).slice(0, 48);
+      if (!tgToken(env) || !eq(req.headers.get("X-Telegram-Bot-Api-Secret-Token") || "", want)) return new Response("no", { status: 401 });
+      let up = {};
+      try { up = await req.json(); } catch (e) { /* vide */ }
+      const msg = up.message || {}, chat = msg.chat && msg.chat.id, text = String(msg.text || "").trim();
+      if (!chat) return new Response("ok");
+      const m = text.match(/^\/start\s+([A-Za-z0-9_-]{10,64})$/);
+      if (m) {
+        const email = await env.KV.get("tglink:" + m[1]);
+        const u = email && (await getUser(env, email));
+        if (!u) { await tgSend(env, chat, "Ce lien a expiré. Retourne dans Cotescope → Mon compte → Alertes Telegram."); return new Response("ok"); }
+        await env.KV.delete("tglink:" + m[1]);
+        u.tg = chat; await putUser(env, u);
+        const acc = await access(env, u), subs = await tgSubs(env);
+        subs[u.email] = { chat, tier: acc.tier || "gratuit" };
+        await env.KV.put("tg_subs", JSON.stringify(subs));
+        await tgSend(env, chat, `✅ <b>Compte Cotescope relié</b> (${escH(u.email)}).\nTu recevras ici les alertes de ton forfait : compos officielles (Pro), paris value et cotes qui chutent (Elite).\nEnvoie /stop pour arrêter.\n\nJoue de façon responsable. Joueurs Info Service : 09 74 75 13 13.`);
+      } else if (/^\/stop/.test(text)) {
+        const subs = await tgSubs(env);
+        for (const [e, s] of Object.entries(subs)) if (s.chat === chat) { delete subs[e]; const u = await getUser(env, e); if (u) { delete u.tg; await putUser(env, u); } }
+        await env.KV.put("tg_subs", JSON.stringify(subs));
+        await tgSend(env, chat, "🔕 Alertes arrêtées. Tu peux les réactiver depuis Cotescope → Mon compte.");
+      } else {
+        await tgSend(env, chat, "Pour recevoir les alertes, relie ton compte depuis Cotescope → Mon compte → Alertes Telegram.");
+      }
+      return new Response("ok");
+    }
     if (p === "/api/public/stats") { // bilan public des pronostics (sans connexion)
       const text = await kvJson(env, "public_stats");
       return new Response(text || '{"n":0}', { headers: { "Content-Type": "application/json; charset=utf-8",
@@ -468,7 +539,26 @@ export default {
     const user = await readSession(env, req);
     if (p === "/api/me") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
-      return json(req, pub(user, await access(env, user, url.searchParams.has("fresh"))));
+      const acc = await access(env, user, url.searchParams.has("fresh"));
+      if (user.tg) { // garde le forfait des abonnés Telegram à jour (pour savoir quelles alertes leur envoyer)
+        const subs = await tgSubs(env), cur = subs[user.email];
+        if (!cur || cur.tier !== (acc.tier || "gratuit")) { subs[user.email] = { chat: user.tg, tier: acc.tier || "gratuit" }; await env.KV.put("tg_subs", JSON.stringify(subs)); }
+      }
+      return json(req, { ...pub(user, acc), tg_bot: tgName(env) || null });
+    }
+    if (p === "/api/telegram/link" && req.method === "POST") {
+      if (!user) return json(req, { ok: false, reason: "session" }, 401);
+      if (!tgToken(env) || !tgName(env)) return json(req, { ok: false, reason: "telegram_off" }, 503);
+      const code = rand(18);
+      await env.KV.put("tglink:" + code, user.email, { expirationTtl: 3600 });
+      return json(req, { ok: true, url: `https://t.me/${tgName(env)}?start=${code}` });
+    }
+    if (p === "/api/telegram/unlink" && req.method === "POST") {
+      if (!user) return json(req, { ok: false, reason: "session" }, 401);
+      const subs = await tgSubs(env);
+      if (subs[user.email]) { await tgSend(env, subs[user.email].chat, "🔕 Alertes Cotescope arrêtées depuis ton compte."); delete subs[user.email]; await env.KV.put("tg_subs", JSON.stringify(subs)); }
+      delete user.tg; await putUser(env, user);
+      return json(req, { ok: true });
     }
     // pause volontaire (jeu responsable) : 1, 7 ou 30 jours, impossible à raccourcir une fois lancée
     if (p === "/api/pause" && req.method === "POST") {

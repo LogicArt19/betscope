@@ -47,13 +47,15 @@ jobs:
           S_OWNER_EMAILS: ${{ secrets.OWNER_EMAILS }}
           S_WHOP_WEBHOOK_SECRET: ${{ secrets.WHOP_WEBHOOK_SECRET }}
           S_RESEND_KEY: ${{ secrets.RESEND_KEY }}
+          S_TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          S_TELEGRAM_BOT_NAME: ${{ secrets.TELEGRAM_BOT_NAME }}
         run: |
           export CLOUDFLARE_API_TOKEN="$(printf %s "$CLOUDFLARE_API_TOKEN" | tr -d "[:space:]")"
           sed -i "s/__KV_ID__/${{ steps.kv.outputs.id }}/" wrangler.toml
           npx --yes wrangler@3.114.0 deploy 2>&1 | tee deploy.log
           url=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          for n in WHOP_API_KEY OWNER_EMAILS WHOP_WEBHOOK_SECRET RESEND_KEY; do
+          for n in WHOP_API_KEY OWNER_EMAILS WHOP_WEBHOOK_SECRET RESEND_KEY TELEGRAM_BOT_TOKEN TELEGRAM_BOT_NAME; do
             v="$(printenv "S_$n" || true)"
             if [ -n "$v" ]; then printf '%s' "$v" | npx --yes wrangler@3.114.0 secret put "$n" >/dev/null && echo "secret $n OK"; fi
           done
@@ -61,6 +63,25 @@ jobs:
           if ! npx --yes wrangler@3.114.0 secret list 2>/dev/null | grep -q SESSION_SECRET; then
             openssl rand -hex 32 | tr -d '\n' | npx --yes wrangler@3.114.0 secret put SESSION_SECRET >/dev/null && echo "secret SESSION_SECRET créé"
           fi
+      - name: Bot Telegram (vérification + webhook)
+        if: env.CONFIGURED == 'true' && steps.dep.outputs.url != ''
+        env:
+          TG: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_NAME: ${{ secrets.TELEGRAM_BOT_NAME }}
+        run: |
+          if [ -z "$TG" ]; then echo "::notice::TELEGRAM_BOT_TOKEN absent : alertes Telegram désactivées"; exit 0; fi
+          TG="$(printf %s "$TG" | tr -d '[:space:]')"
+          me=$(curl -s "https://api.telegram.org/bot${TG}/getMe")
+          if echo "$me" | grep -q '"ok":true'; then
+            user=$(echo "$me" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['username'])")
+            echo "Jeton Telegram valide : bot @$user"
+            name="$(printf %s "$TG_NAME" | tr -d '[:space:]@')"
+            if [ -n "$name" ] && [ "${name,,}" != "${user,,}" ]; then echo "::warning::TELEGRAM_BOT_NAME ($name) ne correspond pas au bot du jeton (@$user)"; fi
+          else
+            echo "::error::Le jeton Telegram est refusé par Telegram : vérifie le secret TELEGRAM_BOT_TOKEN"; exit 0
+          fi
+          sec=$(printf %s "$TG" | sha256sum | cut -c1-48)
+          curl -s "https://api.telegram.org/bot${TG}/setWebhook" -d "url=${{ steps.dep.outputs.url }}/api/telegram/webhook" -d "secret_token=${sec}" -d 'allowed_updates=["message"]' | grep -o '"ok":[a-z]*'
       - name: Adresse du serveur publiée sur le site (config.json)
         if: env.CONFIGURED == 'true' && steps.dep.outputs.url != ''
         env:

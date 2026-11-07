@@ -599,6 +599,17 @@ def data_quality(st):
     return sum(bool(x) for x in items) / len(items)
 
 
+def analysis_weight(w_stats, st):
+    """Part de NOS analyses (forme, absents, classement, face-à-face, modèle de buts) dans la proba finale.
+    Plus les données du match sont complètes, plus elles comptent : jusqu'à 55 %. Le reste vient du consensus
+    des cotes, pondéré vers les bookmakers « sharp » (Pinnacle, bourses), qui reflètent l'argent des parieurs
+    professionnels plutôt que celui des supporters."""
+    if w_stats <= 0:
+        return 0.0
+    q = data_quality(st)
+    return min(0.55, max(w_stats, 0.35) * (0.6 + 0.8 * q))
+
+
 def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
     """Points pour / contre lisibles + score de confiance pour une sélection."""
     pros, cons = [], []
@@ -925,11 +936,11 @@ def analyze(events, cfg, now=None, info=None):
                     elif mkey == "totals" and a["point"] is not None:
                         po = modelmod.p_over(mdl, float(a["point"]))
                         p_model = po if a["name"] == "Over" else (1 - po if po is not None else None)
-                w_eff = w_stats
+                w_eff = analysis_weight(w_stats, st)
                 if p_model is None and st:
                     # pas de modèle saison (pas de clé) : on utilise quand même la forme récente + face-à-face
                     p_model = form_proxy(st, side, mkey, a["name"], a["point"])
-                    w_eff = w_stats * 0.6
+                    w_eff = analysis_weight(w_stats, st) * 0.6
                 if p_model is not None and 0 < w_eff <= 0.6:
                     p = (1 - w_eff) * p_market + w_eff * p_model
                 stat_sum = analyse_points(st, side, a["name"], a["point"], mkey, p_market, p_model, home, away) \
@@ -995,7 +1006,7 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
     over = next((s for s in mine if s["cat"] == "total" and s["selection"].startswith("Plus de 2,5")), None)
     lh, la = mk.fit_lambdas(p1, pn, p2, over["p_market"] if over else None)
     lh_m, la_m = (mdl["xg_home"], mdl["xg_away"]) if mdl else (None, None)
-    w = w_stats if mdl and 0 < w_stats <= 0.6 else 0.0
+    w = analysis_weight(w_stats, st) if mdl and 0 < w_stats <= 0.6 else 0.0
     fh, fa = (1 - w) * lh + w * (lh_m or lh), (1 - w) * la + w * (la_m or la)
     ref = mine[0]
     # bookmaker où l'on parie (Betclic) : même nom que sur les vrais marchés
@@ -1579,6 +1590,17 @@ def _solve(evs, L, k=None, lmin=1, lmax=12, banned=(), keep=None):
     return {"legs": [x[2] for x in legs], "leg_odds": [x[3] for x in legs], "odds": o, "p": p, "ev": p * o - 1}
 
 
+def _reasonable(s, floor):
+    """Un pari « raisonnable » pour un ticket : assez probable, et pas contredit par nos analyses."""
+    if floor <= 0:
+        return True
+    st = s.get("stats") or {}
+    if s["p"] < floor or st.get("contra"):
+        return False
+    pm = st.get("p_model")
+    return pm is None or pm >= floor - 0.05
+
+
 def _objective_plan(stake, target, selections, cfg):
     """Des dizaines de tickets différents qui atteignent l'objectif, classés uniquement par leurs
     vraies chances de passer."""
@@ -1609,22 +1631,30 @@ def _objective_plan(stake, target, selections, cfg):
         if cur and cur["_odds"] >= odds:
             cur["_tags"] = tags
             return
-        o = {"book": btitle, "tickets": tickets, "p_hit": 1 - miss, "_odds": odds, "_tags": tags}
+        o = {"book": btitle, "tickets": tickets, "p_hit": 1 - miss, "_odds": odds, "_tags": tags,
+             "unsafe": any(l["p"] < 0.5 for t in tickets for l in t["legs"])}
         found[key] = dict(o, **(extra or {}))
 
     ranked_books = sorted(books, key=lambda bk: -sum(1 for s in selections if bk in s["playable"]))
     for bi, book in enumerate(ranked_books[:4]):
-        items = _book_items(selections, cfg, book)
-        if not items:
+        items_all = _book_items(selections, cfg, book)
+        if not items_all:
             continue
-        btitle = items[0][0]["playable"][book][1]
-        evs = _fronts(items)
-        solve = lambda **kw: _solve(evs, L, **dict(dict(lmin=lmin, lmax=lmax), **kw))
-        one = lambda t: [dict(t, stake=stake)] if t else []
-        # 1. le plus sûr, puis le plus sûr pour chaque nombre de matchs
-        best = solve()
+        btitle = items_all[0][0]["playable"][book][1]
+        # paris raisonnables d'abord : au moins 1 chance sur 2, et nos analyses ne disent pas le contraire
+        best, relaxed = None, False
+        for floor in (0.5, 0.4, 0.0):
+            items = [(x, o) for x, o in items_all if _reasonable(x, floor)]
+            evs = _fronts(items)
+            solve = lambda evs=evs, **kw: _solve(evs, L, **dict(dict(lmin=lmin, lmax=lmax), **kw))
+            best = solve()
+            if best:
+                relaxed = floor < 0.5
+                break
         if not best:
             continue
+        one = lambda t: [dict(t, stake=stake)] if t else []
+        # 1. le plus sûr, puis le plus sûr pour chaque nombre de matchs
         add("best", "Le plus sûr, nombre de matchs libre", one(best), btitle)
         ladder = [best] if best else []
         for k in range(lmin, lmax + 1):
@@ -1688,7 +1718,8 @@ def _objective_plan(stake, target, selections, cfg):
                 tks.append(tk)
             add(f"split{n}", f"{n} tickets de {st:.2f} € sur des matchs différents".replace(".", ","), tks, btitle)
 
-    options = sorted(found.values(), key=lambda o: (-o["p_hit"], sum(len(t["legs"]) for t in o["tickets"])))
+    # tickets raisonnables (toutes les sélections à 50 % ou plus) avant les autres, puis par chances réelles
+    options = sorted(found.values(), key=lambda o: (o["unsafe"], -o["p_hit"], sum(len(t["legs"]) for t in o["tickets"])))
     for o in options:
         o.pop("_odds", None)
         tags = o.pop("_tags")
@@ -1800,12 +1831,15 @@ def ser_objective(res, cfg):
                           "conf": l.get("conf"), "q": (l.get("stats") or {}).get("q"),
                           "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
                           "min_odds": l.get("min_odds"), "market": l["market"], "ts": l["start"].timestamp(),
-                          "league": l.get("sport")}
+                          "league": l.get("sport"), "event_id": l["event_id"],
+                          "p_market": round(l.get("p_market", l["p"]), 4),
+                          "p_model": round((l.get("stats") or {}).get("p_model"), 4) if (l.get("stats") or {}).get("p_model") is not None else None,
+                          "contra": bool((l.get("stats") or {}).get("contra"))}
                          for l, lo in zip(t["legs"], t["leg_odds"])],
             })
         legs_all = [l for t in o["tickets"] for l in t["legs"]]
         ends = max(l["start"] for l in legs_all)
-        out["options"].append({"relaxed": bool(o.get("relaxed")), "kind": o["kind"], "title": o["title"],
+        out["options"].append({"relaxed": bool(o.get("relaxed")), "unsafe": bool(o.get("unsafe")), "kind": o["kind"], "title": o["title"],
                                "desc": o["desc"], "book": o["book"], "n_legs": len(legs_all),
                                "ends": fmt_date(ends), "ends_ts": ends.timestamp(),
                                "odds": round(sum(t["stake"] * t["odds"] for t in o["tickets"]) / max(0.01, sum(t["stake"] for t in o["tickets"])), 2),

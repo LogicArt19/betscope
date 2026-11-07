@@ -912,6 +912,64 @@ function pickRow(b){
     <button class="add ${BSET.has(b.uid)?"in":""}" data-add="${esc(b.uid)}">${BSET.has(b.uid)?"✓":"+"}</button></div>`;
 }
 let PTAB = "sure";
+/* ---------- optimiseur de grille Loto Foot ---------- */
+let LOTO = {sel: [], unit: "1", budget: "8", res: null};
+// Pour chaque match on peut cocher 1, 2 ou 3 issues. Coût = prix unitaire × 2^doubles × 3^triples.
+// Programmation dynamique : la grille qui a le plus de chances d'être entièrement juste dans le budget.
+function lotoSolve(matches, maxCombos){
+  const opts = matches.map(m => {
+    const p = m.probs.map((x, k) => ({k, p: x || 0})).sort((a, b) => b.p - a.p);
+    return [{c: 1, keys: [p[0].k], p: p[0].p}, {c: 2, keys: [p[0].k, p[1].k], p: p[0].p + p[1].p}, {c: 3, keys: [0, 1, 2], p: 1}];
+  });
+  let dp = new Map([[1, {lp: 0, pick: []}]]);
+  for (const o of opts) {
+    const nx = new Map();
+    for (const [cost, st] of dp) for (const x of o) {
+      const c = cost * x.c; if (c > maxCombos) continue;
+      const lp = st.lp + Math.log(Math.max(1e-9, x.p)), cur = nx.get(c);
+      if (!cur || lp > cur.lp) nx.set(c, {lp, pick: [...st.pick, x]});
+    }
+    dp = nx;
+  }
+  let best = null; for (const [c, st] of dp) if (!best || st.lp > best.lp) best = {...st, combos: c};
+  return best;
+}
+function lotoBox(){
+  if (rank() < 1) return lockBox("essentiel", "Optimiseur Loto Foot", "Choisis les matchs de la grille et ton budget : Cotescope place les doubles et les triples là où ils rapportent le plus de chances.");
+  const ms = (MATCHES || []).filter(m => m.probs && m.probs.every(x => x != null)).slice(0, 80), sel = new Set(LOTO.sel);
+  const R = LOTO.res, lab = m => [m.home, "Nul", m.away];
+  return `<div class="panel box" style="max-width:900px"><h3>Optimiseur de grille Loto Foot</h3>
+    <p class="note" style="margin-bottom:12px">Coche les matchs de ta grille (7, 8, 12 ou 15), indique le prix d'une grille simple et ton budget : Cotescope place les doubles et les triples pour avoir le plus de chances d'avoir tout juste. Tu joues ensuite toi-même ta grille à la FDJ.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:12px">
+      <div><label class="f">Prix d'une grille simple (€)</label><input class="sel2" id="lt-u" inputmode="decimal" value="${esc(LOTO.unit)}" style="width:110px"></div>
+      <div><label class="f">Ton budget (€)</label><input class="sel2" id="lt-b" inputmode="decimal" value="${esc(LOTO.budget)}" style="width:110px"></div>
+      <span class="note">${sel.size} match${sel.size>1?"s":""} choisi${sel.size>1?"s":""}</span>
+      <button class="btn go" id="lt-go" ${sel.size < 2 ? "disabled" : ""}>Optimiser ma grille</button>
+    </div>
+    <div class="panel" style="max-height:340px;overflow:auto">${ms.map(m => `<label class="bet" style="grid-template-columns:24px minmax(0,1fr) auto;cursor:pointer"><input type="checkbox" data-lt="${esc(m.id)}" ${sel.has(m.id)?"checked":""}><div class="sel">${esc(m.home)} – ${esc(m.away)}<small>${esc(m.league)} · ${esc(m.date)}</small></div><span class="note">${m.probs.map(pc).join(" · ")}</span></label>`).join("")}</div></div>
+  ${R ? `<div class="panel box" style="max-width:900px;margin-top:12px"><h3>Ta grille optimisée</h3>
+    <div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="panel kpi2"><small>Coût</small><b class="num">${eur(R.cost)}</b></div><div class="panel kpi2"><small>Grilles jouées</small><b class="num">${R.combos}</b></div><div class="panel kpi2"><small>Chances d'avoir tout juste</small><b class="num">${R.p < .01 ? fr(R.p * 100, 2) : fr(R.p * 100, 1)} %</b></div></div>
+    ${R.rows.map(({m, x}) => `<div class="bet" style="grid-template-columns:minmax(0,1fr) auto"><div class="sel">${esc(m.home)} – ${esc(m.away)}<small>${x.c === 1 ? "simple" : x.c === 2 ? "double" : "triple"} · ${pc(x.p)} de chances d'être juste</small></div>
+      <div style="display:flex;gap:4px">${["1","N","2"].map((t, k) => `<span class="pill ${x.keys.includes(k) ? "ok" : ""}" title="${esc(lab(m)[k])}">${t}</span>`).join("")}</div></div>`).join("")}
+    <p class="note" style="margin-top:8px">Le Loto Foot est un jeu en commun : les gains dépendent du nombre de gagnants et ne peuvent pas être calculés à l'avance. Joue seulement ce que tu peux perdre.</p></div>` : ""}`;
+}
+document.addEventListener("change", e => {
+  const c = e.target.closest("[data-lt]"); if (!c) return;
+  const s = new Set(LOTO.sel); c.checked ? s.add(c.dataset.lt) : s.delete(c.dataset.lt);
+  if (s.size > 15) { c.checked = false; toast("15 matchs maximum"); return; }
+  LOTO.sel = [...s]; LOTO.res = null; render();
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest("#lt-go")) return;
+  LOTO.unit = $("#lt-u").value; LOTO.budget = $("#lt-b").value;
+  const u = parseFloat(String(LOTO.unit).replace(",", ".")), b = parseFloat(String(LOTO.budget).replace(",", "."));
+  if (!(u > 0) || !(b >= u)) { toast("Le budget doit couvrir au moins une grille simple"); return; }
+  const ms = LOTO.sel.map(id => MATCHES.find(m => m.id === id)).filter(Boolean);
+  const best = lotoSolve(ms, Math.floor(b / u + 1e-9));
+  LOTO.res = {rows: ms.map((m, i) => ({m, x: best.pick[i]})), combos: best.combos, cost: best.combos * u, p: Math.exp(best.lp)};
+  render();
+});
+
 /* ---------- vérificateur de cote boostée ---------- */
 let BST = {m:"", u:"", o:""};
 function boostBox(){
@@ -948,9 +1006,10 @@ document.addEventListener("change", e => {
 document.addEventListener("click", e => { if (e.target.closest("#bs-go")) { BST.o = $("#bs-o").value; render(); } });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "bs-o") { BST.o = e.target.value; render(); } });
 function vPicks(){
-  const t = [["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"],["boost","Cote boostée"]];
+  const t = [["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"],["boost","Cote boostée"],["loto","Loto Foot"]];
   let body;
   if (PTAB === "boost") body = boostBox();
+  else if (PTAB === "loto") body = lotoBox();
   else if (PTAB === "sure") body = DATA.probable.slice(0, 40).map(pickRow).join("");
   else if (PTAB === "best") body = (rank() < 3 ? lockBox("elite", "Paris value et sélection de Cotescope", "Les paris où la cote est au-dessus du juste prix, et ceux que Cotescope jouerait avec son propre argent.") : "") + DATA.picks.slice(0, 40).map(pickRow).join("");
   else body = DATA.combos.slice(0, 20).map(c => `<div class="panel opt"><div class="oh"><div style="flex:1"><b>Combiné ×${c.legs.length}</b><small>cote ${fr(c.odds)}${c.value?` · <span class="pill v">value</span>`:""}</small></div><div class="ring"><b>${pc(c.p)}</b><small>de chances</small></div></div>
@@ -985,6 +1044,7 @@ function vGoal(){
   return `<h1 class="t">Objectif</h1><p class="lead">Tu donnes ta mise et ce que tu veux gagner. Cotescope passe en revue tous les paris de tous les matchs et te sort des dizaines de tickets qui y arrivent, classés par leurs vraies chances de passer.</p>
     <div class="goal">
       <div class="panel goalf">
+        <div class="need" style="margin:0 0 14px"><b style="font-size:14px">⚡ Combiné express</b><div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap"><span class="note">cote</span><input class="sel2" id="ex-o" inputmode="decimal" placeholder="3,50" style="width:70px"><span class="note">en</span><input class="sel2" id="ex-n" inputmode="numeric" placeholder="3" style="width:52px"><span class="note">matchs</span><button class="btn sm go" id="ex-go">Go</button></div></div>
         <label class="f" for="gl-s">Je mise</label><div class="money"><input class="in" id="gl-s" inputmode="decimal" value="${esc(GOAL.stake)}"><span>€</span></div>
         <label class="f" for="gl-t" style="margin-top:14px">Je veux gagner</label><div class="money"><input class="in" id="gl-t" inputmode="decimal" value="${esc(GOAL.target)}"><span>€</span></div>
         <div class="need">Cote à atteindre : <b>${isFinite(need)?fr(need):"–"}</b></div>
@@ -1069,6 +1129,15 @@ document.addEventListener("click", e => {
   if (p) { const r = call("log_ticket", p.dataset.play.split("~"), p.dataset.stake, ""); toast(r.ok ? "Ticket ajouté à ton bilan" : (r.error || "Erreur")); if (r.ok) { p.textContent = "Enregistré"; p.disabled = true; } }
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && (e.target.id === "gl-s" || e.target.id === "gl-t")) $("#gl-go").click(); });
+// combiné express : « cote 3,50 en 3 matchs » -> l'Objectif avec une mise de 10 € et exactement N matchs
+document.addEventListener("click", e => {
+  if (!e.target.closest("#ex-go")) return;
+  const o = parseFloat(String($("#ex-o").value).replace(",", ".")), n = parseInt($("#ex-n").value, 10);
+  if (!(o > 1.05) || !(n >= 1 && n <= 20)) { toast("Indique une cote (ex. 3,50) et un nombre de matchs"); return; }
+  $("#gl-s").value = "10"; $("#gl-t").value = String(Math.round((o - 1) * 1000) / 100).replace(".", ",");
+  $("#gl-min").value = String(n); $("#gl-max").value = String(n);
+  $("#gl-go").click();
+});
 
 /* ======================================================================
    Vue : Stratégies (backtesting sur l'historique football-data.co.uk)

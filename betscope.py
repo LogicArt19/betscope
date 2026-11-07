@@ -1705,7 +1705,9 @@ def _objective_plan(stake, target, selections, cfg):
     ranked_books = sorted(books, key=lambda bk: -sum(1 for s in selections if bk in s["playable"]))
     for bi, book in enumerate(ranked_books[:4]):
         # jamais de cote estimée dans un ticket : uniquement les vraies cotes publiées (ou celle tapée par l'utilisateur)
-        items_all = [(x, o) for x, o in _book_items(selections, cfg, book) if not x.get("estimated") or x.get("user_odds")]
+        # et pas de sélection « bouche-trou » sous 1,15 (elle n'apporte presque rien et ajoute un risque)
+        items_all = [(x, o) for x, o in _book_items(selections, cfg, book)
+                     if (not x.get("estimated") or x.get("user_odds")) and o >= 1.15]
         if not items_all:
             continue
         btitle = items_all[0][0]["playable"][book][1]

@@ -83,8 +83,8 @@ def tier_ok(need):
     return TIER_RANK.get(TIER["v"], 3) >= TIER_RANK[need]
 
 
-BOOK_NAMES = {"betclic_fr": "Betclic", "winamax_fr": "Winamax", "unibet_fr": "Unibet", "pmu_fr": "PMU",
-              "parionssport_fr": "Parions Sport", "netbet_fr": "NetBet"}
+BOOK_NAMES = {"betclic_fr": "Betclic", "winamax_fr": "Winamax", "unibet_fr": "Unibet (FDJ)",
+              "parionssport_fr": "Parions Sport (FDJ)"}
 
 
 def book_name(cfg):
@@ -306,8 +306,10 @@ def sports_list(cfg):
     return out
 
 
-CONSENSUS_BOOKS = ["pinnacle", "betclic_fr", "winamax_fr", "unibet_fr", "pmu_fr", "parionssport_fr",
-                   "netbet_fr", "marathonbet", "onexbet", "sport888"]
+# Bookmakers où l'on peut parier : Betclic, Winamax, FDJ (Parions Sport et Unibet, même groupe).
+# Pinnacle et la bourse Betfair servent de référence (argent des parieurs pros) pour calculer les vraies chances.
+CONSENSUS_BOOKS = ["pinnacle", "betfair_ex_eu", "betclic_fr", "winamax_fr", "unibet_fr", "parionssport_fr",
+                   "williamhill", "marathonbet", "sport888", "matchbook"]
 
 
 def effective_source_books(cfg):

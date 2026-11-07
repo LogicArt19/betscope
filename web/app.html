@@ -414,7 +414,7 @@ const PLANS = [
   {id:"pro", name:"Pro", price:"19,99", hot:"Le plus choisi", feats:["Tout Essentiel","Tous les paris : buteurs, handicaps, score exact…","Page match complète : absents, compos, face-à-face, météo","Objectif : des dizaines de tickets, triés et filtrés","Bilan de tes tickets"]},
   {id:"elite", name:"Elite", price:"49,99", feats:["Tout Pro","Paris value et sélection de Cotescope","Mouvement des cotes","Actus de dernière minute","Simulateur de stratégies sur 5 saisons","Fiabilité mesurée et bankroll"]},
 ];
-const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["unibet_fr","Unibet"],["pmu_fr","PMU"],["parionssport_fr","Parions Sport"],["netbet_fr","NetBet"]];
+const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["parionssport_fr,unibet_fr","FDJ (Parions Sport · Unibet)"]];
 const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un compte existe déjà avec cet e-mail : connecte-toi.",
   bad_email:"Adresse e-mail invalide.", weak_password:"Mot de passe trop court : 8 caractères minimum.", common_password:"Mot de passe trop facile à deviner : mélange lettres, chiffres et symboles, et évite ton nom ou ton e-mail.",
   pwned_password:"Ce mot de passe apparaît dans des fuites de données connues sur internet : choisis-en un autre, que tu n'utilises nulle part ailleurs.",
@@ -1373,7 +1373,7 @@ function vCompte(){
       <div class="panel box"><h3>Forfait</h3><div class="pr num" style="font-size:26px;font-weight:700">${PLAN_NAME[a.tier] || "Aucun"}</div><p class="note" style="margin:4px 0 14px">${esc(st)}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${a.tier && a.tier!=="gratuit"?"":"go"}" data-plans>${a.tier && a.tier!=="gratuit"?"Changer de forfait":"Choisir un forfait"}</button>${a.manage?`<a class="btn" href="${esc(a.manage)}" target="_blank" rel="noopener">Gérer mon abonnement</a>`:""}</div></div>
       <div class="panel box"><h3>Où je parie</h3><p class="note" style="margin-bottom:12px">Chaque pari prend la meilleure cote parmi les bookmakers cochés.</p>
-        <div class="books" id="c-books">${BOOKS.map(([k,n]) => `<label class="${books.has(k)?"on":""}"><input type="checkbox" value="${k}" ${books.has(k)?"checked":""}>${n}</label>`).join("")}</div></div>
+        <div class="books" id="c-books">${BOOKS.map(([k,n]) => { const on = k.split(",").some(x => books.has(x)); return `<label class="${on?"on":""}"><input type="checkbox" value="${k}" ${on?"checked":""}>${n}</label>`; }).join("")}</div></div>
       <div class="panel box"><h3>Championnats affichés</h3><div class="books" id="c-lg">${(cfg._sports||[]).map(s => `<label class="${hid.has(s.key)?"":"on"}"><input type="checkbox" value="${s.key}" ${hid.has(s.key)?"":"checked"}>${esc(s.label)}</label>`).join("") || '<p class="note">Aucun championnat couvert pour l\'instant.</p>'}</div></div>
       ${capitalPanel()}
       <div class="panel box"><h3>Appareils connectés</h3><p class="note" style="margin-bottom:10px">5 appareils maximum. Un appareil que tu ne reconnais pas ? Déconnecte-le, puis change ton mot de passe.</p>
@@ -1409,7 +1409,7 @@ async function loadDevices(){
 document.addEventListener("change", e => {
   if (e.target.closest("#c-books")) {
     e.target.parentNode.classList.toggle("on", e.target.checked);
-    const L = $$("#c-books input").filter(i => i.checked).map(i => i.value);
+    const L = $$("#c-books input").filter(i => i.checked).flatMap(i => i.value.split(","));
     if (!L.length) { e.target.checked = true; e.target.parentNode.classList.add("on"); toast("Garde au moins un bookmaker"); return; }
     call("set_books", L); refreshState(); toast("Bookmakers enregistrés");
   }
@@ -1501,7 +1501,7 @@ function gate(v, x){
       else if (v === "forgot") { busy("Envoi…"); const r = await Auth.forgot($("#g-em").value.trim()); if (r.ok) { msg.classList.add("ok"); msg.textContent = "Si un compte existe, un e-mail vient de partir. Regarde aussi tes spams."; } else msg.textContent = errMsg(r.reason); }
       else if (v === "reset") { busy("Enregistrement…"); const r = await Auth.reset(x.code, $("#g-pw2").value); if (r.ok) history.replaceState(null, "", location.pathname); await after(r); }
       else if (v === "wait") { busy("Vérification…"); const r = await Auth.me(true); if (r.ok && r.tier && r.tier !== "gratuit") await start(); else { msg.classList.add("ok"); msg.textContent = "Paiement pas encore reçu, ça peut prendre une minute."; } }
-      else if (v === "books") { const L = $$("#g-books input").filter(i => i.checked).map(i => i.value); if (!L.length) { msg.textContent = "Coche au moins un bookmaker."; return; } call("set_books", L); gate(null); render(); toast("C'est parti !"); }
+      else if (v === "books") { const L = $$("#g-books input").filter(i => i.checked).flatMap(i => i.value.split(",")); if (!L.length) { msg.textContent = "Coche au moins un bookmaker."; return; } call("set_books", L); gate(null); render(); toast("C'est parti !"); }
     } finally { busy(""); }
   };
   if (v === "wait") { let n = 0; const t = setInterval(async () => { if (++n > 60 || $("#gate").hidden) return clearInterval(t); const r = await Auth.me(true); if (r.ok && r.tier && r.tier !== "gratuit") { clearInterval(t); await start(); } }, 5000); }

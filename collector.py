@@ -261,7 +261,7 @@ def public_record(events, st):
     folder = os.path.join(CACHE, "public")
     os.makedirs(folder, exist_ok=True)
     h = History(folder)
-    cfg = dict(b.DEFAULT_CONFIG, sports=SPORTS, bookmakers="betclic_fr,winamax_fr,unibet_fr,pmu_fr,parionssport_fr,netbet_fr")
+    cfg = dict(b.DEFAULT_CONFIG, sports=SPORTS, bookmakers="betclic_fr,winamax_fr,unibet_fr,parionssport_fr")
     sel = b.analyze(events, cfg, info=st.info_for(events))
     picks = [x for x in b.top_picks(sel, cfg) if b.would_bet(x, cfg)]
     # + la « sélection du jour » : les 3 paris les plus sûrs (vraies cotes) des matchs des 30 prochaines heures

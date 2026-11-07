@@ -323,6 +323,7 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 
 <script>
 "use strict";
+if (window.top !== window.self) { try { window.top.location = window.self.location.href; } catch(e) { document.documentElement.style.display = "none"; } }
 /* ======================================================================
    Cotescope · appli web
    Le moteur d'analyse (Python) tourne dans le navigateur (Pyodide).
@@ -354,7 +355,9 @@ const PLANS = [
 ];
 const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["unibet_fr","Unibet"],["pmu_fr","PMU"],["parionssport_fr","Parions Sport"],["netbet_fr","NetBet"]];
 const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un compte existe déjà avec cet e-mail : connecte-toi.",
-  bad_email:"Adresse e-mail invalide.", weak_password:"Mot de passe trop court : 8 caractères minimum.", too_many:"Trop d'essais. Réessaie dans 15 minutes.",
+  bad_email:"Adresse e-mail invalide.", weak_password:"Mot de passe trop court : 8 caractères minimum.", common_password:"Mot de passe trop facile à deviner : mélange lettres, chiffres et symboles, et évite ton nom ou ton e-mail.",
+  pwned_password:"Ce mot de passe apparaît dans des fuites de données connues sur internet : choisis-en un autre, que tu n'utilises nulle part ailleurs.",
+  locked:"Trop d'essais ratés : ce compte est bloqué 30 minutes par sécurité.", forbidden:"Requête refusée.", too_big:"Requête trop longue.", too_many:"Trop d'essais. Réessaie dans 15 minutes.",
   too_many_accounts:"Trop de comptes créés depuis cette connexion aujourd'hui.", session:"Session expirée : reconnecte-toi.",
   no_plan:"Aucun forfait actif sur ce compte.", free_over:"Ta version gratuite de 7 jours est terminée.", inactive:"Ton abonnement est terminé.",
   whop_unreachable:"Le service de paiement ne répond pas. Réessaie dans un instant.", plans_not_configured:"Les abonnements ouvrent très bientôt.",
@@ -366,6 +369,7 @@ const errMsg = r => ERR[r] || ("Erreur : " + r);
    Connexion au serveur + moteur
    ====================================================================== */
 const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
+const PYODIDE_SRI = ""; // empreinte de pyodide.js, ajoutée à la publication (le navigateur refuse un fichier modifié)
 const LS = "cotescope_session";
 let CFG = {}, SESSION = "", ACCOUNT = null, py = null, web = null, nextSnap = 0, saveT = null;
 const lsGet = () => { try { return localStorage.getItem(LS) || ""; } catch(e) { return ""; } };
@@ -401,9 +405,11 @@ const Auth = {
     if (r.ok && r.url) location.href = r.url;
     return r;
   },
-  logout: () => { lsSet(""); SESSION = ""; ACCOUNT = null; location.hash = ""; location.reload(); },
+  logout: async all => { try { await server("/api/logout","POST",all ? {all:true} : {}); } catch(e) {} lsSet(""); SESSION = ""; ACCOUNT = null; location.hash = ""; location.reload(); },
+  devices: () => server("/api/devices"),
+  kick: id => server("/api/logout","POST",{id}),
 };
-function loadScript(src){ return new Promise((ok, ko) => { const s=document.createElement("script"); s.src=src; s.crossOrigin="anonymous"; s.onload=ok; s.onerror=()=>ko(Object.assign(new Error("network"),{reason:"network"})); document.head.appendChild(s); }); }
+function loadScript(src){ return new Promise((ok, ko) => { const s=document.createElement("script"); s.src=src; s.crossOrigin="anonymous"; if (PYODIDE_SRI && src.endsWith("pyodide.js")) s.integrity=PYODIDE_SRI; s.onload=ok; s.onerror=()=>ko(Object.assign(new Error("network"),{reason:"network"})); document.head.appendChild(s); }); }
 function persist(){ clearTimeout(saveT); saveT = setTimeout(() => { try { py.FS.syncfs(false, () => {}); } catch(e) {} }, 400); }
 const READ_ONLY = /^(get_|builder_get|estimate|compute_)/;
 function call(name, ...args){
@@ -853,8 +859,17 @@ function vCompte(){
       <div class="panel box"><h3>Où je parie</h3><p class="note" style="margin-bottom:12px">Chaque pari prend la meilleure cote parmi les bookmakers cochés.</p>
         <div class="books" id="c-books">${BOOKS.map(([k,n]) => `<label class="${books.has(k)?"on":""}"><input type="checkbox" value="${k}" ${books.has(k)?"checked":""}>${n}</label>`).join("")}</div></div>
       <div class="panel box"><h3>Championnats affichés</h3><div class="books" id="c-lg">${(cfg._sports||[]).map(s => `<label class="${hid.has(s.key)?"":"on"}"><input type="checkbox" value="${s.key}" ${hid.has(s.key)?"":"checked"}>${esc(s.label)}</label>`).join("") || '<p class="note">Aucun championnat couvert pour l\'instant.</p>'}</div></div>
-      <div class="panel box"><h3>Session</h3><p class="note" style="margin-bottom:12px">Tes réglages et tes tickets sont gardés sur cet appareil.</p><button class="btn" id="c-out">Se déconnecter</button></div>
+      <div class="panel box"><h3>Appareils connectés</h3><p class="note" style="margin-bottom:10px">5 appareils maximum. Un appareil que tu ne reconnais pas ? Déconnecte-le, puis change ton mot de passe.</p>
+        <div id="c-dev"><p class="note">Chargement…</p></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" id="c-out">Se déconnecter</button><button class="btn" id="c-outall">Déconnecter tous les appareils</button></div></div>
     </div>`;
+}
+async function loadDevices(){
+  const box = $("#c-dev"); if (!box) return;
+  const r = await Auth.devices();
+  if (!r.ok) { box.innerHTML = `<p class="note">${esc(errMsg(r.reason))}</p>`; return; }
+  const d = x => new Date(x).toLocaleDateString("fr-FR", {day:"numeric", month:"short"});
+  box.innerHTML = r.devices.map(v => `<div class="bet" style="grid-template-columns:minmax(0,1fr) auto"><div class="sel">${esc(v.name)}${v.me?' <span class="pill ok">cet appareil</span>':""}<small>depuis le ${d(v.since)}${v.country?" · "+esc(v.country):""}</small></div>${v.me?"":`<button class="btn sm" data-kick="${esc(v.id)}">Déconnecter</button>`}</div>`).join("") || '<p class="note">Aucun appareil.</p>';
 }
 document.addEventListener("change", e => {
   if (e.target.closest("#c-books")) {
@@ -868,7 +883,13 @@ document.addEventListener("change", e => {
     call("save_config", {hide_sports: $$("#c-lg input").filter(i => !i.checked).map(i => i.value)}); refreshState(); toast("Championnats enregistrés");
   }
 });
-document.addEventListener("click", e => { if (e.target.closest("#c-out")) Auth.logout(); });
+document.addEventListener("click", async e => {
+  if (e.target.closest("#c-out")) Auth.logout();
+  const all = e.target.closest("#c-outall");
+  if (all) { if (all.dataset.sure) Auth.logout(true); else { all.dataset.sure = 1; all.textContent = "Confirmer : tout déconnecter"; all.classList.add("go"); } }
+  if (e.target.closest("[data-reload]")) location.reload();
+  const k = e.target.closest("[data-kick]"); if (k) { await Auth.kick(k.dataset.kick); toast("Appareil déconnecté"); loadDevices(); }
+});
 
 /* ======================================================================
    Rendu
@@ -880,6 +901,7 @@ function render(){
   const V = {matchs:vMatchs, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, ticket:vTicket, bilan:vBilan, compte:vCompte};
   $("#view").innerHTML = (V[r.v] || vMatchs)();
   chrome();
+  if (r.v === "compte" && !window.__BRIDGE__) loadDevices();
 }
 
 /* ======================================================================
@@ -893,7 +915,7 @@ function gate(v, x){
   g.hidden = false; c.className = "gcard" + (v === "plans" ? " wide" : "");
   const logo = `<a class="logo" href="../"><img src="../img/logo.svg" alt="">Cotescope</a>`;
   if (v === "loading") { c.innerHTML = logo + `<div class="loader"><div class="scan">${spec([.47,.26,.27])}</div><div>${esc(x.text||"")}</div><small class="note">Le premier chargement prend quelques secondes.</small></div>`; return; }
-  if (v === "error") { c.innerHTML = logo + `<div class="panel gbox" style="text-align:center"><h2>Oups</h2><p>${esc(errMsg(x.reason))}</p><button class="btn go" onclick="location.reload()">Réessayer</button></div>`; return; }
+  if (v === "error") { c.innerHTML = logo + `<div class="panel gbox" style="text-align:center"><h2>Oups</h2><p>${esc(errMsg(x.reason))}</p><button class="btn go" data-reload>Réessayer</button></div>`; return; }
   if (v === "login") c.innerHTML = logo + `<div class="panel gbox"><h2>Connexion</h2><p>Content de te revoir.</p>
       ${field("g-em","E-mail","email","toi@exemple.fr")}${field("g-pw","Mot de passe","password")}
       <div class="msg" id="g-msg"></div><button class="btn go" id="g-go" style="width:100%">Se connecter</button>

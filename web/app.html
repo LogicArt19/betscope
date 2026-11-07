@@ -1030,9 +1030,16 @@ document.addEventListener("click", e => { const t = e.target.closest("[data-ptab
 /* ======================================================================
    Vue : Objectif
    ====================================================================== */
-let GOAL = {stake:"10", target:"40", res:null, leagues:null, types:null, min:"", max:""};
+let GOAL = {stake:"10", target:"40", res:null, leagues:null, types:null, min:"", max:"", days:null};
 const CATS = [["1n2","Résultat"],["dc","Double chance"],["dnb","Remboursé si nul"],["total","Nombre de buts"],["team","Buts par équipe"],["btts","Les 2 marquent"],["hcp","Handicap"],["exact","Score exact"],["mtft","Mi-temps / fin"],["scorer","Buteurs"],["decisive","Joueurs décisifs"]];
 const CAT_TIER = {essentiel:["1n2","dc","total","btts"]};
+// jours qui ont des matchs à venir : « Aujourd'hui », « Demain », puis « sam 08/11 »…
+function goalDays(){
+  const today = new Date(), iso = d => d.toLocaleDateString("sv-SE");
+  const t0 = iso(today), t1 = iso(new Date(today.getTime() + 864e5));
+  const ds = [...new Set(MATCHES.map(m => m.day))].filter(Boolean).sort();
+  return ds.map(d => [d, d === t0 ? "Aujourd'hui" : d === t1 ? "Demain" : new Date(d + "T12:00:00").toLocaleDateString("fr-FR", {weekday:"short", day:"2-digit", month:"2-digit"})]);
+}
 function vGoal(){
   const num = v => parseFloat(String(v).replace(",", "."));
   const need = (num(GOAL.target) + num(GOAL.stake)) / num(GOAL.stake);
@@ -1056,6 +1063,8 @@ function vGoal(){
         <div class="need">Cote à atteindre : <b>${isFinite(need)?fr(need):"–"}</b></div>
         <label class="f">Nombre de matchs</label>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px"><input class="in" id="gl-min" inputmode="numeric" placeholder="min" value="${esc(GOAL.min)}" style="width:70px"><span class="note">à</span><input class="in" id="gl-max" inputmode="numeric" placeholder="max" value="${esc(GOAL.max)}" style="width:70px"><span class="note">vide = libre</span></div>
+        <label class="f">Jours des matchs</label>
+        <div class="tgl" id="gl-dy" style="margin-bottom:12px">${goalDays().map(([k,l]) => `<button class="chip ${(GOAL.days||[]).length===0||(GOAL.days||[]).includes(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("")}</div>
         <label class="f">Championnats</label>
         <div class="tgl" id="gl-lg">${leagues.map(([k,l]) => `<button class="chip ${selL.has(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("")}</div>
         <label class="f" style="margin-top:12px">Types de paris</label>
@@ -1125,14 +1134,17 @@ document.addEventListener("click", e => {
 const readGoal = () => {
   GOAL.stake = $("#gl-s").value; GOAL.target = $("#gl-t").value; GOAL.min = $("#gl-min").value.trim(); GOAL.max = $("#gl-max").value.trim();
   GOAL.leagues = $$("#gl-lg .chip.on").map(x => x.dataset.k); GOAL.types = $$("#gl-ty .chip.on").map(x => x.dataset.k);
+  const allD = $$("#gl-dy .chip"), onD = $$("#gl-dy .chip.on").map(x => x.dataset.k);
+  GOAL.days = onD.length === allD.length ? [] : onD;
 };
 document.addEventListener("click", e => {
   if (e.target.closest("#gl-go")) {
     readGoal();
     if (!GOAL.leagues.length || !GOAL.types.length) { toast("Coche au moins un championnat et un type de pari"); return; }
+    if ($$("#gl-dy .chip").length && !$$("#gl-dy .chip.on").length) { toast("Coche au moins un jour"); return; }
     $("#g-out").innerHTML = `<div class="panel loader" style="padding:40px"><div class="scan">${spec([.45,.27,.28])}</div>Recherche parmi tous les paris…</div>`;
     GSORT = "p"; GLEGS = "all"; GOPEN = new Set([0]); GMORE = 15;
-    setTimeout(() => { GOAL.res = call("compute_objective", GOAL.stake, GOAL.target, GOAL.types, GOAL.min || null, GOAL.max || null, null, GOAL.leagues); render(); }, 30);
+    setTimeout(() => { GOAL.res = call("compute_objective", GOAL.stake, GOAL.target, GOAL.types, GOAL.min || null, GOAL.max || null, null, GOAL.leagues, GOAL.days && GOAL.days.length ? GOAL.days : null); render(); }, 30);
   }
   const p = e.target.closest("[data-play]");
   if (p) { const r = call("log_ticket", p.dataset.play.split("~"), p.dataset.stake, ""); toast(r.ok ? "Ticket ajouté à ton bilan" : (r.error || "Erreur")); if (r.ok) { p.textContent = "Enregistré"; p.disabled = true; } }

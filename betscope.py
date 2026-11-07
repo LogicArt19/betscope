@@ -2792,7 +2792,7 @@ class Api:
         out["bank"] = self.get_bank()
         return out
 
-    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None, leagues=None):
+    def compute_objective(self, stake, target, types=None, min_legs=None, max_legs=None, obj=None, leagues=None, days=None):
         free = not tier_ok("pro")
         if free:  # version gratuite : 1 ticket Objectif par jour (le meilleur)
             today = datetime.now().strftime("%Y-%m-%d")
@@ -2810,6 +2810,9 @@ class Api:
         if leagues:
             keep = set(leagues)
             sel = [x for x in sel if x.get("sport_key") in keep]
+        if days:  # jours choisis (dates locales AAAA-MM-JJ)
+            dk = set(days)
+            sel = [x for x in sel if x["start"].astimezone().date().isoformat() in dk]
         if self._warning:
             cfg["bookmakers"] = ""
         if types:

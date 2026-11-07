@@ -159,6 +159,102 @@ def cf_put(key, data, gz=True, meta=None):
     return ok
 
 
+def collect_odds(state, cfg):
+    """Cotes à 0 € le plus souvent possible :
+    - le calendrier des matchs est gratuit chez The Odds API : on ne paie que les championnats qui jouent bientôt ;
+    - le 1N2 (1 crédit) est rafraîchi souvent, le nombre de buts (1 crédit de plus) une fois par jour ;
+    - le reste du budget du mois est réparti sur les jours restants."""
+    sched = state.setdefault("odds_sched", {})
+    old = {e["id"]: e for e in state.get("events", [])}
+    by_sport = {}
+    for e in state.get("events", []):
+        by_sport.setdefault(e.get("sport_key") or e.get("_sport_key"), []).append(e)
+    now = datetime.now(timezone.utc)
+    key = cfg["api_key"].strip()
+    soon, week = [], []
+    for sp in SPORTS:
+        try:
+            cal, _ = b.http_get_json(f"{b.API_BASE}/sports/{sp}/events?" + urllib.parse.urlencode({"apiKey": key, "dateFormat": "iso"}))
+            kicks = [b.parse_time(e["commence_time"]) for e in cal]
+        except Exception as e:
+            log("calendrier", sp, e)
+            kicks = [b.parse_time(e["commence_time"]) for e in by_sport.get(sp, [])]
+        if any(now < k < now + timedelta(hours=36) for k in kicks):
+            soon.append(sp)
+        elif any(now < k < now + timedelta(days=7) for k in kicks):
+            week.append(sp)
+    remaining = (state.get("quota") or {}).get("remaining")
+    try:
+        remaining = float(remaining)
+    except (TypeError, ValueError):
+        remaining = None
+    nxt = datetime(now.year + (now.month == 12), now.month % 12 + 1, 1, tzinfo=timezone.utc)
+    days_left = max(1.0, (nxt - now).total_seconds() / 86400)
+    per_day = (remaining - 20) / days_left if remaining is not None else 16
+    totals_per_day = len(soon) + len(week)
+    h2h_iv = 24 * 60
+    if soon:
+        refresh = (per_day - totals_per_day) / len(soon)
+        h2h_iv = 24 * 60 if refresh <= 1 else max(60, 24 * 60 / refresh)
+    log(f"cotes : {len(soon)} championnat(s) jouent sous 36 h, {len(week)} cette semaine, "
+        f"{remaining if remaining is not None else '?'} crédits, 1N2 toutes les {int(h2h_iv)} min")
+    t = time.time()
+    for sp in soon + week:
+        sc = sched.setdefault(sp, {})
+        iv = h2h_iv if sp in soon else 24 * 60
+        tot_due = t - sc.get("tot", 0) >= 23 * 3600
+        h2h_due = t - sc.get("h2h", 0) >= iv * 60 - 120
+        if not (tot_due or h2h_due):
+            continue
+        cost = 2 if tot_due else 1
+        if remaining is not None and remaining - cost < 5 and sc.get("h2h"):
+            log(f"  {sp} : quota du mois presque vide, on garde les dernières cotes")
+            continue
+        markets = "h2h,totals" if tot_due else "h2h"
+        ev, quota, errors = b.fetch_odds(dict(cfg, sports=[sp], markets=markets))
+        if errors:
+            log("  erreurs", sp, errors)
+            continue
+        if quota and quota.get("remaining") is not None:
+            state["quota"] = quota
+            try:
+                remaining = float(quota["remaining"])
+            except (TypeError, ValueError):
+                pass
+        for e in ev:
+            e["_odds_ts"] = t
+            e.setdefault("sport_key", sp)
+            if not tot_due and e["id"] in old:  # on garde le dernier « nombre de buts » connu
+                prev = {bk["key"]: bk for bk in old[e["id"]].get("bookmakers", [])}
+                for bk in e.get("bookmakers", []):
+                    keep = [m for m in prev.get(bk["key"], {}).get("markets", []) if m.get("key") != "h2h"]
+                    bk["markets"] = [m for m in bk.get("markets", []) if m.get("key") == "h2h"] + keep
+        by_sport[sp] = ev
+        sc["h2h"] = t
+        if tot_due:
+            sc["tot"] = t
+        state["odds_ts"] = t
+        log(f"  {sp} : {len(ev)} matchs ({markets})")
+    return [e for sp in by_sport for e in by_sport[sp]]
+
+
+def add_espn_odds(events, st):
+    """Cotes publiques d'ESPN (déjà récupérées avec les compos) : un bookmaker de plus, rafraîchi chaque heure."""
+    n = 0
+    web = st.data.get("web") or {}
+    for e in events:
+        v = (web.get(e["id"]) or {}).get("v") or {}
+        for o in v.get("odds") or []:
+            k = "espn_" + "".join(ch for ch in o["book"].lower() if ch.isalnum())[:20]
+            e["bookmakers"] = [bk for bk in e.get("bookmakers", []) if bk.get("key") != k]
+            e["bookmakers"].append({"key": k, "title": o["book"], "markets": [{"key": "h2h", "outcomes": [
+                {"name": e["home_team"], "price": o["h"]}, {"name": e["away_team"], "price": o["a"]},
+                {"name": "Draw", "price": o["d"]}]}]})
+            n += 1
+    if n:
+        log(f"cotes ESPN ajoutées : {n}")
+
+
 def public_record(events, st):
     """Bilan public : on enregistre chaque pari que Cotescope « jouerait », puis on le vérifie
     avec le résultat officiel. Le résumé est publié sans connexion (preuve pour la vitrine)."""
@@ -196,20 +292,8 @@ def main():
         log("ODDS_KEY manquante")
         sys.exit(1)
 
-    # 1) cotes, seulement quand c'est dû
-    due, iv = odds_due(state, cfg)
-    events = state.get("events", [])
-    if due or not events:
-        log(f"cotes : mise à jour (intervalle {iv} min)")
-        ev, quota, errors = b.fetch_odds(cfg)
-        if errors:
-            log("erreurs cotes :", errors)
-        if ev or not errors:
-            events, state["odds_ts"] = ev, time.time()
-            if quota:
-                state["quota"] = quota
-    else:
-        log(f"cotes : pas encore dû (toutes les {iv} min)")
+    # 1) cotes : collecte intelligente pour rester dans le quota gratuit
+    events = collect_odds(state, cfg)
     now = datetime.now(timezone.utc)
     events = [e for e in events if b.parse_time(e["commence_time"]) > now - timedelta(hours=3)]
     state["events"] = events
@@ -226,6 +310,11 @@ def main():
     st.update_web(SPORTS, events)
     if getattr(st, "web_error", ""):
         log("  ", st.web_error)
+
+    try:
+        add_espn_odds(events, st)
+    except Exception as e:
+        log("cotes ESPN :", e)
 
     # 3) scores pour l'historique
     state["scores"] = collect_scores(state, sorted({S.ESPN_SLUGS[s] for s in SPORTS if s in S.ESPN_SLUGS}))

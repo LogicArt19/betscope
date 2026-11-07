@@ -466,6 +466,19 @@ class Stats:
 
     def _parse_summary(self, j):
         out = {"inj_home": [], "inj_away": [], "lineups": [], "news": []}
+        try:  # cotes publiques affichées par ESPN (fournisseur nommé), converties en cotes décimales
+            def dec(ml):
+                ml = float(str(ml).replace("+", ""))
+                return round(1 + (ml / 100 if ml > 0 else 100 / -ml), 3) if ml else None
+            out["odds"] = []
+            for pc in (j.get("pickcenter") or [])[:2]:
+                h = dec((pc.get("homeTeamOdds") or {}).get("moneyLine"))
+                a = dec((pc.get("awayTeamOdds") or {}).get("moneyLine"))
+                d = dec((pc.get("drawOdds") or {}).get("moneyLine"))
+                if h and a and d and 1.01 < min(h, a, d):
+                    out["odds"].append({"book": (pc.get("provider") or {}).get("name") or "ESPN", "h": h, "d": d, "a": a})
+        except (TypeError, ValueError, ZeroDivisionError, AttributeError):
+            out["odds"] = []
         side_by_team = {}
         try:
             for c in j["header"]["competitions"][0]["competitors"]:

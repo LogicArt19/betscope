@@ -149,7 +149,11 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .args li:last-child{border:0}
 .rel{height:6px;border-radius:4px;background:var(--rim);overflow:hidden;margin:8px 0 4px}
 .rel i{display:block;height:100%}
-.bet{display:grid;grid-template-columns:minmax(0,1fr) 120px 74px 34px;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--rim)}
+.yo{width:70px;padding:7px 8px;border-radius:9px;background:var(--night);border:1px solid var(--rim2);color:var(--chalk);font:600 14px var(--disp);text-align:center}
+.yo:focus{outline:none;border-color:var(--home)}
+.vd:empty{display:none}.vd{margin-top:6px}
+.fresh{margin:-12px 0 18px}
+.bet{display:grid;grid-template-columns:minmax(0,1fr) 120px 74px 74px 34px;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--rim)}
 .bet:last-child{border:0}
 .bet .sel{font-weight:600}
 .bet .sel small{display:block;color:var(--dim);font-weight:500;font-size:12px}
@@ -270,7 +274,9 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
   .bottom .badge{position:absolute;top:0;right:calc(50% - 22px)}
   .odds3 .ob{min-width:48px;padding:5px 4px}
   .match{padding:12px 14px}
-  .pick,.bet{grid-template-columns:minmax(0,1fr) 70px 34px}
+  .pick{grid-template-columns:minmax(0,1fr) 70px 34px}
+  .bet{grid-template-columns:minmax(0,1fr) 62px 64px 34px}
+  .yo{width:62px}
   .pick .pc,.bet .pc{display:none}
   .mhead{padding:20px}
   .tfab{bottom:84px;right:16px}
@@ -508,6 +514,7 @@ function vMatchs(){
     ${banner}
     <h1 class="t">Matchs</h1>
     <p class="lead">Les vraies chances de chaque issue, calculées à partir des cotes de 10 bookmakers et de la forme des équipes. Touche une cote pour l'ajouter à ton ticket.</p>
+    <p class="note fresh">Cotes mises à jour ${ago(Math.max(0, ...MATCHES.filter(m => m.day === DAY).map(m => m.odds_ts || 0)))}. Elles peuvent avoir bougé chez ton bookmaker : tape la vraie cote dans la page du match pour un verdict exact.</p>
     <div class="days">${keys.map(dayChip).join("") || ""}</div>
     ${leagues.length > 1 ? `<div class="chips" style="margin-bottom:6px"><button class="chip ${LEAGUE==="all"?"on":""}" data-lg="all">Tous<b>${MATCHES.filter(m=>m.day===DAY).length}</b></button>${leagues.map(l => `<button class="chip ${LEAGUE===l?"on":""}" data-lg="${esc(l)}">${esc(l)}<b>${MATCHES.filter(m=>m.day===DAY&&m.league===l).length}</b></button>`).join("")}</div>` : ""}
     ${Object.entries(groups).map(([lg, ms]) => `<div class="lg">${esc(lg)}</div>${ms.map(row).join("")}`).join("") ||
@@ -518,6 +525,13 @@ document.addEventListener("click", e => {
   const d = e.target.closest("[data-day]"); if (d) { DAY = d.dataset.day; render(); }
   const l = e.target.closest("[data-lg]"); if (l) { LEAGUE = l.dataset.lg; render(); }
 });
+function ago(ts){
+  if (!ts) return "";
+  const m = Math.max(0, Math.round((Date.now() / 1000 - ts) / 60));
+  if (m < 60) return m <= 1 ? "à l'instant" : `il y a ${m} min`;
+  const h = Math.round(m / 60);
+  return h < 24 ? `il y a ${h} h` : `il y a ${Math.round(h / 24)} j`;
+}
 const daysLeft = x => x ? Math.max(0, Math.ceil((new Date(x) - Date.now()) / 864e5)) : 0;
 
 /* ======================================================================
@@ -539,7 +553,7 @@ function vMatch(id){
   return `
     <button class="back" data-go="matchs">← Matchs</button>
     <section class="panel mhead">
-      <div class="meta">${esc(e.league)} · ${esc(e.date)}${info.round_label?" · "+esc(info.round_label):""}</div>
+      <div class="meta">${esc(e.league)} · ${esc(e.date)}${info.round_label?" · "+esc(info.round_label):""} · cotes ${ago(e.odds_ts)}</div>
       <div class="vs"><div class="tn">${esc(e.home)}</div><div class="x">contre</div><div class="tn r">${esc(e.away)}</div></div>
       ${spec(p, true)}
       <div class="specl" style="font-size:15px"><span class="h">${esc(e.home)} ${pc(p&&p[0])}</span><span class="d">Nul ${pc(p&&p[1])}</span><span class="a">${pc(p&&p[2])} ${esc(e.away)}</span></div>
@@ -567,11 +581,17 @@ function tabAnalyse(e, nv){
     </div>
     ${rank() < 2 ? lockBox("pro", "Analyse complète du match", "Absents pondérés, compos officielles, face-à-face, buteurs, météo et fatigue.") : ""}`;
 }
+function verdict(b){
+  if (!b.user_odds) return "";
+  return b.ev >= 0.01 ? `<span class="pill ok">À jouer : ${sg(b.ev)}</span>` : `<span class="pill bad">Cote trop basse, exige au moins ${fr(b.fair * 1.02)}</span>`;
+}
+const yours = b => `<input class="yo" data-yo="${esc(b.uid)}" inputmode="decimal" placeholder="ta cote" value="${b.user_odds ? fr(b.odds) : ""}" aria-label="Cote vue chez ton bookmaker">`;
 function betLine(b){
   return `<div class="bet">
-    <div class="sel">${esc(b.selection)}<small>${b.estimated?`cote estimée · prends si ≥ ${fr(b.min_odds)}`:esc(book(b.book))}${b.value?` · <span class="pill v">value ${sg(b.ev)}</span>`:""}</small></div>
+    <div class="sel">${esc(b.selection)}<small>${b.user_odds?"ta cote":b.estimated?`cote estimée · prends si ≥ ${fr(b.min_odds)}`:esc(book(b.book))}${b.value?` · <span class="pill v">value ${sg(b.ev)}</span>`:""}</small><div class="vd" data-vd="${esc(b.uid)}">${verdict(b)}</div></div>
     <div class="pc"><span class="num" style="font-size:13px">${pc(b.p)} de chances</span><div class="pbar"><i style="width:${b.p*100}%"></i></div></div>
     <div class="o">${b.estimated?"≈":""}${fr(b.odds)}<small>juste ${fr(b.fair)}</small></div>
+    ${yours(b)}
     <button class="add ${BSET.has(b.uid)?"in":""}" data-add="${esc(b.uid)}" title="Ajouter à mon ticket">${BSET.has(b.uid)?"✓":"+"}</button></div>`;
 }
 function tabParis(e){
@@ -691,9 +711,10 @@ function vTicket(){
     ${r.locked ? lockBox("pro", "Maillon faible et remplacements", "Cotescope repère la sélection la plus fragile et te propose mieux, à cote proche.") : ""}
     ${(r.tips||[]).map(t => `<div class="tip"><span>${esc(t.text)}</span><button class="btn sm" data-swap="${esc(t.from)}~${esc(t.to)}">Remplacer</button></div>`).join("")}
     <div class="panel" style="margin-top:12px">${r.legs.map(l => `<div class="bet ${l.uid===r.weakest&&r.legs.length>1?"weak":""}">
-        <div class="sel">${esc(l.selection)}${l.uid===r.weakest&&r.legs.length>1?' <span class="pill bad">maillon faible</span>':""}<small>${esc(l.match)} · ${esc(l.date)}</small></div>
+        <div class="sel">${esc(l.selection)}${l.uid===r.weakest&&r.legs.length>1?' <span class="pill bad">maillon faible</span>':""}<small>${esc(l.match)} · ${esc(l.date)}</small><div class="vd">${verdict(l)}</div></div>
         <div class="pc"><span class="num" style="font-size:13px">${pc(l.p)}</span><div class="pbar"><i style="width:${l.p*100}%"></i></div></div>
-        <div class="o">${l.estimated?"≈":""}${fr(l.odds)}<small>${l.estimated?"mini "+fr(l.min_odds):esc(book(l.book))}</small></div>
+        <div class="o">${l.estimated?"≈":""}${fr(l.odds)}<small>${l.user_odds?"ta cote":l.estimated?"mini "+fr(l.min_odds):esc(book(l.book))}</small></div>
+        ${yours(l)}
         <button class="add rm" data-add="${esc(l.uid)}" title="Retirer">×</button></div>`).join("")}</div>
     <div style="display:flex;gap:10px;margin-top:16px"><button class="btn go" id="t-play">Je joue ce ticket</button><button class="btn" id="t-clear">Vider</button></div>`;
 }
@@ -703,6 +724,16 @@ document.addEventListener("click", e => {
   if (e.target.closest("#t-clear")) { call("builder_clear"); BSET.clear(); render(); }
 });
 document.addEventListener("change", e => { if (e.target.id === "t-s") { TSTAKE = e.target.value; render(); } });
+/* « ta cote » : la cote vue chez ton bookmaker, verdict immédiat */
+document.addEventListener("change", e => {
+  const i = e.target.closest("[data-yo]"); if (!i) return;
+  const r = call("set_odds", i.dataset.yo, i.value.trim() || "0");
+  if (!r || !r.ok) { toast("Ce pari n'est plus disponible"); return; }
+  toast(r.user_odds ? (r.ev >= 0.01 ? "Bonne cote : à jouer" : "Cote trop basse") : "Cote effacée");
+  render();
+});
+document.addEventListener("click", e => { if (e.target.closest("[data-yo]")) e.stopPropagation(); }, true);
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.closest("[data-yo]")) e.target.blur(); });
 
 /* ======================================================================
    Vue : Bilan

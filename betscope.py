@@ -1062,6 +1062,26 @@ MODES = {
 WORST_EV = -0.09  # au-delà, la cote est vraiment mauvaise : jamais proposée
 
 
+def market_trio(ev):
+    """Vraies chances 1N2 du marché (marges retirées, bookmakers précis pondérés), sans dépendre de ton bookmaker."""
+    home, away = ev.get("home_team"), ev.get("away_team")
+    acc, wsum = [0.0, 0.0, 0.0], 0.0
+    for bk in ev.get("bookmakers", []):
+        for m in bk.get("markets", []):
+            if m.get("key") != "h2h":
+                continue
+            pr = {o.get("name"): o.get("price") for o in m.get("outcomes", [])}
+            try:
+                inv = [1 / pr[home], 1 / pr["Draw"], 1 / pr[away]]
+            except (KeyError, TypeError, ZeroDivisionError):
+                continue
+            t = sum(inv)
+            w = SHARP_WEIGHTS.get(bk.get("key"), 1.0)
+            acc = [a + w * x / t for a, x in zip(acc, inv)]
+            wsum += w
+    return [round(a / wsum, 4) for a in acc] if wsum else None
+
+
 def is_value(b, cfg):
     return b["ev"] >= float(cfg["min_ev"]) and not b["suspect"] and not b.get("estimated")
 
@@ -2431,6 +2451,8 @@ class Api:
                     return h2h.get(name)
                 trio = [g(f"Victoire {home}"), g("Match nul"), g(f"Victoire {away}")]
                 probs = [round(t["p"], 4) if t else None for t in trio]
+                if None in probs:  # ton bookmaker n'a pas (encore) ce match : vraies chances du marché quand même
+                    probs = market_trio(ev) or probs
                 odds = [{"odds": t["odds"], "book": t["book"], "uid": t["uid"]} if t else None for t in trio]
                 best = max(sel, key=lambda z: z["p"] * _trust(z), default=None) if sel else None
                 fh, fa = st.get("form_home") or {}, st.get("form_away") or {}
@@ -2444,6 +2466,7 @@ class Api:
                     "form_home": fh.get("form", ""), "form_away": fa.get("form", ""),
                     "n_value": sum(1 for x in sel if is_value(x, self._cfg)) if tier_ok("elite") else None,
                     "lineups": bool(st.get("lineups")),
+                    "odds_ts": ev.get("_odds_ts") or self._last_fetch,
                     "best": ser_bet(best, self._cfg) if best else None,
                 })
         out.sort(key=lambda m: m["ts"])
@@ -2466,7 +2489,7 @@ class Api:
         return {
             "id": event_id, "home": ev.get("home_team", ""), "away": ev.get("away_team", ""),
             "league": SPORTS.get(ev.get("sport_key"), ev.get("sport_title", "")), "sport_key": ev.get("sport_key"),
-            "ts": start.timestamp(), "date": fmt_date(start), "tier": TIER["v"],
+            "ts": start.timestamp(), "date": fmt_date(start), "tier": TIER["v"], "odds_ts": ev.get("_odds_ts") or self._last_fetch,
             "groups": [{"cat": c, "label": mk.CATEGORIES.get(c, c), "bets": groups[c]}
                        for c in order + [k for k in groups if k not in order] if c in groups],
             "info": info,

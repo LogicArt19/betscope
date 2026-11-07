@@ -226,6 +226,11 @@ export default {
     const p = url.pathname;
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req) });
     if (p === "/api/health") return json(req, { ok: true, time: Date.now() });
+    if (p === "/api/public/stats") { // bilan public des pronostics (sans connexion)
+      const text = await kvJson(env, "public_stats");
+      return new Response(text || '{"n":0}', { headers: { "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=600", ...cors(req) } });
+    }
     if (!env.SESSION_SECRET && p !== "/api/whop/webhook") return json(req, { ok: false, reason: "server_not_configured" }, 503);
     let body = {};
     if (req.method === "POST" && p !== "/api/whop/webhook") { try { body = await req.json(); } catch (e) { /* vide */ } }

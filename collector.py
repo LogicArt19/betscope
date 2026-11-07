@@ -159,6 +159,32 @@ def cf_put(key, data, gz=True, meta=None):
     return ok
 
 
+def public_record(events, st):
+    """Bilan public : on enregistre chaque pari que Cotescope « jouerait », puis on le vérifie
+    avec le résultat officiel. Le résumé est publié sans connexion (preuve pour la vitrine)."""
+    from history import History
+    folder = os.path.join(CACHE, "public")
+    os.makedirs(folder, exist_ok=True)
+    h = History(folder)
+    cfg = dict(b.DEFAULT_CONFIG, sports=SPORTS, bookmakers="betclic_fr,winamax_fr,unibet_fr,pmu_fr,parionssport_fr,netbet_fr")
+    sel = b.analyze(events, cfg, info=st.info_for(events))
+    picks = [x for x in b.top_picks(sel, cfg) if b.would_bet(x, cfg)]
+    h.log_app(picks)
+    h.settle_all(S.ESPN_SLUGS)
+    summ = h.summary()["app"]
+    done = [e for e in h.data["app"] if e["status"] in ("won", "lost")]
+    done.sort(key=lambda e: e.get("start", ""), reverse=True)
+    pub = {
+        "built": time.time(), "n": summ["n"], "wins": summ["wins"], "rate": summ["rate"], "roi": summ["roi"],
+        "pending": summ["pending"], "buckets": summ["buckets"],
+        "last": [{k: e.get(k) for k in ("selection", "match", "odds", "p", "status", "start")} for e in done[:30]],
+        "upcoming": [{k: e.get(k) for k in ("selection", "match", "odds", "p", "start")}
+                     for e in h.data["app"] if e["status"] == "pending"][:12],
+    }
+    log(f"bilan public : {summ['n']} paris vérifiés, {summ['pending']} en attente")
+    cf_put("public_stats", pub)
+
+
 def main():
     state = load_state()
     cfg = dict(b.DEFAULT_CONFIG, api_key=os.environ.get("ODDS_KEY", ""), sports=SPORTS, demo=False)
@@ -212,6 +238,11 @@ def main():
     log(f"snapshot : {len(events)} matchs, {len(snap['stats'].get('web', {}))} fiches web")
     for tier in TIERS:
         cf_put("snapshot_" + tier, tier_snapshot(snap, tier))
+
+    try:
+        public_record(events, st)
+    except Exception as e:  # le bilan public ne doit jamais bloquer la collecte
+        log("bilan public :", e)
 
     engine = {}
     for name in ENGINE_FILES:

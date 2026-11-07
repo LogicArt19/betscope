@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!--CSP-->
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#060A12">
+<title>Cotescope</title>
+<link rel="icon" href="../img/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --night:#060A12; --deck:#0C1220; --deck2:#111A2C; --rim:#1B2740; --rim2:#26355A;
+  --chalk:#E8EEF8; --fog:#8593AD; --dim:#5C6A86;
+  --home:#26E0B8; --draw:#F2B84B; --away:#9C8CFF; --bad:#FF6B7A;
+  --disp:"Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --body:"Hanken Grotesk", "Segoe UI", system-ui, sans-serif;
+  --r:14px; color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--night);color:var(--chalk);font:15px/1.5 var(--body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(900px 420px at 15% -8%,rgba(38,224,184,.10),transparent 60%),
+             radial-gradient(800px 420px at 90% -10%,rgba(156,140,255,.10),transparent 60%)}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,select{font:inherit;color:inherit}
+a{color:var(--home)}
+:focus-visible{outline:2px solid var(--home);outline-offset:2px;border-radius:8px}
+.num{font-family:var(--disp);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+[hidden]{display:none!important}
+
+/* ---------- barre 1N2 : l'élément signature ---------- */
+.spec{display:flex;height:8px;border-radius:6px;overflow:hidden;gap:2px;background:var(--rim)}
+.spec i{display:block;height:100%;transition:width .6s cubic-bezier(.2,.8,.2,1)}
+.spec .h{background:var(--home);box-shadow:0 0 12px rgba(38,224,184,.5)}
+.spec .d{background:var(--draw)}
+.spec .a{background:var(--away);box-shadow:0 0 12px rgba(156,140,255,.45)}
+.spec.big{height:14px;border-radius:8px}
+.specl{display:flex;justify-content:space-between;font-family:var(--disp);font-size:13px;margin-top:5px}
+.specl .h{color:var(--home)}.specl .d{color:var(--draw)}.specl .a{color:var(--away)}
+
+/* ---------- structure ---------- */
+.shell{position:relative;z-index:1;min-height:100%;display:flex;flex-direction:column}
+header.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:22px;padding:0 28px;height:64px;
+  background:rgba(6,10,18,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--rim)}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--chalk);font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:.02em}
+.logo img{width:30px;height:30px}
+nav.tabs{display:flex;gap:4px;margin-left:12px}
+nav.tabs button{padding:9px 14px;border-radius:10px;color:var(--fog);font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:8px;position:relative}
+nav.tabs button:hover{color:var(--chalk);background:var(--deck)}
+nav.tabs button.on{color:var(--chalk);background:var(--deck2)}
+nav.tabs button.on::after{content:"";position:absolute;left:14px;right:14px;bottom:-12px;height:2px;background:var(--home);border-radius:2px;box-shadow:0 0 10px var(--home)}
+nav.tabs svg{width:17px;height:17px}
+.badge{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--home);color:#04201A;font-size:11px;font-weight:700;display:inline-grid;place-items:center}
+.sp{flex:1}
+.plan{font-family:var(--disp);font-weight:600;font-size:12.5px;padding:5px 10px;border-radius:8px;border:1px solid var(--rim2);color:var(--fog)}
+.plan.p-pro,.plan.p-elite{border-color:rgba(38,224,184,.5);color:var(--home)}
+.me{width:36px;height:36px;border-radius:50%;background:var(--deck2);border:1px solid var(--rim2);display:grid;place-items:center;font-family:var(--disp);font-weight:700;color:var(--chalk)}
+main{flex:1;width:100%;max-width:1180px;margin:0 auto;padding:26px 28px 90px}
+.bottom{display:none}
+
+h1.t{font-family:var(--disp);font-size:28px;font-weight:700;letter-spacing:.01em;margin-bottom:4px}
+p.lead{color:var(--fog);max-width:62ch;margin-bottom:22px}
+h2.s{font-family:var(--disp);font-size:17px;font-weight:600;margin:26px 0 12px;display:flex;align-items:center;gap:10px}
+h2.s small{font-family:var(--body);font-weight:500;font-size:13px;color:var(--dim)}
+
+.panel{background:linear-gradient(180deg,var(--deck),rgba(12,18,32,.75));border:1px solid var(--rim);border-radius:var(--r)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;border-radius:11px;font-weight:700;font-size:14.5px;border:1px solid var(--rim2);background:var(--deck2);transition:border-color .15s,background .15s}
+.btn:hover{border-color:#3A4C78}
+.btn.go{background:var(--home);border-color:var(--home);color:#032019}
+.btn.go:hover{background:#4AF0CC}
+.btn.sm{padding:6px 11px;font-size:13px;border-radius:9px}
+.btn:disabled{opacity:.5;cursor:default}
+.in{width:100%;padding:11px 13px;border-radius:11px;background:var(--night);border:1px solid var(--rim2);color:var(--chalk);font-size:15px}
+.in:focus{outline:none;border-color:var(--home)}
+label.f{display:block;font-size:13px;color:var(--fog);margin-bottom:6px;font-weight:600}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:8px 13px;border-radius:10px;border:1px solid var(--rim);background:var(--deck);color:var(--fog);font-weight:600;font-size:13.5px;white-space:nowrap}
+.chip b{font-family:var(--disp);color:var(--dim);margin-left:6px;font-weight:600}
+.chip.on{border-color:var(--home);color:var(--chalk);background:rgba(38,224,184,.08)}
+.chip.on b{color:var(--home)}
+.chip.lk{opacity:.45;border-style:dashed}
+.empty{padding:40px 24px;text-align:center;color:var(--fog)}
+.empty b{display:block;color:var(--chalk);font-size:16px;margin-bottom:6px}
+.note{font-size:13px;color:var(--fog)}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 8px;border-radius:7px;background:var(--deck2);color:var(--fog)}
+.pill.ok{color:var(--home);background:rgba(38,224,184,.1)}
+.pill.warn{color:var(--draw);background:rgba(242,184,75,.1)}
+.pill.bad{color:var(--bad);background:rgba(255,107,122,.1)}
+.pill.v{color:var(--away);background:rgba(156,140,255,.12)}
+
+/* ---------- jour ---------- */
+.days{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -2px 14px;padding:2px}
+.days::-webkit-scrollbar{display:none}
+.day{flex:none;min-width:74px;padding:9px 10px;border-radius:12px;border:1px solid var(--rim);background:var(--deck);text-align:center}
+.day .w{font-size:12px;color:var(--fog);font-weight:600}
+.day .n{font-family:var(--disp);font-size:20px;font-weight:700;line-height:1.2}
+.day .c{font-size:11.5px;color:var(--dim)}
+.day.on{border-color:var(--home);background:rgba(38,224,184,.07)}
+.day.on .c{color:var(--home)}
+
+/* ---------- match ---------- */
+.lg{display:flex;align-items:center;gap:10px;margin:22px 0 8px;color:var(--fog);font-size:13px;font-weight:700}
+.lg::after{content:"";flex:1;height:1px;background:var(--rim)}
+.match{display:grid;grid-template-columns:62px minmax(0,1.25fr) minmax(170px,1fr) auto 24px;gap:18px;align-items:center;padding:14px 18px;border-radius:var(--r);border:1px solid var(--rim);background:var(--deck);cursor:pointer;margin-bottom:8px;transition:border-color .15s,background .15s}
+.match:hover{border-color:var(--rim2);background:var(--deck2)}
+.match .tm{font-family:var(--disp);font-size:16px;font-weight:600}
+.match .tm small{display:block;font-family:var(--body);font-size:11.5px;color:var(--dim);font-weight:500}
+.teams div{display:flex;align-items:center;gap:8px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.teams div+div{margin-top:3px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dot.h{background:var(--home)}.dot.a{background:var(--away)}
+.form{display:inline-flex;gap:2px;margin-left:6px}
+.form i{width:6px;height:6px;border-radius:2px;background:var(--dim)}
+.form i.V{background:var(--home)}.form i.N{background:var(--draw)}.form i.D{background:var(--bad)}
+.odds3{display:flex;gap:6px}
+.ob{min-width:58px;padding:6px 8px;border-radius:10px;border:1px solid var(--rim2);background:var(--night);text-align:center;transition:border-color .15s}
+.ob small{display:block;font-size:10.5px;color:var(--dim);font-weight:700}
+.ob b{font-family:var(--disp);font-size:15px}
+.ob:hover{border-color:var(--home)}
+.ob.in{border-color:var(--home);background:rgba(38,224,184,.12)}
+.chev{color:var(--dim)}
+
+/* ---------- page match ---------- */
+.back{display:inline-flex;align-items:center;gap:6px;color:var(--fog);font-weight:600;margin-bottom:14px}
+.mhead{padding:26px 28px}
+.mhead .meta{color:var(--fog);font-size:13.5px;margin-bottom:14px}
+.vs{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;margin-bottom:22px}
+.vs .tn{font-family:var(--disp);font-size:clamp(20px,3.4vw,32px);font-weight:700;line-height:1.1}
+.vs .tn.r{text-align:right}
+.vs .x{font-family:var(--disp);color:var(--dim);font-size:15px}
+.tabs2{display:flex;gap:4px;border-bottom:1px solid var(--rim);margin:22px 0 18px;overflow-x:auto;scrollbar-width:none}
+.tabs2 button{padding:11px 14px;color:var(--fog);font-weight:700;font-size:14px;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.tabs2 button.on{color:var(--chalk);border-color:var(--home)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.box{padding:18px 20px}
+.box h3{font-family:var(--disp);font-size:15px;font-weight:600;margin-bottom:12px}
+table.src{width:100%;border-collapse:collapse;font-size:14px}
+table.src td,table.src th{padding:9px 6px;border-bottom:1px solid var(--rim);text-align:right}
+table.src th{color:var(--dim);font-weight:600;font-size:12.5px}
+table.src td:first-child,table.src th:first-child{text-align:left}
+table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
+.args li{list-style:none;padding:7px 0;border-bottom:1px solid var(--rim);font-size:14px}
+.args li:last-child{border:0}
+.rel{height:6px;border-radius:4px;background:var(--rim);overflow:hidden;margin:8px 0 4px}
+.rel i{display:block;height:100%}
+.bet{display:grid;grid-template-columns:minmax(0,1fr) 120px 74px 34px;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--rim)}
+.bet:last-child{border:0}
+.bet .sel{font-weight:600}
+.bet .sel small{display:block;color:var(--dim);font-weight:500;font-size:12px}
+.pbar{height:5px;border-radius:3px;background:var(--rim);overflow:hidden;margin-top:5px}
+.pbar i{display:block;height:100%;background:var(--home)}
+.bet .o{font-family:var(--disp);font-size:17px;font-weight:700;text-align:right}
+.bet .o small{display:block;font-family:var(--body);font-size:11px;color:var(--dim);font-weight:600}
+.add{width:32px;height:32px;border-radius:9px;border:1px solid var(--rim2);display:grid;place-items:center;font-size:18px;color:var(--fog)}
+.add:hover{border-color:var(--home);color:var(--home)}
+.add.in{background:var(--home);border-color:var(--home);color:#032019}
+.add.rm{font-size:20px;line-height:1}
+.add.rm:hover{border-color:var(--bad);color:var(--bad)}
+.lastg{display:flex;gap:6px;flex-wrap:wrap}
+.lastg span{font-size:12px;padding:4px 7px;border-radius:7px;background:var(--night);border:1px solid var(--rim)}
+.lastg span.V{border-color:rgba(38,224,184,.5)}.lastg span.D{border-color:rgba(255,107,122,.5)}.lastg span.N{border-color:rgba(242,184,75,.5)}
+
+/* ---------- verrou ---------- */
+.lock{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:var(--r);border:1px dashed rgba(242,184,75,.45);background:rgba(242,184,75,.05);margin:12px 0}
+.lock .ic{width:34px;height:34px;border-radius:10px;background:rgba(242,184,75,.12);display:grid;place-items:center;color:var(--draw);flex:none}
+.lock b{display:block;font-size:14.5px}
+.lock small{color:var(--fog);font-size:13px}
+.lock .btn{margin-left:auto;flex:none}
+
+/* ---------- pronostics / objectif / ticket ---------- */
+.pick{display:grid;grid-template-columns:minmax(0,1fr) 150px 80px 34px;gap:14px;align-items:center;padding:14px 18px;border:1px solid var(--rim);background:var(--deck);border-radius:var(--r);margin-bottom:8px;cursor:pointer}
+.pick:hover{border-color:var(--rim2)}
+.pick .sel{font-weight:700;font-size:15px}
+.pick .sel small{display:block;font-weight:500;color:var(--fog);font-size:13px}
+.goal{display:grid;grid-template-columns:330px 1fr;gap:18px;align-items:start}
+.goalf{padding:20px;position:sticky;top:84px}
+.money{display:flex;align-items:center;gap:8px}
+.money .in{font-family:var(--disp);font-size:22px;font-weight:700;padding:10px 12px}
+.money span{font-family:var(--disp);font-size:20px;color:var(--fog)}
+.need{margin:14px 0;padding:12px 14px;border-radius:11px;background:var(--night);border:1px solid var(--rim);font-size:13.5px;color:var(--fog)}
+.need b{font-family:var(--disp);color:var(--chalk);font-size:18px}
+.opt{padding:18px 20px;margin-bottom:12px}
+.opt.best{border-color:rgba(38,224,184,.55);box-shadow:0 0 40px -18px rgba(38,224,184,.6)}
+.opt .oh{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px}
+.opt .oh b{font-size:16px;display:block}
+.opt .oh small{color:var(--fog);font-size:13px}
+.ring{text-align:right;flex:none}
+.ring b{font-family:var(--disp);font-size:26px;color:var(--home)}
+.ring small{display:block;font-size:11.5px;color:var(--dim)}
+.leg{display:grid;grid-template-columns:minmax(0,1fr) auto 34px;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--rim);font-size:14px}
+.leg small{color:var(--dim)}
+.leg .o{font-family:var(--disp);font-weight:700;font-size:15.5px}
+.tot{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:12px;border-top:1px dashed var(--rim2)}
+.tot b{font-family:var(--disp);font-size:18px;color:var(--home)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{padding:16px 18px}
+.stat small{color:var(--fog);font-size:12.5px;font-weight:600}
+.stat b{display:block;font-family:var(--disp);font-size:26px;font-weight:700;margin-top:2px}
+.warn{padding:10px 14px;border-radius:11px;font-size:13.5px;margin:8px 0;background:rgba(242,184,75,.08);color:#F7D58F;border:1px solid rgba(242,184,75,.25)}
+.tip{padding:10px 14px;border-radius:11px;font-size:13.5px;margin:8px 0;background:rgba(38,224,184,.07);color:#B9F5E7;border:1px solid rgba(38,224,184,.25);display:flex;gap:10px;align-items:center}
+.tip span{flex:1}
+.weak{border-color:rgba(255,107,122,.5)!important}
+.banner{display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:12px;border:1px solid var(--rim2);background:var(--deck);margin-bottom:16px;font-size:14px}
+.banner .btn{margin-left:auto;flex:none}
+
+/* ---------- drawer ticket / toast ---------- */
+.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;z-index:80;background:var(--deck2);border:1px solid var(--rim2);padding:11px 16px;border-radius:12px;font-weight:600;transition:.25s}
+.toast.on{opacity:1;transform:translateX(-50%)}
+.tfab{position:fixed;right:24px;bottom:24px;z-index:30;display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:14px;background:var(--home);color:#032019;font-weight:800;box-shadow:0 12px 40px -10px rgba(38,224,184,.7)}
+
+/* ---------- connexion / forfaits ---------- */
+.gate{position:fixed;inset:0;z-index:90;overflow:auto;background:radial-gradient(1000px 520px at 50% -10%,rgba(38,224,184,.14),transparent 60%),radial-gradient(800px 500px at 100% 100%,rgba(156,140,255,.10),transparent 60%),var(--night);display:grid;place-items:center;padding:24px}
+.gcard{width:min(420px,100%)}
+.gcard.wide{width:min(1060px,100%)}
+.gcard .logo{justify-content:center;margin-bottom:22px;font-size:22px}
+.gbox{padding:28px}
+.gbox h2{font-family:var(--disp);font-size:24px;font-weight:700;margin-bottom:4px}
+.gbox p{color:var(--fog);margin-bottom:20px;font-size:14.5px}
+.gbox .f{margin-bottom:14px}
+.gbox .msg{min-height:20px;font-size:13.5px;color:var(--bad);margin:4px 0 10px}
+.gbox .msg.ok{color:var(--home)}
+.gbox .alt{text-align:center;margin-top:14px;font-size:14px;color:var(--fog)}
+.gbox .alt button{color:var(--home);font-weight:700}
+.chk{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;color:var(--fog);margin:6px 0 4px}
+.chk input{margin-top:3px;accent-color:#26E0B8}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.pl{padding:24px;display:flex;flex-direction:column;gap:14px;position:relative}
+.pl.hot{border-color:rgba(38,224,184,.6);box-shadow:0 0 60px -25px rgba(38,224,184,.7)}
+.pl.cur{outline:2px solid var(--home)}
+.pl .tag{position:absolute;top:-11px;left:22px;font-size:11.5px;font-weight:800;padding:3px 10px;border-radius:8px;background:var(--home);color:#032019}
+.pl h3{font-family:var(--disp);font-size:20px}
+.pl .pr{font-family:var(--disp);font-size:34px;font-weight:700}
+.pl .pr small{font-family:var(--body);font-size:14px;color:var(--fog);font-weight:500}
+.pl ul{list-style:none;display:grid;gap:8px;font-size:14px;color:#CBD6EA;flex:1}
+.pl li{padding-left:22px;position:relative}
+.pl li::before{content:"";position:absolute;left:2px;top:7px;width:9px;height:9px;border-radius:3px;background:var(--home)}
+.pl li.inc{color:var(--fog)}
+.pl li.inc::before{background:var(--rim2)}
+.books{display:flex;flex-wrap:wrap;gap:8px}
+.books label{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:11px;border:1px solid var(--rim2);cursor:pointer;font-weight:600;user-select:none}
+.books label.on{border-color:var(--home);background:rgba(38,224,184,.08)}
+.books input{accent-color:#26E0B8}
+.loader{display:grid;place-items:center;gap:16px;text-align:center;color:var(--fog)}
+.scan{width:220px}
+.scan .spec{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.55}}
+
+@media (max-width:900px){
+  .match{grid-template-columns:52px minmax(0,1fr) auto;grid-template-areas:"tm teams odds" "spec spec spec";gap:10px 12px}
+  .match .tm{grid-area:tm}.match .teams{grid-area:teams}.match .odds3{grid-area:odds}.match .sp3{grid-area:spec}.match .chev{display:none}
+  .grid2,.goal{grid-template-columns:1fr}
+  .goalf{position:static}
+  .plans{grid-template-columns:1fr}
+  .stats{grid-template-columns:1fr 1fr}
+}
+@media (max-width:720px){
+  header.top{padding:0 16px;height:56px}
+  nav.tabs{display:none}
+  main{padding:18px 14px 96px}
+  .bottom{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:25;background:rgba(6,10,18,.94);backdrop-filter:blur(14px);border-top:1px solid var(--rim);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+  .bottom button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px;font-size:11px;font-weight:700;color:var(--dim);position:relative}
+  .bottom button svg{width:21px;height:21px}
+  .bottom button.on{color:var(--home)}
+  .bottom .badge{position:absolute;top:0;right:calc(50% - 22px)}
+  .odds3 .ob{min-width:48px;padding:5px 4px}
+  .match{padding:12px 14px}
+  .pick,.bet{grid-template-columns:minmax(0,1fr) 70px 34px}
+  .pick .pc,.bet .pc{display:none}
+  .mhead{padding:20px}
+  .tfab{bottom:84px;right:16px}
+  h1.t{font-size:23px}
+  .lock{flex-wrap:wrap}.lock .btn{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <a class="logo" href="../"><img src="../img/logo.svg" alt="">Cotescope</a>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="sp"></div>
+    <span class="plan" id="plan" hidden></span>
+    <button class="me" id="me" title="Mon compte">?</button>
+  </header>
+  <main id="view"></main>
+  <nav class="bottom" id="bottom"></nav>
+</div>
+<button class="tfab" id="tfab" hidden></button>
+<div class="toast" id="toast"></div>
+<div class="gate" id="gate" hidden><div class="gcard" id="gcard"></div></div>
+
+<script>
+"use strict";
+/* ======================================================================
+   Cotescope · appli web
+   Le moteur d'analyse (Python) tourne dans le navigateur (Pyodide).
+   Le serveur n'envoie le moteur et les données qu'aux comptes abonnés.
+   ====================================================================== */
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const book = s => String(s || "").replace(/\s*\((FR|EU|UK)\)$/, "");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fr = (x, d=2) => x == null || isNaN(x) ? "–" : Number(x).toFixed(d).replace(".", ",");
+const pc = (x, d=0) => x == null ? "–" : fr(x * 100, d) + " %";
+const eur = x => fr(x) + " €";
+const sg = x => (x >= 0 ? "+" : "") + pc(x, 1);
+function toast(t){ const e=$("#toast"); e.textContent=t; e.classList.add("on"); clearTimeout(e._t); e._t=setTimeout(()=>e.classList.remove("on"),2600); }
+const ICON = {
+  matchs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>',
+  picks:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>',
+  goal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>',
+  ticket:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4z"/></svg>',
+  bilan:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  lock:'<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+};
+const VIEWS = [["matchs","Matchs"],["picks","Pronostics"],["goal","Objectif"],["ticket","Mon ticket"],["bilan","Bilan"]];
+const PLAN_NAME = {gratuit:"Gratuit", essentiel:"Essentiel", pro:"Pro", elite:"Elite"};
+const RANK = {gratuit:0, essentiel:1, pro:2, elite:3};
+const PLANS = [
+  {id:"essentiel", name:"Essentiel", price:"9,99", feats:["Les 6 grands championnats","Paris principaux : 1N2, double chance, buts, les 2 marquent","Objectif : le ticket le plus sûr","Mon ticket : cote, chances, gain","Forme et classement"]},
+  {id:"pro", name:"Pro", price:"19,99", hot:"Le plus choisi", feats:["Tout Essentiel","Tous les paris : buteurs, handicaps, score exact…","Page match complète : absents, compos, face-à-face, météo","Objectif : toutes les alternatives","Bilan de tes tickets"]},
+  {id:"elite", name:"Elite", price:"49,99", feats:["Tout Pro","Paris value et sélection de Cotescope","Mouvement des cotes","Actus de dernière minute","Fiabilité mesurée et bankroll"]},
+];
+const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["unibet_fr","Unibet"],["pmu_fr","PMU"],["parionssport_fr","Parions Sport"],["netbet_fr","NetBet"]];
+const ERR = {bad_login:"E-mail ou mot de passe incorrect.", email_taken:"Un compte existe déjà avec cet e-mail : connecte-toi.",
+  bad_email:"Adresse e-mail invalide.", weak_password:"Mot de passe trop court : 8 caractères minimum.", too_many:"Trop d'essais. Réessaie dans 15 minutes.",
+  too_many_accounts:"Trop de comptes créés depuis cette connexion aujourd'hui.", session:"Session expirée : reconnecte-toi.",
+  no_plan:"Aucun forfait actif sur ce compte.", free_over:"Ta version gratuite de 7 jours est terminée.", inactive:"Ton abonnement est terminé.",
+  whop_unreachable:"Le service de paiement ne répond pas. Réessaie dans un instant.", plans_not_configured:"Les abonnements ouvrent très bientôt.",
+  server_not_configured:"Le serveur Cotescope n'est pas encore prêt.", mail_not_configured:"Écris-nous pour réinitialiser ton mot de passe.",
+  bad_code:"Ce lien a expiré : redemande un e-mail.", network:"Pas de connexion au serveur Cotescope.", no_data_yet:"Les données du jour arrivent. Réessaie dans quelques minutes."};
+const errMsg = r => ERR[r] || ("Erreur : " + r);
+
+/* ======================================================================
+   Connexion au serveur + moteur
+   ====================================================================== */
+const PYODIDE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
+const LS = "cotescope_session";
+let CFG = {}, SESSION = "", ACCOUNT = null, py = null, web = null, nextSnap = 0, saveT = null;
+const lsGet = () => { try { return localStorage.getItem(LS) || ""; } catch(e) { return ""; } };
+const lsSet = v => { try { v ? localStorage.setItem(LS, v) : localStorage.removeItem(LS); } catch(e) {} };
+
+async function server(path, method, body, raw){
+  if (!CFG.api) return {ok:false, reason:"server_not_configured"};
+  let r;
+  try {
+    r = await fetch(CFG.api.replace(/\/$/, "") + path, {method: method||"GET", cache:"no-store",
+      headers: Object.assign(SESSION ? {Authorization:"Bearer " + SESSION} : {}, body ? {"Content-Type":"application/json"} : {}),
+      body: body ? JSON.stringify(body) : undefined});
+  } catch(e) { return {ok:false, reason:"network"}; }
+  if (raw && r.ok) return r;
+  let j = {}; try { j = await r.json(); } catch(e) { j = {ok:false, reason:"http_" + r.status}; }
+  if (!r.ok && j.ok === undefined) j.ok = false;
+  if (j.reason === "session") { lsSet(""); SESSION = ""; }
+  return j;
+}
+function keep(r){
+  if (r && r.session) { SESSION = r.session; lsSet(SESSION); }
+  if (r && r.ok && r.email) ACCOUNT = {email:r.email, tier:r.tier, status:r.status, renews:r.renews, cancel:r.cancel, manage:r.manage};
+  return r;
+}
+const Auth = {
+  login: async (e,p) => keep(await server("/api/login","POST",{email:e,password:p})),
+  signup: async (e,p) => keep(await server("/api/signup","POST",{email:e,password:p})),
+  forgot: e => server("/api/forgot","POST",{email:e}),
+  reset: async (c,p) => keep(await server("/api/reset","POST",{code:c,password:p})),
+  me: async fresh => keep(await server("/api/me" + (fresh ? "?fresh=1" : ""))),
+  checkout: async tier => {
+    const r = await server("/api/checkout","POST",{tier, return: location.origin + location.pathname + "#paid"});
+    if (r.ok && r.url) location.href = r.url;
+    return r;
+  },
+  logout: () => { lsSet(""); SESSION = ""; ACCOUNT = null; location.hash = ""; location.reload(); },
+};
+function loadScript(src){ return new Promise((ok, ko) => { const s=document.createElement("script"); s.src=src; s.crossOrigin="anonymous"; s.onload=ok; s.onerror=()=>ko(Object.assign(new Error("network"),{reason:"network"})); document.head.appendChild(s); }); }
+function persist(){ clearTimeout(saveT); saveT = setTimeout(() => { try { py.FS.syncfs(false, () => {}); } catch(e) {} }, 400); }
+const READ_ONLY = /^(get_|builder_get|estimate|compute_)/;
+function call(name, ...args){
+  if (window.__BRIDGE__) return window.__BRIDGE__(name, args);
+  const out = JSON.parse(web.call(name, JSON.stringify(args)));
+  if (!READ_ONLY.test(name)) persist();
+  return out;
+}
+async function loadSnapshot(){
+  const r = await server("/api/snapshot","GET",null,true);
+  if (!(r instanceof Response)) throw Object.assign(new Error(r.reason), {reason:r.reason});
+  web.load_snapshot(await r.text()); nextSnap = Date.now() + 10*60*1000;
+}
+async function boot(){
+  gate("loading", {text:"Téléchargement des données du jour…"});
+  const [eng, snap] = await Promise.all([
+    server("/api/engine","GET",null,true), server("/api/snapshot","GET",null,true),
+    window.loadPyodide ? null : loadScript(PYODIDE + "pyodide.js")]);
+  for (const r of [eng, snap]) if (!(r instanceof Response)) throw Object.assign(new Error(r.reason), {reason:r.reason});
+  const files = (await eng.json()).files || {}, snapText = await snap.text();
+  gate("loading", {text:"Démarrage du moteur d'analyse…"});
+  if (!py) {
+    py = await window.loadPyodide({indexURL: PYODIDE});
+    py.FS.mkdirTree("/data"); py.FS.mount(py.FS.filesystems.IDBFS, {}, "/data");
+    await new Promise(ok => py.FS.syncfs(true, () => ok()));
+    py.FS.mkdirTree("/engine");
+  }
+  for (const [n, c] of Object.entries(files)) py.FS.writeFile("/engine/" + n, c);
+  py.runPython("import sys\nif '/engine' not in sys.path: sys.path.insert(0, '/engine')\nimport webapi\nwebapi.boot()");
+  web = py.pyimport("webapi");
+  call("set_account", ACCOUNT);
+  gate("loading", {text:"Analyse de tous les matchs…"});
+  await new Promise(r => setTimeout(r, 30));
+  web.load_snapshot(snapText); nextSnap = Date.now() + 10*60*1000; persist();
+  setInterval(tick, 60*1000);
+}
+async function tick(){
+  if (window.__BRIDGE__) return;
+  try {
+    if (Date.now() >= nextSnap) { await loadSnapshot(); render(); }
+    call("tick");
+    if (Math.random() < .1) { const a = await Auth.me(); if (a.ok) { call("set_account", ACCOUNT); } else if (a.reason === "session") location.reload(); }
+  } catch(e) { if (["session","no_plan","inactive","free_over"].includes(e.reason)) location.reload(); }
+}
+
+/* ======================================================================
+   État + routes
+   ====================================================================== */
+let ST = {}, MATCHES = [], DATA = {picks:[], probable:[], combos:[]}, BSET = new Set(), DAY = null, LEAGUE = "all";
+const tier = () => ST.tier || (ACCOUNT && ACCOUNT.tier) || "elite";
+const rank = () => RANK[tier()] ?? 3;
+function refreshState(){
+  ST = call("get_status") || {};
+  MATCHES = call("get_matches") || [];
+  DATA = call("get_data") || DATA;
+  const b = call("builder_get", 10) || {legs:[]};
+  BSET = new Set(b.legs.map(l => l.uid));
+}
+function route(){ const h = location.hash.replace(/^#\/?/, "").split("/"); return {v: h[0] || "matchs", a: h[1] ? decodeURIComponent(h[1]) : null}; }
+const go = (v, a) => { location.hash = "/" + v + (a ? "/" + encodeURIComponent(a) : ""); };
+window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
+
+function chrome(){
+  const r = route().v, n = BSET.size;
+  const tab = ([k, l]) => `<button class="${r===k||(r==="match"&&k==="matchs")?"on":""}" data-go="${k}">${ICON[k]}${l}${k==="ticket"&&n?`<span class="badge">${n}</span>`:""}</button>`;
+  $("#tabs").innerHTML = VIEWS.map(tab).join("");
+  $("#bottom").innerHTML = VIEWS.map(tab).join("");
+  const p = $("#plan"); p.hidden = !tier(); p.textContent = PLAN_NAME[tier()] || ""; p.className = "plan p-" + tier();
+  $("#me").textContent = ACCOUNT && ACCOUNT.email ? ACCOUNT.email[0].toUpperCase() : "?";
+  const f = $("#tfab"); f.hidden = !n || r === "ticket"; f.innerHTML = `${ICON.ticket.replace('<svg','<svg width="18" height="18"')} Mon ticket · ${n}`;
+}
+document.addEventListener("click", e => {
+  const g = e.target.closest("[data-go]"); if (g) { e.preventDefault(); go(g.dataset.go, g.dataset.arg); }
+});
+$("#me").onclick = () => go("compte");
+$("#tfab").onclick = () => go("ticket");
+
+function lockBox(need, title, text){
+  return `<div class="lock"><span class="ic">${ICON.lock}</span><div><b>${esc(title)}</b><small>${esc(text)} Inclus dans ${need==="essentiel"?"tous les forfaits payants":need==="pro"?"Pro et Elite":"Elite"}.</small></div><button class="btn sm go" data-plans>Voir les forfaits</button></div>`;
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-plans]")) gate("plans"); });
+
+function spec(p, big){
+  if (!p || p.some(x => x == null)) return `<div class="spec${big?" big":""}"></div>`;
+  return `<div class="spec${big?" big":""}"><i class="h" style="width:${p[0]*100}%"></i><i class="d" style="width:${p[1]*100}%"></i><i class="a" style="width:${p[2]*100}%"></i></div>`;
+}
+const formDots = f => f ? `<span class="form">${[...f].slice(0,5).map(c=>`<i class="${c}"></i>`).join("")}</span>` : "";
+
+/* ---------- ajout au ticket ---------- */
+async function toggleBet(uid){
+  if (!uid) return;
+  if (BSET.has(uid)) { call("builder_remove", uid); BSET.delete(uid); toast("Retiré de ton ticket"); }
+  else { call("builder_add", uid); BSET.add(uid); toast("Ajouté à ton ticket"); }
+  if (route().v === "ticket") { render(); return; }
+  $$(`[data-add="${CSS.escape(uid)}"]`).forEach(b => { b.classList.toggle("in", BSET.has(uid)); if (b.classList.contains("add")) b.textContent = BSET.has(uid) ? "✓" : "+"; });
+  chrome();
+}
+document.addEventListener("click", e => { const a = e.target.closest("[data-add]"); if (a) { e.stopPropagation(); e.preventDefault(); toggleBet(a.dataset.add); } }, true);
+
+/* ======================================================================
+   Vue : Matchs
+   ====================================================================== */
+const JOURS = ["dim.","lun.","mar.","mer.","jeu.","ven.","sam."];
+function vMatchs(){
+  const days = {};
+  MATCHES.forEach(m => { days[m.day] = (days[m.day] || 0) + 1; });
+  const keys = Object.keys(days).sort();
+  if (!DAY || !days[DAY]) DAY = keys[0] || null;
+  const leagues = [...new Set(MATCHES.filter(m => m.day === DAY).map(m => m.league))];
+  if (LEAGUE !== "all" && !leagues.includes(LEAGUE)) LEAGUE = "all";
+  const today = new Date().toISOString().slice(0,10);
+  const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0,10);
+  const dayChip = k => { const d = new Date(k + "T12:00:00"); const w = k === today ? "Auj." : k === tomorrow ? "Demain" : JOURS[d.getDay()];
+    return `<button class="day ${k===DAY?"on":""}" data-day="${k}"><div class="w">${w}</div><div class="n">${d.getDate()}</div><div class="c">${days[k]} match${days[k]>1?"s":""}</div></button>`; };
+  const list = MATCHES.filter(m => m.day === DAY && (LEAGUE === "all" || m.league === LEAGUE));
+  const groups = {}; list.forEach(m => (groups[m.league] = groups[m.league] || []).push(m));
+  const row = m => `
+    <div class="match" data-go="match" data-arg="${esc(m.id)}">
+      <div class="tm">${esc(m.time)}<small>${esc(m.round || "")}</small></div>
+      <div class="teams"><div><span class="dot h"></span>${esc(m.home)}${formDots(m.form_home)}</div><div><span class="dot a"></span>${esc(m.away)}${formDots(m.form_away)}</div></div>
+      <div class="sp3">${spec(m.probs)}<div class="specl"><span class="h">${pc(m.probs[0])}</span><span class="d">${pc(m.probs[1])}</span><span class="a">${pc(m.probs[2])}</span></div></div>
+      <div class="odds3">${["1","N","2"].map((l,i) => { const o = m.odds[i]; return o ? `<button class="ob ${BSET.has(o.uid)?"in":""}" data-add="${esc(o.uid)}" title="${esc(book(o.book))}"><small>${l}</small><b>${fr(o.odds)}</b></button>` : `<span class="ob"><small>${l}</small><b>–</b></span>`; }).join("")}</div>
+      <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+    </div>`;
+  const banner = ST.tier === "gratuit" && ACCOUNT ? `<div class="banner">Version gratuite : Ligue 1 et Premier League, résultat du match. Encore ${daysLeft(ACCOUNT.renews)} jour(s).<button class="btn sm go" data-plans>Voir les forfaits</button></div>` : "";
+  return `
+    ${banner}
+    <h1 class="t">Matchs</h1>
+    <p class="lead">Les vraies chances de chaque issue, calculées à partir des cotes de 10 bookmakers et de la forme des équipes. Touche une cote pour l'ajouter à ton ticket.</p>
+    <div class="days">${keys.map(dayChip).join("") || ""}</div>
+    ${leagues.length > 1 ? `<div class="chips" style="margin-bottom:6px"><button class="chip ${LEAGUE==="all"?"on":""}" data-lg="all">Tous<b>${MATCHES.filter(m=>m.day===DAY).length}</b></button>${leagues.map(l => `<button class="chip ${LEAGUE===l?"on":""}" data-lg="${esc(l)}">${esc(l)}<b>${MATCHES.filter(m=>m.day===DAY&&m.league===l).length}</b></button>`).join("")}</div>` : ""}
+    ${Object.entries(groups).map(([lg, ms]) => `<div class="lg">${esc(lg)}</div>${ms.map(row).join("")}`).join("") ||
+      `<div class="panel empty"><b>Aucun match à venir</b>Les cotes arrivent dès que les bookmakers les publient.</div>`}
+    ${rank() < 1 ? lockBox("essentiel", "Plus de championnats et de paris", "LaLiga, Serie A, Bundesliga, Ligue des champions, double chance, nombre de buts…") : ""}`;
+}
+document.addEventListener("click", e => {
+  const d = e.target.closest("[data-day]"); if (d) { DAY = d.dataset.day; render(); }
+  const l = e.target.closest("[data-lg]"); if (l) { LEAGUE = l.dataset.lg; render(); }
+});
+const daysLeft = x => x ? Math.max(0, Math.ceil((new Date(x) - Date.now()) / 864e5)) : 0;
+
+/* ======================================================================
+   Vue : page d'un match
+   ====================================================================== */
+let MTAB = "analyse";
+function vMatch(id){
+  const e = call("get_event", id);
+  if (!e) return `<button class="back" data-go="matchs">← Matchs</button><div class="panel empty"><b>Match introuvable</b>Il a peut-être déjà commencé.</div>`;
+  const info = e.info || {}, nv = info.neutral || {}, m = MATCHES.find(x => x.id === id) || {};
+  const fin = (nv.rows || []).find(r => r.final), p = fin ? fin.p : m.probs;
+  const t = [["analyse","Analyse"],["paris","Tous les paris"],["equipes","Équipes"],["h2h","Face-à-face"],["infos","Infos du match"]];
+  let body = "";
+  if (MTAB === "analyse") body = tabAnalyse(e, nv);
+  else if (MTAB === "paris") body = tabParis(e);
+  else if (MTAB === "equipes") body = tabEquipes(e, info);
+  else if (MTAB === "h2h") body = tabH2H(e, info);
+  else body = tabInfos(e, info);
+  return `
+    <button class="back" data-go="matchs">← Matchs</button>
+    <section class="panel mhead">
+      <div class="meta">${esc(e.league)} · ${esc(e.date)}${info.round_label?" · "+esc(info.round_label):""}</div>
+      <div class="vs"><div class="tn">${esc(e.home)}</div><div class="x">contre</div><div class="tn r">${esc(e.away)}</div></div>
+      ${spec(p, true)}
+      <div class="specl" style="font-size:15px"><span class="h">${esc(e.home)} ${pc(p&&p[0])}</span><span class="d">Nul ${pc(p&&p[1])}</span><span class="a">${pc(p&&p[2])} ${esc(e.away)}</span></div>
+    </section>
+    <div class="tabs2">${t.map(([k,l]) => `<button class="${MTAB===k?"on":""}" data-mtab="${k}">${l}</button>`).join("")}</div>
+    ${body}`;
+}
+document.addEventListener("click", e => { const t = e.target.closest("[data-mtab]"); if (t) { MTAB = t.dataset.mtab; render(); } });
+function tabAnalyse(e, nv){
+  const rows = nv.rows || [], lab = nv.labels || [e.home, "Nul", e.away];
+  const rel = nv.reliability ?? 25, rc = rel >= 70 ? "var(--home)" : rel >= 45 ? "var(--draw)" : "var(--bad)";
+  return `
+    <div class="grid2">
+      <div class="panel box"><h3>Ce que dit chaque source</h3>
+        <table class="src"><tr><th>Source</th><th>${esc(lab[0])}</th><th>Nul</th><th>${esc(lab[2])}</th></tr>
+        ${rows.map(r => `<tr class="${r.final?"fin":""}"><td>${esc(r.src)}</td>${r.p.map(x=>`<td class="num">${pc(x)}</td>`).join("")}</tr>`).join("")}</table>
+        <div style="margin-top:16px;font-size:13.5px;display:flex;justify-content:space-between"><span class="note">Fiabilité de l'analyse</span><b class="num" style="color:${rc}">${rel}/100</b></div>
+        <div class="rel"><i style="width:${rel}%;background:${rc}"></i></div>
+      </div>
+      <div class="panel box"><h3>Ce qui pourrait faire mentir le pronostic</h3>
+        <ul class="args">${(nv.risks||[]).map(x=>`<li>${esc(x)}</li>`).join("") || "<li>Rien de particulier.</li>"}</ul>
+      </div>
+      <div class="panel box"><h3>Pour ${esc(e.home)}</h3><ul class="args">${(nv.adv_home||[]).map(x=>`<li>${esc(x)}</li>`).join("") || '<li class="note">Pas d\'argument fort.</li>'}</ul></div>
+      <div class="panel box"><h3>Pour ${esc(e.away)}</h3><ul class="args">${(nv.adv_away||[]).map(x=>`<li>${esc(x)}</li>`).join("") || '<li class="note">Pas d\'argument fort.</li>'}</ul></div>
+    </div>
+    ${rank() < 2 ? lockBox("pro", "Analyse complète du match", "Absents pondérés, compos officielles, face-à-face, buteurs, météo et fatigue.") : ""}`;
+}
+function betLine(b){
+  return `<div class="bet">
+    <div class="sel">${esc(b.selection)}<small>${b.estimated?`cote estimée · prends si ≥ ${fr(b.min_odds)}`:esc(book(b.book))}${b.value?` · <span class="pill v">value ${sg(b.ev)}</span>`:""}</small></div>
+    <div class="pc"><span class="num" style="font-size:13px">${pc(b.p)} de chances</span><div class="pbar"><i style="width:${b.p*100}%"></i></div></div>
+    <div class="o">${b.estimated?"≈":""}${fr(b.odds)}<small>juste ${fr(b.fair)}</small></div>
+    <button class="add ${BSET.has(b.uid)?"in":""}" data-add="${esc(b.uid)}" title="Ajouter à mon ticket">${BSET.has(b.uid)?"✓":"+"}</button></div>`;
+}
+function tabParis(e){
+  return (e.groups||[]).map(g => `<h2 class="s">${esc(g.label)} <small>${g.bets.length} pari${g.bets.length>1?"s":""}</small></h2><div class="panel">${g.bets.map(betLine).join("")}</div>`).join("") +
+    (rank() < 2 ? lockBox("pro", "Tous les types de paris", "Buteurs, handicaps, score exact, mi-temps / fin de match, buts par équipe.") : "");
+}
+function formBox(name, f, tbl){
+  if (!f) return `<div class="panel box"><h3>${esc(name)}</h3><p class="note">Forme indisponible.</p></div>`;
+  return `<div class="panel box"><h3>${esc(name)}${tbl&&tbl.rank?` <span class="pill">${tbl.rank}e · ${tbl.points} pts</span>`:""}</h3>
+    <div class="lastg">${(f.last||[]).map(g => `<span class="${g.res}">${g.res} ${esc(g.score)} ${g.home?"vs":"à"} ${esc(g.opp)}</span>`).join("")}</div>
+    <p class="note" style="margin-top:10px">${esc(f.streak_txt||"")}${f.home_rec?` · domicile ${esc(f.home_rec)} · extérieur ${esc(f.away_rec)}`:""}</p></div>`;
+}
+const injList = l => (l && l.length) ? `<ul class="args">${l.map(i => `<li>${esc(i.player)} <span class="pill ${i.type==="out"?"bad":"warn"}">${esc(i.status||i.type||"")}</span> <span class="note">${esc(i.reason||"")}</span></li>`).join("")}</ul>` : `<p class="note">Aucun absent signalé.</p>`;
+function tabEquipes(e, i){
+  if (rank() < 2) return `<div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}</div>` + lockBox("pro", "Absents et compositions", "Les blessés et suspendus pondérés par leur importance, et les compos officielles environ 1 h avant le match.");
+  const lu = (i.lineups||[]);
+  return `<div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}
+    <div class="panel box"><h3>Absents · ${esc(e.home)}</h3>${injList(i.inj_home)}</div>
+    <div class="panel box"><h3>Absents · ${esc(e.away)}</h3>${injList(i.inj_away)}</div></div>
+    <h2 class="s">Compositions</h2>${lu.length ? `<div class="grid2">${lu.map(l => `<div class="panel box"><h3>${esc(l.team)} <span class="pill">${esc(l.formation||"")}</span></h3><p class="note">${(l.xi||[]).map(esc).join(", ")}</p></div>`).join("")}</div>` : `<div class="panel empty"><b>Pas encore publiées</b>Les compos officielles arrivent environ une heure avant le coup d'envoi.</div>`}`;
+}
+function tabH2H(e, i){
+  if (rank() < 2) return lockBox("pro", "Face-à-face", "Les 10 dernières confrontations, toutes compétitions, et leur moyenne de buts.");
+  const h = i.h2h || [], s = i.h2h_sum;
+  if (!h.length) return `<div class="panel empty"><b>Pas de confrontation récente trouvée</b>Les deux équipes ne se sont pas affrontées ces dernières saisons.</div>`;
+  return `${s?`<div class="stats" style="margin-bottom:14px"><div class="panel stat"><small>Victoires ${esc(e.home)}</small><b>${s.w}</b></div><div class="panel stat"><small>Nuls</small><b>${s.d}</b></div><div class="panel stat"><small>Victoires ${esc(e.away)}</small><b>${s.l}</b></div><div class="panel stat"><small>Buts par match</small><b>${fr(s.avg_goals,1)}</b></div></div>`:""}
+    <div class="panel">${h.map(g => `<div class="bet" style="grid-template-columns:90px 1fr auto"><span class="note">${esc(g.date)}</span><span>${esc(g.home)} – ${esc(g.away)}</span><b class="num">${g.gh} – ${g.ga}</b></div>`).join("")}</div>`;
+}
+function tabInfos(e, i){
+  const w = i.weather;
+  return `<div class="grid2">
+    <div class="panel box"><h3>Météo au coup d'envoi</h3>${rank() < 2 ? '<p class="note">Disponible avec Pro.</p>' : w ? `<div class="stats" style="grid-template-columns:repeat(3,1fr)"><div><small class="note">Température</small><b class="num" style="display:block;font-size:22px">${w.temp}°</b></div><div><small class="note">Pluie</small><b class="num" style="display:block;font-size:22px">${w.rain} mm</b></div><div><small class="note">Vent</small><b class="num" style="display:block;font-size:22px">${w.wind} km/h</b></div></div><p class="note" style="margin-top:8px">${esc(w.city||"")}</p>` : '<p class="note">Pas encore disponible.</p>'}</div>
+    <div class="panel box"><h3>Enjeu</h3><p class="note">${esc([i.stake_home, i.stake_away].filter(Boolean).map(s => s.label || s).join(" · ") || "Pas d'enjeu particulier détecté.")}</p></div></div>
+    <h2 class="s">Actus de dernière minute</h2>
+    ${rank() < 3 ? lockBox("elite", "Actus de dernière minute", "Les infos trouvées sur le web juste avant le match.") :
+      (i.news||[]).length ? `<div class="panel">${i.news.map(n => `<div class="bet" style="grid-template-columns:1fr"><div class="sel">${esc(n.title)}<small>${esc(n.desc||"")}</small></div></div>`).join("")}</div>` : `<div class="panel empty"><b>Rien de neuf pour l'instant</b>Les actus sont vérifiées plusieurs fois avant le match.</div>`}`;
+}
+
+/* ======================================================================
+   Vue : Pronostics
+   ====================================================================== */
+function pickRow(b){
+  return `<div class="pick" data-go="match" data-arg="${esc(b.event_id)}">
+    <div class="sel">${esc(b.selection)}<small>${esc(b.match)} · ${esc(b.date)}${b.mine?` · <span class="pill ok">Cotescope jouerait</span>`:""}${b.value?` <span class="pill v">value ${sg(b.ev)}</span>`:""}</small></div>
+    <div class="pc"><span class="num" style="font-size:13px">${pc(b.p)} de chances</span><div class="pbar"><i style="width:${b.p*100}%"></i></div></div>
+    <div class="o num" style="font-size:18px;font-weight:700;text-align:right">${b.estimated?"≈":""}${fr(b.odds)}</div>
+    <button class="add ${BSET.has(b.uid)?"in":""}" data-add="${esc(b.uid)}">${BSET.has(b.uid)?"✓":"+"}</button></div>`;
+}
+let PTAB = "sure";
+function vPicks(){
+  const t = [["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"]];
+  let body;
+  if (PTAB === "sure") body = DATA.probable.slice(0, 40).map(pickRow).join("");
+  else if (PTAB === "best") body = (rank() < 3 ? lockBox("elite", "Paris value et sélection de Cotescope", "Les paris où la cote est au-dessus du juste prix, et ceux que Cotescope jouerait avec son propre argent.") : "") + DATA.picks.slice(0, 40).map(pickRow).join("");
+  else body = DATA.combos.slice(0, 20).map(c => `<div class="panel opt"><div class="oh"><div style="flex:1"><b>Combiné ×${c.legs.length}</b><small>cote ${fr(c.odds)}${c.value?` · <span class="pill v">value</span>`:""}</small></div><div class="ring"><b>${pc(c.p)}</b><small>de chances</small></div></div>
+      ${c.legs.map(l => `<div class="leg"><div>${esc(l.selection)} <small>· ${esc(l.match)}</small></div><span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`).join("")}</div>`).join("");
+  return `<h1 class="t">Pronostics</h1><p class="lead">Les paris les plus solides de tous les matchs à venir, triés par Cotescope.</p>
+    <div class="chips" style="margin-bottom:16px">${t.map(([k,l]) => `<button class="chip ${PTAB===k?"on":""}" data-ptab="${k}">${l}</button>`).join("")}</div>
+    ${body || `<div class="panel empty"><b>Rien pour l'instant</b>Reviens quand les cotes des prochains matchs seront publiées.</div>`}`;
+}
+document.addEventListener("click", e => { const t = e.target.closest("[data-ptab]"); if (t) { PTAB = t.dataset.ptab; render(); } });
+
+/* ======================================================================
+   Vue : Objectif
+   ====================================================================== */
+let GOAL = {stake:"10", target:"40", res:null};
+function vGoal(){
+  const need = (parseFloat(String(GOAL.target).replace(",", ".")) + parseFloat(String(GOAL.stake).replace(",", "."))) / parseFloat(String(GOAL.stake).replace(",", "."));
+  const r = GOAL.res;
+  let out = "";
+  if (r) {
+    if (r.error) out = `<div class="panel empty"><b>${esc(r.error)}</b></div>`;
+    else if (!r.options.length) out = `<div class="panel empty"><b>Objectif impossible avec les matchs actuels</b>Il faudrait une cote de ${fr(r.need_odds)}, la plus grosse possible aujourd'hui est ${fr(r.max_odds)}. Baisse ton objectif ou augmente ta mise.</div>`;
+    else out = r.options.map((o, i) => `<div class="panel opt ${i===0?"best":""}">
+        <div class="oh"><div style="flex:1"><b>${i===0?"Le ticket le plus sûr":esc(o.title)}</b><small>${esc(o.desc)}</small></div><div class="ring"><b>${pc(o.p_hit, o.p_hit<.1?1:0)}</b><small>de chances</small></div></div>
+        ${o.tickets.map(t => `${t.legs.map(l => `<div class="leg"><div>${esc(l.selection)} <small>· ${esc(l.match)} · ${esc(l.date)} · ${pc(l.p)}</small></div><span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`).join("")}
+          <div class="tot"><span class="note">Mise ${eur(t.stake)} · cote ${fr(t.odds)}</span><div class="sp"></div><b>${eur(t.ret)}</b><button class="btn sm" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}">Je le joue</button></div>`).join("")}
+      </div>`).join("") + (r.locked_more ? lockBox("pro", `${r.locked_more} autre${r.locked_more>1?"s":""} ticket${r.locked_more>1?"s":""} possible${r.locked_more>1?"s":""}`, "Toutes les alternatives classées pour ton objectif.") : "");
+  } else out = `<div class="panel empty"><b>Donne ta mise et ce que tu veux gagner</b>Cotescope cherche parmi tous les paris de tous les matchs le ticket qui a le plus de chances d'y arriver.</div>`;
+  return `<h1 class="t">Objectif</h1><p class="lead">« Je mise 10 €, je veux gagner 40 € » : Cotescope te sort le ticket le plus sûr pour y arriver.</p>
+    <div class="goal">
+      <div class="panel goalf">
+        <label class="f" for="gl-s">Je mise</label><div class="money"><input class="in" id="gl-s" inputmode="decimal" value="${esc(GOAL.stake)}"><span>€</span></div>
+        <label class="f" for="gl-t" style="margin-top:14px">Je veux gagner</label><div class="money"><input class="in" id="gl-t" inputmode="decimal" value="${esc(GOAL.target)}"><span>€</span></div>
+        <div class="need">Cote à atteindre : <b>${isFinite(need)?fr(need):"–"}</b></div>
+        <button class="btn go" id="gl-go" style="width:100%">Trouver le meilleur ticket</button>
+      </div>
+      <div id="g-out">${out}</div>
+    </div>`;
+}
+document.addEventListener("click", e => {
+  if (e.target.closest("#gl-go")) {
+    GOAL.stake = $("#gl-s").value; GOAL.target = $("#gl-t").value;
+    $("#g-out").innerHTML = `<div class="panel loader" style="padding:40px"><div class="scan">${spec([.45,.27,.28])}</div>Recherche parmi tous les paris…</div>`;
+    setTimeout(() => { GOAL.res = call("compute_objective", GOAL.stake, GOAL.target, null, null, null, null); render(); }, 30);
+  }
+  const p = e.target.closest("[data-play]");
+  if (p) { const r = call("log_ticket", p.dataset.play.split("~"), p.dataset.stake, ""); toast(r.ok ? "Ticket ajouté à ton bilan" : (r.error || "Erreur")); if (r.ok) { p.textContent = "Enregistré"; p.disabled = true; } }
+});
+document.addEventListener("keydown", e => { if (e.key === "Enter" && (e.target.id === "gl-s" || e.target.id === "gl-t")) $("#gl-go").click(); });
+
+/* ======================================================================
+   Vue : Mon ticket
+   ====================================================================== */
+let TSTAKE = "10";
+function vTicket(){
+  const r = call("builder_get", TSTAKE);
+  if (!r.legs.length) return `<h1 class="t">Mon ticket</h1><p class="lead">Ajoute des paris avec + depuis les matchs ou les pronostics : Cotescope calcule tes vraies chances.</p><div class="panel empty"><b>Ton ticket est vide</b><button class="btn go" data-go="matchs" style="margin-top:14px">Voir les matchs</button></div>`;
+  return `<h1 class="t">Mon ticket</h1><p class="lead">Tes vraies chances de gagner, sélection par sélection.</p>
+    <div class="stats">
+      <div class="panel stat"><small>Cote totale</small><b>${fr(r.odds)}</b></div>
+      <div class="panel stat"><small>Vraies chances</small><b style="color:var(--home)">${pc(r.p, r.p<.1?1:0)}</b></div>
+      <div class="panel stat"><small>Si ça passe</small><b>${eur(r.ret)}</b></div>
+      <div class="panel stat"><small>Mise</small><div class="money" style="margin-top:4px"><input class="in" id="t-s" inputmode="decimal" value="${esc(TSTAKE)}" style="font-size:20px;padding:6px 10px"><span>€</span></div></div>
+    </div>
+    ${(r.warnings||[]).map(w => `<div class="warn">${esc(w)}</div>`).join("")}
+    ${r.locked ? lockBox("pro", "Maillon faible et remplacements", "Cotescope repère la sélection la plus fragile et te propose mieux, à cote proche.") : ""}
+    ${(r.tips||[]).map(t => `<div class="tip"><span>${esc(t.text)}</span><button class="btn sm" data-swap="${esc(t.from)}~${esc(t.to)}">Remplacer</button></div>`).join("")}
+    <div class="panel" style="margin-top:12px">${r.legs.map(l => `<div class="bet ${l.uid===r.weakest&&r.legs.length>1?"weak":""}">
+        <div class="sel">${esc(l.selection)}${l.uid===r.weakest&&r.legs.length>1?' <span class="pill bad">maillon faible</span>':""}<small>${esc(l.match)} · ${esc(l.date)}</small></div>
+        <div class="pc"><span class="num" style="font-size:13px">${pc(l.p)}</span><div class="pbar"><i style="width:${l.p*100}%"></i></div></div>
+        <div class="o">${l.estimated?"≈":""}${fr(l.odds)}<small>${l.estimated?"mini "+fr(l.min_odds):esc(book(l.book))}</small></div>
+        <button class="add rm" data-add="${esc(l.uid)}" title="Retirer">×</button></div>`).join("")}</div>
+    <div style="display:flex;gap:10px;margin-top:16px"><button class="btn go" id="t-play">Je joue ce ticket</button><button class="btn" id="t-clear">Vider</button></div>`;
+}
+document.addEventListener("click", e => {
+  const s = e.target.closest("[data-swap]"); if (s) { const [a,b] = s.dataset.swap.split("~"); call("builder_swap", a, b); BSET.delete(a); BSET.add(b); toast("Sélection remplacée"); render(); }
+  if (e.target.closest("#t-play")) { const r = call("builder_play", TSTAKE); toast(r.ok ? "Ticket ajouté à ton bilan" : (r.error || "Erreur")); }
+  if (e.target.closest("#t-clear")) { call("builder_clear"); BSET.clear(); render(); }
+});
+document.addEventListener("change", e => { if (e.target.id === "t-s") { TSTAKE = e.target.value; render(); } });
+
+/* ======================================================================
+   Vue : Bilan
+   ====================================================================== */
+const STATUS = {won:["Gagné","ok"], lost:["Perdu","bad"], void:["Remboursé",""], pending:["En attente","warn"], unknown:["Non vérifiable",""]};
+function vBilan(){
+  const h = call("get_history");
+  if (h.locked) return `<h1 class="t">Bilan</h1>` + lockBox("pro", "Bilan automatique de tes tickets", "Chaque ticket est vérifié tout seul après les matchs : gains, rentabilité, taux de réussite.");
+  const u = h.user, a = h.app;
+  return `<h1 class="t">Bilan</h1><p class="lead">Tes tickets sont vérifiés automatiquement avec les résultats officiels.</p>
+    <div class="stats">
+      <div class="panel stat"><small>Tickets joués</small><b>${u.n}</b></div>
+      <div class="panel stat"><small>Gagnés</small><b>${u.wins}</b></div>
+      <div class="panel stat"><small>Résultat</small><b style="color:${u.profit>=0?"var(--home)":"var(--bad)"}">${u.profit>=0?"+":""}${eur(u.profit)}</b></div>
+      <div class="panel stat"><small>Rentabilité</small><b>${u.roi==null?"–":sg(u.roi)}</b></div>
+    </div>
+    <h2 class="s">Mes tickets</h2>
+    ${h.tickets.length ? `<div class="panel">${h.tickets.map(t => { const s = STATUS[t.status] || [t.status,""]; return `<div class="bet" style="grid-template-columns:minmax(0,1fr) auto auto">
+      <div class="sel">${t.legs.map(l => esc(l.selection)).join(" + ")}<small>${new Date(t.created*1000).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})} · mise ${eur(t.stake)} · cote ${fr(t.legs.reduce((x,l)=>x*l.odds,1))}</small></div>
+      <span class="pill ${s[1]}">${s[0]}</span><button class="btn sm" data-del="${t.id}">Supprimer</button></div>`; }).join("")}</div>` : `<div class="panel empty"><b>Aucun ticket enregistré</b>Clique sur « Je le joue » sur un ticket pour le suivre ici.</div>`}
+    <h2 class="s">Fiabilité de Cotescope</h2>
+    ${h.app_locked ? lockBox("elite", "Fiabilité mesurée", "Quand Cotescope annonce 60 %, est-ce que ça passe vraiment 6 fois sur 10 ? Vérifié match après match.") :
+      (a.buckets||[]).length ? `<div class="panel box"><table class="src"><tr><th>Annoncé</th><th>Paris</th><th>Prévu</th><th>Réel</th></tr>${a.buckets.map(b => `<tr><td>${esc(b.label)}</td><td class="num">${b.n}</td><td class="num">${pc(b.pred)}</td><td class="num"><b>${pc(b.real)}</b></td></tr>`).join("")}</table></div>` : `<div class="panel empty"><b>Pas encore assez de matchs vérifiés</b>Le tableau se remplit au fil des journées.</div>`}`;
+}
+document.addEventListener("click", e => { const d = e.target.closest("[data-del]"); if (d) { call("delete_ticket", d.dataset.del); render(); } });
+
+/* ======================================================================
+   Vue : Compte
+   ====================================================================== */
+function vCompte(){
+  const a = ACCOUNT || {}, cfg = call("get_config") || {};
+  const books = new Set((cfg.bookmakers || "").split(",").filter(Boolean)), hid = new Set(cfg.hide_sports || []);
+  const d = x => x ? new Date(x).toLocaleDateString("fr-FR", {day:"numeric", month:"long"}) : "";
+  const st = a.status === "free" ? `Version gratuite jusqu'au ${d(a.renews)}` : a.status === "owner" ? "Accès propriétaire" : a.cancel ? `Se termine le ${d(a.renews)}` : a.renews ? `Renouvellement le ${d(a.renews)}` : "";
+  return `<h1 class="t">Mon compte</h1><p class="lead">${esc(a.email || "")}</p>
+    <div class="grid2">
+      <div class="panel box"><h3>Forfait</h3><div class="pr num" style="font-size:26px;font-weight:700">${PLAN_NAME[a.tier] || "Aucun"}</div><p class="note" style="margin:4px 0 14px">${esc(st)}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ${a.tier && a.tier!=="gratuit"?"":"go"}" data-plans>${a.tier && a.tier!=="gratuit"?"Changer de forfait":"Choisir un forfait"}</button>${a.manage?`<a class="btn" href="${esc(a.manage)}" target="_blank" rel="noopener">Gérer mon abonnement</a>`:""}</div></div>
+      <div class="panel box"><h3>Où je parie</h3><p class="note" style="margin-bottom:12px">Chaque pari prend la meilleure cote parmi les bookmakers cochés.</p>
+        <div class="books" id="c-books">${BOOKS.map(([k,n]) => `<label class="${books.has(k)?"on":""}"><input type="checkbox" value="${k}" ${books.has(k)?"checked":""}>${n}</label>`).join("")}</div></div>
+      <div class="panel box"><h3>Championnats affichés</h3><div class="books" id="c-lg">${(cfg._sports||[]).map(s => `<label class="${hid.has(s.key)?"":"on"}"><input type="checkbox" value="${s.key}" ${hid.has(s.key)?"":"checked"}>${esc(s.label)}</label>`).join("") || '<p class="note">Aucun championnat couvert pour l\'instant.</p>'}</div></div>
+      <div class="panel box"><h3>Session</h3><p class="note" style="margin-bottom:12px">Tes réglages et tes tickets sont gardés sur cet appareil.</p><button class="btn" id="c-out">Se déconnecter</button></div>
+    </div>`;
+}
+document.addEventListener("change", e => {
+  if (e.target.closest("#c-books")) {
+    e.target.parentNode.classList.toggle("on", e.target.checked);
+    const L = $$("#c-books input").filter(i => i.checked).map(i => i.value);
+    if (!L.length) { e.target.checked = true; e.target.parentNode.classList.add("on"); toast("Garde au moins un bookmaker"); return; }
+    call("set_books", L); refreshState(); toast("Bookmakers enregistrés");
+  }
+  if (e.target.closest("#c-lg")) {
+    e.target.parentNode.classList.toggle("on", e.target.checked);
+    call("save_config", {hide_sports: $$("#c-lg input").filter(i => !i.checked).map(i => i.value)}); refreshState(); toast("Championnats enregistrés");
+  }
+});
+document.addEventListener("click", e => { if (e.target.closest("#c-out")) Auth.logout(); });
+
+/* ======================================================================
+   Rendu
+   ====================================================================== */
+function render(){
+  if (!web && !window.__BRIDGE__) return;
+  refreshState();
+  const r = route();
+  const V = {matchs:vMatchs, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, ticket:vTicket, bilan:vBilan, compte:vCompte};
+  $("#view").innerHTML = (V[r.v] || vMatchs)();
+  chrome();
+}
+
+/* ======================================================================
+   Écrans de connexion, forfaits, choix des bookmakers
+   ====================================================================== */
+const field = (id, label, type, ph) => `<div class="f"><label class="f" for="${id}">${label}</label><input class="in" id="${id}" type="${type||"text"}" placeholder="${ph||""}" autocomplete="${type==="password"?(id==="g-pw2"?"new-password":"current-password"):"email"}"></div>`;
+function gate(v, x){
+  x = x || {};
+  const g = $("#gate"), c = $("#gcard");
+  if (!v) { g.hidden = true; return; }
+  g.hidden = false; c.className = "gcard" + (v === "plans" ? " wide" : "");
+  const logo = `<a class="logo" href="../"><img src="../img/logo.svg" alt="">Cotescope</a>`;
+  if (v === "loading") { c.innerHTML = logo + `<div class="loader"><div class="scan">${spec([.47,.26,.27])}</div><div>${esc(x.text||"")}</div><small class="note">Le premier chargement prend quelques secondes.</small></div>`; return; }
+  if (v === "error") { c.innerHTML = logo + `<div class="panel gbox" style="text-align:center"><h2>Oups</h2><p>${esc(errMsg(x.reason))}</p><button class="btn go" onclick="location.reload()">Réessayer</button></div>`; return; }
+  if (v === "login") c.innerHTML = logo + `<div class="panel gbox"><h2>Connexion</h2><p>Content de te revoir.</p>
+      ${field("g-em","E-mail","email","toi@exemple.fr")}${field("g-pw","Mot de passe","password")}
+      <div class="msg" id="g-msg"></div><button class="btn go" id="g-go" style="width:100%">Se connecter</button>
+      <div class="alt"><button data-gv="forgot">Mot de passe oublié ?</button></div>
+      <div class="alt">Pas encore de compte ? <button data-gv="signup">Créer un compte gratuit</button></div></div>`;
+  else if (v === "signup") c.innerHTML = logo + `<div class="panel gbox"><h2>Créer mon compte</h2><p>7 jours gratuits, sans carte bancaire.</p>
+      ${field("g-em","E-mail","email","toi@exemple.fr")}${field("g-pw2","Mot de passe","password","8 caractères minimum")}
+      <label class="chk"><input type="checkbox" id="g-ok"><span>J'ai 18 ans ou plus et j'accepte les <a href="../cgv.html" target="_blank">conditions de vente</a>.</span></label>
+      <div class="msg" id="g-msg"></div><button class="btn go" id="g-go" style="width:100%">Créer mon compte</button>
+      <div class="alt">Déjà un compte ? <button data-gv="login">Se connecter</button></div></div>`;
+  else if (v === "forgot") c.innerHTML = logo + `<div class="panel gbox"><h2>Mot de passe oublié</h2><p>On t'envoie un lien pour en choisir un nouveau.</p>
+      ${field("g-em","E-mail","email","toi@exemple.fr")}<div class="msg" id="g-msg"></div><button class="btn go" id="g-go" style="width:100%">Envoyer le lien</button>
+      <div class="alt"><button data-gv="login">Retour à la connexion</button></div></div>`;
+  else if (v === "reset") c.innerHTML = logo + `<div class="panel gbox"><h2>Nouveau mot de passe</h2><p>Choisis un nouveau mot de passe.</p>
+      ${field("g-pw2","Nouveau mot de passe","password","8 caractères minimum")}<div class="msg" id="g-msg"></div><button class="btn go" id="g-go" style="width:100%">Enregistrer</button></div>`;
+  else if (v === "wait") c.innerHTML = logo + `<div class="panel gbox" style="text-align:center"><h2>Activation du forfait</h2><p>Ton paiement est en cours de validation. Ton forfait s'active tout seul.</p>
+      <div class="scan" style="margin:0 auto 18px">${spec([.47,.26,.27])}</div><div class="msg ok" id="g-msg"></div><button class="btn go" id="g-go">Vérifier maintenant</button></div>`;
+  else if (v === "plans") {
+    const cur = ACCOUNT && ACCOUNT.tier && ACCOUNT.tier !== "gratuit" ? ACCOUNT.tier : null;
+    const free = ACCOUNT && ACCOUNT.tier === "gratuit", over = ACCOUNT && !ACCOUNT.tier;
+    c.innerHTML = logo + `<div style="text-align:center;margin-bottom:22px"><h2 style="font-family:var(--disp);font-size:28px">${over?"Ta version gratuite est terminée":"Choisis ton forfait"}</h2>
+      <p class="note" style="font-size:15px">${free?`Version gratuite : encore ${daysLeft(ACCOUNT.renews)} jour(s). `:""}Paiement mensuel par carte, sans engagement, annulable en un clic.</p></div>
+      <div class="plans">${PLANS.map(p => `<div class="panel pl ${p.hot?"hot":""} ${cur===p.id?"cur":""}">${p.hot?`<span class="tag">${p.hot}</span>`:""}
+        <h3>${p.name}</h3><div class="pr">${p.price} €<small> / mois</small></div>
+        <ul>${p.feats.map(f => `<li class="${/^Tout /.test(f)?"inc":""}">${esc(f)}</li>`).join("")}</ul>
+        ${cur===p.id ? `<button class="btn" disabled>Ton forfait actuel</button>` : `<button class="btn ${p.hot?"go":""}" data-buy="${p.id}">Choisir ${p.name}</button>`}</div>`).join("")}</div>
+      <div class="msg" id="g-msg" style="text-align:center;color:var(--bad);margin-top:14px"></div>
+      <p class="note" style="text-align:center;margin-top:8px">Paiement sécurisé par Whop : Cotescope ne voit jamais tes coordonnées bancaires.${cur?" Pour changer de forfait, annule d'abord l'actuel dans « Gérer mon abonnement ».":""}</p>
+      <div style="text-align:center;margin-top:14px">${web || window.__BRIDGE__ ? `<button class="btn" data-gv="close">Retour</button>` : `<button class="btn" id="g-out">Se déconnecter</button>`}</div>`;
+  }
+  else if (v === "books") c.innerHTML = logo + `<div class="panel gbox"><h2>Où paries-tu ?</h2><p>Coche tous tes bookmakers : chaque pari prendra la meilleure cote parmi eux.</p>
+      <div class="books" id="g-books">${BOOKS.map(([k,n]) => `<label><input type="checkbox" value="${k}">${n}</label>`).join("")}</div>
+      <div class="msg" id="g-msg"></div><button class="btn go" id="g-go" style="width:100%">Valider</button></div>`;
+  const go = $("#g-go"), msg = $("#g-msg");
+  const busy = t => { if (!go) return; if (t) { go.dataset.t = go.dataset.t || go.textContent; go.textContent = t; go.disabled = true; } else { if (go.dataset.t) go.textContent = go.dataset.t; go.disabled = false; } };
+  const after = async r => {
+    if (!r || !r.ok) { msg.textContent = errMsg((r && r.reason) || "network"); return; }
+    if (!r.tier) { gate("plans"); return; }
+    await start();
+  };
+  if (v === "books") $$("#g-books input").forEach(i => i.onchange = () => i.parentNode.classList.toggle("on", i.checked));
+  if (go) go.onclick = async () => {
+    msg.textContent = ""; msg.classList.remove("ok");
+    try {
+      if (v === "login") { busy("Connexion…"); await after(await Auth.login($("#g-em").value.trim(), $("#g-pw").value)); }
+      else if (v === "signup") { if (!$("#g-ok").checked) { msg.textContent = "Coche la case pour continuer."; return; } busy("Création…"); await after(await Auth.signup($("#g-em").value.trim(), $("#g-pw2").value)); }
+      else if (v === "forgot") { busy("Envoi…"); const r = await Auth.forgot($("#g-em").value.trim()); if (r.ok) { msg.classList.add("ok"); msg.textContent = "Si un compte existe, un e-mail vient de partir. Regarde aussi tes spams."; } else msg.textContent = errMsg(r.reason); }
+      else if (v === "reset") { busy("Enregistrement…"); const r = await Auth.reset(x.code, $("#g-pw2").value); if (r.ok) history.replaceState(null, "", location.pathname); await after(r); }
+      else if (v === "wait") { busy("Vérification…"); const r = await Auth.me(true); if (r.ok && r.tier && r.tier !== "gratuit") await start(); else { msg.classList.add("ok"); msg.textContent = "Paiement pas encore reçu, ça peut prendre une minute."; } }
+      else if (v === "books") { const L = $$("#g-books input").filter(i => i.checked).map(i => i.value); if (!L.length) { msg.textContent = "Coche au moins un bookmaker."; return; } call("set_books", L); gate(null); render(); toast("C'est parti !"); }
+    } finally { busy(""); }
+  };
+  if (v === "wait") { let n = 0; const t = setInterval(async () => { if (++n > 60 || $("#gate").hidden) return clearInterval(t); const r = await Auth.me(true); if (r.ok && r.tier && r.tier !== "gratuit") { clearInterval(t); await start(); } }, 5000); }
+  c.querySelectorAll("input.in").forEach(i => i.onkeydown = e => { if (e.key === "Enter" && go) go.click(); });
+  const f = c.querySelector("input.in"); if (f) setTimeout(() => f.focus(), 50);
+  const o = $("#g-out"); if (o) o.onclick = Auth.logout;
+}
+document.addEventListener("click", async e => {
+  const v = e.target.closest("[data-gv]");
+  if (v) { if (v.dataset.gv === "close") gate(null); else gate(v.dataset.gv); }
+  const b = e.target.closest("[data-buy]");
+  if (b) { b.disabled = true; const r = await Auth.checkout(b.dataset.buy); b.disabled = false; if (!r.ok) { const m = $("#g-msg"); if (m) m.textContent = errMsg(r.reason); } }
+});
+
+async function start(){
+  try {
+    if (!window.__BRIDGE__) await boot();
+    gate(null);
+    if (!location.hash.startsWith("#/")) location.hash = "/matchs";
+    render();
+    const cfg = call("get_config") || {};
+    if (!cfg.books_chosen) gate("books");
+  } catch(e) {
+    const r = e.reason || e.message;
+    if (["no_plan","inactive","free_over"].includes(r)) gate("plans");
+    else if (r === "session") gate("login");
+    else gate("error", {reason: r});
+  }
+}
+
+async function init(){
+  if (window.__BRIDGE__) { ACCOUNT = window.__BRIDGE_ACCOUNT__ || {email:"test@cotescope.fr", tier:"elite"}; return start(); }
+  try { CFG = await (await fetch("../config.json", {cache:"no-store"})).json(); } catch(e) { CFG = {}; }
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("reset")) return gate("reset", {code: h.get("reset")});
+  const paid = location.hash === "#paid";
+  if (paid) history.replaceState(null, "", location.pathname);
+  SESSION = lsGet();
+  if (!SESSION) return gate(h.has("signup") || location.hash === "#signup" ? "signup" : "login");
+  gate("loading", {text:"Connexion à ton compte…"});
+  const me = await Auth.me(true);
+  if (!me.ok) return gate(me.reason === "network" ? "error" : "login", {reason: me.reason});
+  if (!me.tier) return gate(paid ? "wait" : "plans");
+  if (paid && me.tier === "gratuit") return gate("wait");
+  await start();
+}
+init();
+</script>
+</body>
+</html>

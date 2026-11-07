@@ -2405,6 +2405,73 @@ class Api:
             x = next((s for s in self._sel if s["uid"] == uid), None)
             return ser_bet(x, self._cfg) if x else None
 
+    # ---- appli web : liste des matchs et page d'un match ----
+    def get_matches(self):
+        """Tous les matchs à venir, avec les vraies chances 1N2, la meilleure cote et un résumé."""
+        now = datetime.now(timezone.utc)
+        hidden = set(self._cfg.get("hide_sports") or [])
+        with self._lock:
+            by_ev = {}
+            for x in self._sel:
+                by_ev.setdefault(x["event_id"], []).append(x)
+            out = []
+            for ev in self._events:
+                try:
+                    start = parse_time(ev["commence_time"])
+                except (KeyError, ValueError):
+                    continue
+                if start <= now or ev.get("sport_key") in hidden:
+                    continue
+                eid = ev.get("id")
+                sel = by_ev.get(eid, [])
+                st = self._info.get(eid) or {}
+                home, away = ev.get("home_team", ""), ev.get("away_team", "")
+                h2h = {x["selection"]: x for x in sel if x.get("cat") == "1n2" and not x.get("estimated")}
+                def g(name):
+                    return h2h.get(name)
+                trio = [g(f"Victoire {home}"), g("Match nul"), g(f"Victoire {away}")]
+                probs = [round(t["p"], 4) if t else None for t in trio]
+                odds = [{"odds": t["odds"], "book": t["book"], "uid": t["uid"]} if t else None for t in trio]
+                best = max(sel, key=lambda z: z["p"] * _trust(z), default=None) if sel else None
+                fh, fa = st.get("form_home") or {}, st.get("form_away") or {}
+                loc = start.astimezone()
+                out.append({
+                    "id": eid, "sport_key": ev.get("sport_key"), "league": SPORTS.get(ev.get("sport_key"), ev.get("sport_title", "")),
+                    "home": home, "away": away, "ts": start.timestamp(), "day": loc.date().isoformat(),
+                    "time": loc.strftime("%H:%M"), "date": fmt_date(start), "round": st.get("round_label", ""),
+                    "probs": probs, "odds": odds, "n_bets": len(sel),
+                    "conf": round(sum(x.get("conf", 50) for x in sel) / len(sel)) if sel else None,
+                    "form_home": fh.get("form", ""), "form_away": fa.get("form", ""),
+                    "n_value": sum(1 for x in sel if is_value(x, self._cfg)) if tier_ok("elite") else None,
+                    "lineups": bool(st.get("lineups")),
+                    "best": ser_bet(best, self._cfg) if best else None,
+                })
+        out.sort(key=lambda m: m["ts"])
+        return out
+
+    def get_event(self, event_id):
+        """Page d'un match : analyse complète + tous les paris, groupés par type."""
+        with self._lock:
+            sel = [x for x in self._sel if x["event_id"] == event_id]
+            ev = next((e for e in self._events if e.get("id") == event_id), None)
+            cfg = self._cfg
+        if not ev:
+            return None
+        info = self.get_match(event_id) or {}
+        groups = {}
+        for x in sorted(sel, key=lambda z: -z["p"]):
+            groups.setdefault(x.get("cat") or "autre", []).append(ser_bet(x, cfg))
+        order = list(mk.CATEGORIES.keys())
+        start = parse_time(ev["commence_time"])
+        return {
+            "id": event_id, "home": ev.get("home_team", ""), "away": ev.get("away_team", ""),
+            "league": SPORTS.get(ev.get("sport_key"), ev.get("sport_title", "")), "sport_key": ev.get("sport_key"),
+            "ts": start.timestamp(), "date": fmt_date(start), "tier": TIER["v"],
+            "groups": [{"cat": c, "label": mk.CATEGORIES.get(c, c), "bets": groups[c]}
+                       for c in order + [k for k in groups if k not in order] if c in groups],
+            "info": info,
+        }
+
     def get_match(self, event_id):
         with self._lock:
             st = self._info.get(event_id)

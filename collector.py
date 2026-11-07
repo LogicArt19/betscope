@@ -284,16 +284,21 @@ def oddspapi_diag():
     k = raw.strip().strip('"').strip("'")
     log(f"OddsPapi diag : clé de {len(raw)} caractères (après nettoyage {len(k)}), "
         f"espaces={'oui' if raw != raw.strip() else 'non'}, guillemets={'oui' if k != raw.strip() else 'non'}, "
-        f"début={k[:3]}…, identique à la clé The Odds API (ODDS_KEY) : {'OUI' if k == os.environ.get('ODDS_KEY', '').strip() else 'non'}")
+        f"identique à la clé The Odds API (ODDS_KEY) : {'OUI' if k == os.environ.get('ODDS_KEY', '').strip() else 'non'}")
     for label, url, headers in (("paramètre apiKey", f"{OP_BASE}/account?apiKey={urllib.parse.quote(k)}", {}),
                                 ("en-tête x-api-key", f"{OP_BASE}/account", {"x-api-key": k}),
                                 ("paramètre apikey", f"{OP_BASE}/account?apikey={urllib.parse.quote(k)}", {})):
         try:
             req = urllib.request.Request(url, headers=dict({"User-Agent": "Cotescope/1.0", "Accept": "application/json"}, **headers))
             with urllib.request.urlopen(req, timeout=30) as r:
-                log(f"OddsPapi diag ({label}) : HTTP {r.status} {r.read().decode()[:300]}")
+                log(f"OddsPapi diag ({label}) : HTTP {r.status} (clé acceptée)")
         except urllib.error.HTTPError as e:
-            log(f"OddsPapi diag ({label}) : HTTP {e.code} {e.read().decode(errors='replace')[:300]}")
+            code = ""
+            try:
+                code = json.loads(e.read().decode(errors="replace")).get("error", {}).get("code", "")
+            except Exception:
+                pass
+            log(f"OddsPapi diag ({label}) : HTTP {e.code} {code}")
         except Exception as e:
             log(f"OddsPapi diag ({label}) : {e}")
 
@@ -310,7 +315,8 @@ def collect_oddspapi(events, state):
     now = datetime.now(timezone.utc)
     soon = {e.get("sport_key") for e in events if now < b.parse_time(e["commence_time"]) < now + timedelta(hours=48)}
     tids = [OP_TOURNAMENTS[k] for k in OP_TOURNAMENTS if k in soon]
-    fresh = time.time() - op.get("last", 0) < OP_EVERY_H * 3600
+    # on n'attend 8 h entre deux appels que si on a déjà des cotes (un appel raté se retente à l'heure suivante)
+    fresh = bool(op.get("boards")) and time.time() - op.get("last", 0) < OP_EVERY_H * 3600
     calls = []
     if tids and not fresh:
         calls = [tids[i:i + 3] for i in range(0, len(tids), 3)]

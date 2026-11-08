@@ -273,6 +273,26 @@ async function freeQuota(req, add) {
   return n >= 3;
 }
 
+function mailLayout(title, body, btnUrl, btnText) {
+  return `<!doctype html><html><body style="margin:0;background:#060A12;font-family:Arial,Helvetica,sans-serif;color:#E8EEF8">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#060A12;padding:32px 12px"><tr><td align="center">
+  <table width="520" cellpadding="0" cellspacing="0" style="max-width:520px;background:#0C1220;border:1px solid #1B2740;border-radius:16px">
+  <tr><td style="padding:28px 32px 8px;font-size:22px;font-weight:bold;color:#26E0B8">Cotescope</td></tr>
+  <tr><td style="padding:8px 32px 0;font-size:20px;font-weight:bold;color:#ffffff">${title}</td></tr>
+  <tr><td style="padding:14px 32px 0;font-size:15px;line-height:1.6;color:#C9D3E3">${body}</td></tr>
+  ${btnUrl ? `<tr><td style="padding:22px 32px 6px"><a href="${btnUrl}" style="display:inline-block;background:#26E0B8;color:#06101A;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px">${btnText}</a></td></tr>
+  <tr><td style="padding:8px 32px 0;font-size:12px;color:#7F8BA3">Si le bouton ne marche pas, copie ce lien : ${btnUrl}</td></tr>` : ""}
+  <tr><td style="padding:26px 32px 28px;font-size:12px;color:#7F8BA3">Les paris comportent des risques : endettement, dépendance… Appelle le 09 74 75 13 13 (appel non surtaxé). Réservé aux 18 ans et plus.</td></tr>
+  </table></td></tr></table></body></html>`;
+}
+async function sendVerify(env, user, origin) {
+  const t = rand(24);
+  await env.KV.put("verify:" + t, user.email, { expirationTtl: 7 * 86400 });
+  return sendMail(env, user.email, "Bienvenue sur Cotescope : confirme ton adresse e-mail",
+    mailLayout("Bienvenue sur Cotescope 👋",
+      "Ton compte est créé. Il reste une étape : confirmer que cette adresse e-mail est bien la tienne. C'est elle qui te permettra de récupérer ton compte si tu oublies ton mot de passe.<br><br>Le lien est valable 7 jours.",
+      `${origin}/api/verify?t=${t}`, "Confirmer mon adresse e-mail"));
+}
 async function sendMail(env, to, subject, html) {
   if (!env.RESEND_KEY) return false;
   const r = await fetch("https://api.resend.com/emails", {
@@ -295,7 +315,8 @@ async function verifyWebhook(env, req, raw) {
 function pub(user, acc) {
   return { ok: true, email: user.email, name: user.name || "", tier: acc.tier, status: acc.status,
            renews: acc.renews || null, cancel: !!acc.cancel, manage: acc.manage || null,
-           trial_used: !!(user.memberships || []).length, pause: user.pause && user.pause > Date.now() ? user.pause : null, tg: !!user.tg };
+           trial_used: !!(user.memberships || []).length, pause: user.pause && user.pause > Date.now() ? user.pause : null, tg: !!user.tg,
+           verified: user.verified !== false };
 }
 // alerte e-mail quand le compte est ouvert depuis un nouveau pays (si les e-mails sont configurés)
 async function newPlaceAlert(env, user, req) {
@@ -504,9 +525,10 @@ export default {
       if (await getUser(env, email)) return json(req, { ok: false, reason: "email_taken" }, 409);
       if (await freeQuota(req, false)) return json(req, { ok: false, reason: "too_many_accounts" }, 429);
       const user = { email, name: String(body.name || "").slice(0, 60), pv: 1, created: Date.now(), memberships: [],
-                     countries: req.cf && req.cf.country ? [req.cf.country] : [] };
+                     countries: req.cf && req.cf.country ? [req.cf.country] : [], verified: false };
       await setPassword(env, user, pw, false);
       await freeQuota(req, true);
+      try { await sendVerify(env, user, url.origin); } catch (e) { /* l'inscription marche même si l'envoi échoue */ }
       return json(req, { ...pub(user, await access(env, user)), session: await makeSession(env, user, req) });
     }
     if (p === "/api/login" && req.method === "POST") {
@@ -527,6 +549,36 @@ export default {
       if (lk.n || lk.until) await env.KV.delete("lock:" + email);
       await newPlaceAlert(env, user, req);
       return json(req, { ...pub(user, await access(env, user)), session: await makeSession(env, user, req) });
+    }
+    // assistant d'aide : message transmis au propriétaire (Telegram + e-mail si configuré)
+    if (p === "/api/support" && req.method === "POST") {
+      if (await tooMany(req, "support")) return json(req, { ok: false, reason: "too_many" }, 429);
+      const from = cleanEmail(body.email), msg = String(body.message || "").trim().slice(0, 1500), page = String(body.page || "").slice(0, 120);
+      if (!from || msg.length < 3) return json(req, { ok: false, reason: "bad_request" }, 400);
+      const item = { ts: Date.now(), from, msg, page, country: (req.cf && req.cf.country) || "" };
+      const list = (await env.KV.get("support", "json")) || [];
+      list.unshift(item);
+      await env.KV.put("support", JSON.stringify(list.slice(0, 200)));
+      const text = `🆘 <b>Message d'aide Cotescope</b>\nDe : ${escH(from)}${item.country ? " (" + escH(item.country) + ")" : ""}\nPage : ${escH(page)}\n\n${escH(msg)}`;
+      let sent = 0;
+      for (const o of owners(env)) {
+        const ou = await getUser(env, o);
+        if (ou && ou.tg && (await tgSend(env, ou.tg, text))) sent++;
+        if (env.RESEND_KEY) await sendMail(env, o, "Cotescope : message d'aide de " + from, mailLayout("Nouveau message d'aide",
+          `<b>De :</b> ${escH(from)}<br><b>Page :</b> ${escH(page)}<br><br>${escH(msg).replace(/\n/g, "<br>")}`));
+      }
+      return json(req, { ok: true, delivered: sent });
+    }
+    // confirmation de l'adresse e-mail (lien reçu par e-mail)
+    if (p === "/api/verify" && req.method === "GET") {
+      const t = String(url.searchParams.get("t") || "").slice(0, 64);
+      const email = /^[A-Za-z0-9_-]{20,64}$/.test(t) && (await env.KV.get("verify:" + t));
+      const u = email && (await getUser(env, email));
+      if (!u) return Response.redirect(APP_URL + "#verified=0", 302);
+      u.verified = Date.now();
+      await putUser(env, u);
+      await env.KV.delete("verify:" + t);
+      return Response.redirect(APP_URL + "#verified=1", 302);
     }
     if (p === "/api/forgot" && req.method === "POST") {
       const email = cleanEmail(body.email);
@@ -569,6 +621,14 @@ export default {
 
     // --- compte connecté ---
     const user = await readSession(env, req);
+    if (p === "/api/verify/resend" && req.method === "POST") {
+      if (!user) return json(req, { ok: false, reason: "session" }, 401);
+      if (user.verified !== false) return json(req, { ok: true, already: true });
+      if (await tooMany(req, "verify:" + user.email)) return json(req, { ok: false, reason: "too_many" }, 429);
+      if (!env.RESEND_KEY) return json(req, { ok: false, reason: "mail_not_configured" }, 503);
+      const ok = await sendVerify(env, user, url.origin);
+      return json(req, { ok });
+    }
     if (p === "/api/me") {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
       const acc = await access(env, user, url.searchParams.has("fresh"));
@@ -611,9 +671,10 @@ export default {
         try { const r = await fetch(`https://api.telegram.org/bot${tgToken(env)}/getWebhookInfo`); const j = await r.json();
               bot = { ok: !!j.ok, webhook: !!(j.result && j.result.url), pending: (j.result || {}).pending_update_count || 0, error: (j.result || {}).last_error_message || null }; } catch (e) { bot = { ok: false }; }
       }
-      return json(req, { ok: true, telegram: { configured: !!tgToken(env), bot, subscribers: Object.keys(subs).length, by_tier: byTier,
+      return json(req, { ok: true, mail: { configured: !!env.RESEND_KEY, from: env.MAIL_FROM || "Cotescope <compte@cotescope.fr>" }, telegram: { configured: !!tgToken(env), bot, subscribers: Object.keys(subs).length, by_tier: byTier,
         stats: (await env.KV.get("tg_stats", "json")) || { sent: 0, msgs: 0 }, queued: (q.items || []).length, queue_ts: q.built ? q.built * 1000 : null },
-        lineups: { watched: (w.list || []).length, stored: lus.keys.length } });
+        lineups: { watched: (w.list || []).length, stored: lus.keys.length },
+        support: ((await env.KV.get("support", "json")) || []).slice(0, 10) });
     }
     // pause volontaire (jeu responsable) : 1, 7 ou 30 jours, impossible à raccourcir une fois lancée
     if (p === "/api/pause" && req.method === "POST") {

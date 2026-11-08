@@ -462,7 +462,7 @@ const VIEWS = [["matchs","Matchs"],["picks","Pronostics"],["goal","Objectif"],["
 const PLAN_NAME = {gratuit:"Gratuit", essentiel:"Essentiel", pro:"Pro", elite:"Pro"};
 const RANK = {gratuit:0, essentiel:2, pro:3, elite:3}; // Essentiel = ancien niveau Pro, Pro = ancien Elite
 const PLANS = [
-  {id:"essentiel", name:"Essentiel", price:"9,99", hot:"Le plus choisi", feats:["Tous les championnats, tous les types de paris","Objectif illimité : des dizaines de tickets, tri et filtres","Page match complète : absents, compos sur le terrain, cartons et arbitre, enjeu","Pronostics, cotes boostées, Loto Foot, combiné express","Mon ticket et bilan automatique","Appli sur ton téléphone"]},
+  {id:"essentiel", name:"Essentiel", price:"9,99", hot:"Le plus choisi", feats:["Tous les championnats de foot, la NBA et le tennis (ATP · WTA)","Tous les types de paris","Objectif illimité : des centaines de tickets, tri et filtres","Page match complète : absents, compos sur le terrain, cartons et arbitre, enjeu","Pronostics, cotes boostées, Loto Foot, combiné express","Mon ticket et bilan automatique","Appli sur ton téléphone"]},
   {id:"pro", name:"Pro", price:"19,99", feats:["Tout Essentiel","Alertes Telegram en temps réel : value, cotes qui chutent, compos","Paris value et sélection de Cotescope","Simulateur de stratégies sur 5 saisons","Capital et mise conseillée","Mouvement des cotes, actus de dernière minute, fiabilité mesurée"]},
 ];
 const BOOKS = [["betclic_fr","Betclic"],["winamax_fr","Winamax"],["parionssport_fr,unibet_fr","Unibet (FDJ)"],["bet365","Bet365"]];
@@ -510,6 +510,7 @@ const Auth = {
   login: async (e,p) => keep(await server("/api/login","POST",{email:e,password:p})),
   signup: async (e,p) => keep(await server("/api/signup","POST",{email:e,password:p})),
   forgot: e => server("/api/forgot","POST",{email:e}),
+  verifyResend: () => server("/api/verify/resend","POST",{}),
   reset: async (c,p) => keep(await server("/api/reset","POST",{code:c,password:p})),
   me: async fresh => keep(await server("/api/me" + (fresh ? "?fresh=1" : ""))),
   checkout: async tier => {
@@ -680,14 +681,14 @@ function vMatchs(){
       <div class="odds3${isNba(m) ? " two" : ""}">${(isNba(m) ? [["1",0],["2",2]] : [["1",0],["N",1],["2",2]]).map(([l,i]) => { const o = m.odds[i]; return o ? `<button class="ob ${BSET.has(o.uid)?"in":""}" data-add="${esc(o.uid)}" title="${esc(book(o.book))}"><small>${l}</small><b>${fr(o.odds)}</b></button>` : `<span class="ob"><small>${l}</small><b>–</b></span>`; }).join("")}</div>
       <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
     </div>`;
-  const banner = ST.tier === "gratuit" && ACCOUNT ? `<div class="banner">Version gratuite : tous les matchs, pari « résultat du match ». Encore ${daysLeft(ACCOUNT.renews)} jour(s).<button class="btn sm go" data-plans>Voir les forfaits</button></div>` : "";
+  const banner = ST.tier === "gratuit" && ACCOUNT ? `<div class="banner">Version gratuite (sans limite de durée) : Ligue 1, Premier League et Liga, pari « résultat du match », 1 ticket Objectif par jour.<button class="btn sm go" data-plans>Voir les forfaits</button></div>` : "";
   return `
     ${banner}
     <h1 class="t">${{foot: "Matchs de foot", nba: "Matchs NBA", atp: "Tennis · Hommes", wta: "Tennis · Femmes"}[SPORT]}</h1>
     <p class="lead">${{nba: "Les vraies chances de victoire de chaque franchise, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365 (prolongations comprises, pas de match nul).",
       atp: "Circuit ATP. Les vraies chances de chaque joueur, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365, du classement et des 10 derniers matchs.",
       wta: "Circuit WTA. Les vraies chances de chaque joueuse, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365, du classement et des 10 derniers matchs.",
-      foot: "Les vraies chances de chaque issue, calculées à partir des cotes de 10 bookmakers et de la forme des équipes."}[SPORT]} Touche une cote pour l'ajouter à ton ticket.</p>
+      foot: "Les vraies chances de chaque issue, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365 (Pinnacle en référence), de la forme des équipes et d'un modèle de buts."}[SPORT]} Touche une cote pour l'ajouter à ton ticket.</p>
     <p class="note fresh">Cotes mises à jour ${ago(Math.max(0, ...MATCHES.filter(m => m.day === DAY).map(m => m.odds_ts || 0)))}. Elles peuvent avoir bougé chez ton bookmaker : tape la vraie cote dans la page du match pour un verdict exact.</p>
     <div class="days">${keys.map(dayChip).join("") || ""}</div>
     ${leagues.length > 1 ? `<div class="chips" style="margin-bottom:6px"><button class="chip ${LEAGUE==="all"?"on":""}" data-lg="all">Tous<b>${MATCHES.filter(m=>m.day===DAY).length}</b></button>${leagues.map(l => `<button class="chip ${LEAGUE===l?"on":""}" data-lg="${esc(l)}">${esc(l)}<b>${MATCHES.filter(m=>m.day===DAY&&m.league===l).length}</b></button>`).join("")}</div>` : ""}
@@ -929,8 +930,9 @@ function statsCompare(e, i){
 function tabEquipes(e, i){
   const top = `<h2 class="s" style="margin-top:0">Statistiques comparées</h2>${statsCompare(e, i)}
     <h2 class="s">Forme récente</h2><div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}</div>
-    <h2 class="s">Buteurs et passeurs décisifs (saison)</h2><div class="grid2">${playersBox(e.home, (i.players||{}).home)}${playersBox(e.away, (i.players||{}).away)}</div>`;
+    ${String(e.sport_key||"").startsWith("soccer") ? `<h2 class="s">Buteurs et passeurs décisifs (saison)</h2><div class="grid2">${playersBox(e.home, (i.players||{}).home)}${playersBox(e.away, (i.players||{}).away)}</div>` : ""}`;
   if (rank() < 2) return top + lockBox("pro", "Absents et compositions sur le terrain", "Les blessés et suspendus pondérés par leur importance, et les compos placées sur un mini terrain.");
+  if (!String(e.sport_key||"").startsWith("soccer")) return top + `<h2 class="s">Blessés</h2><div class="grid2"><div class="panel box"><h3>${esc(e.home)}</h3>${injList(i.inj_home)}</div><div class="panel box"><h3>${esc(e.away)}</h3>${injList(i.inj_away)}</div></div>`;
   return top + `<h2 class="s">Compositions</h2>${lineupsBlock(e, i)}
     <h2 class="s">Absents</h2><div class="grid2">
     <div class="panel box"><h3>${esc(e.home)}</h3>${injList(i.inj_home)}</div>
@@ -1158,7 +1160,8 @@ document.addEventListener("change", e => {
 document.addEventListener("click", e => { if (e.target.closest("#bs-go")) { BST.o = $("#bs-o").value; render(); } });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "bs-o") { BST.o = e.target.value; render(); } });
 function vPicks(){
-  const t = [["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"],["boost","Cote boostée"],["loto","Loto Foot"]];
+  const t = [["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"],["boost","Cote boostée"]].concat(SPORT === "foot" ? [["loto","Loto Foot"]] : []);
+  if (PTAB === "loto" && SPORT !== "foot") PTAB = "sure";
   let body;
   if (PTAB === "boost") body = boostBox();
   else if (PTAB === "loto") body = lotoBox();
@@ -1166,7 +1169,7 @@ function vPicks(){
   else if (PTAB === "best") body = (rank() < 3 ? lockBox("elite", "Paris value et sélection de Cotescope", "Les paris où la cote est au-dessus du juste prix, et ceux que Cotescope jouerait avec son propre argent.") : "") + DATA.picks.slice(0, 40).map(pickRow).join("");
   else body = DATA.combos.slice(0, 20).map(c => `<div class="panel opt"><div class="oh"><div style="flex:1"><b>Combiné ×${c.legs.length}</b><small>cote ${fr(c.odds)}${c.value?` · <span class="pill v">value</span>`:""}</small></div><div class="ring"><b>${pc(c.p)}</b><small>de chances</small></div></div>
       ${c.legs.map(l => `<div class="leg"><div>${esc(l.selection)} <small>· ${esc(l.match)}</small></div><span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`).join("")}</div>`).join("");
-  return `<h1 class="t">Pronostics</h1><p class="lead">Les paris les plus solides de tous les matchs à venir, triés par Cotescope.</p>
+  return `<h1 class="t">Pronostics · ${esc(SPORT_NAME[SPORT])}</h1><p class="lead">Les paris les plus solides de tous les matchs à venir, triés par Cotescope.</p>
     <div class="chips" style="margin-bottom:16px">${t.map(([k,l]) => `<button class="chip ${PTAB===k?"on":""}" data-ptab="${k}">${l}</button>`).join("")}</div>
     ${body || `<div class="panel empty"><b>Rien pour l'instant</b>Reviens quand les cotes des prochains matchs seront publiées.</div>`}`;
 }
@@ -1197,7 +1200,7 @@ function vGoal(){
   const r = GOAL.res;
   let out = "";
   if (r) {
-    if (r.locked) out = r.daily_used ? lockBox("pro", "Ton ticket gratuit du jour est utilisé", "La version gratuite donne 1 ticket Objectif par jour. Avec Essentiel : des dizaines de tickets, sans limite.") : lockBox("pro", "Le mode Objectif", "Disponible avec Essentiel et Pro.");
+    if (r.locked) out = r.daily_used ? lockBox("pro", "Ton ticket gratuit du jour est utilisé", "La version gratuite donne 1 ticket Objectif par jour. Avec Essentiel : des centaines de tickets, sans limite.") : lockBox("pro", "Le mode Objectif", "Disponible avec Essentiel et Pro.");
     else if (r.error) out = `<div class="panel empty"><b>${esc(r.error)}</b></div>`;
     else if (!r.options.length) { const d = r.diag || {};
       out = `<div class="panel empty"><b>Aucun ticket possible avec ces réglages</b>
@@ -1206,7 +1209,7 @@ function vGoal(){
         <div style="margin-top:12px"><button class="btn sm" id="gl-reset">Remettre tous les filtres</button> <button class="btn sm" data-go="compte">Mes bookmakers</button></div></div>`; }
     else out = goalList(r);
   } else out = `<div class="panel empty"><b>Donne ta mise et ce que tu veux gagner</b>Cotescope cherche parmi tous les paris de tous les matchs les tickets qui ont le plus de chances d'y arriver, avec leurs risques.</div>`;
-  return `<h1 class="t">Objectif</h1><p class="lead">Tu donnes ta mise et ce que tu veux gagner. Cotescope passe en revue tous les paris de tous les matchs et te sort des dizaines de tickets qui y arrivent, classés par leurs vraies chances de passer.</p>
+  return `<h1 class="t">Objectif · ${esc(SPORT_NAME[SPORT])}</h1><p class="lead">Tu donnes ta mise et ce que tu veux gagner. Cotescope passe en revue tous les paris de tous les matchs et te sort des centaines de tickets qui y arrivent, classés par leurs vraies chances de passer.</p>
     <div class="goal">
       <div class="panel goalf">
         <div class="need" style="margin:0 0 14px"><b style="font-size:14px">⚡ Combiné express</b><div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap"><span class="note">cote</span><input class="sel2" id="ex-o" inputmode="decimal" placeholder="3,50" style="width:70px"><span class="note">en</span><input class="sel2" id="ex-n" inputmode="numeric" placeholder="3" style="width:52px"><span class="note">matchs</span><button class="btn sm go" id="ex-go">Go</button></div></div>
@@ -1471,6 +1474,7 @@ function labVerdict(R){
   return ["bad", `<b>Pas rentable.</b> Sur ${R.n} paris, cette stratégie aurait perdu ${fr(Math.abs(R.roi * 100), 1)} % de ce qui a été misé.${split}`];
 }
 function vLab(){
+  if (SPORT !== "foot") return `<h1 class="t">Stratégies</h1><div class="panel empty"><b>Le simulateur marche pour le football</b>Il teste ta règle sur 5 saisons de résultats et de cotes de 16 championnats. Pour la NBA et le tennis, l'historique gratuit n'est pas assez complet pour un test honnête.<div style="margin-top:14px"><button class="btn go" data-sport="foot">Passer au football</button></div></div>`;
   const head = `<h1 class="t">Stratégies</h1><p class="lead">Invente ta règle de pari et vois en quelques secondes si elle aurait été rentable sur les saisons passées, puis quels matchs à venir la respectent.</p>`;
   if (rank() < 3) return head + lockBox("elite", "Le simulateur de stratégies", "Teste tes propres règles sur plus de 5 saisons de résultats et de cotes réelles, avec la rentabilité, la pire série de défaites et la part de chance.");
   if (!LAB.data) {
@@ -1762,7 +1766,9 @@ async function loadAdmin(){
   const t = r.telegram || {}, s = t.stats || {}, b = t.bot || {};
   const ago = x => { if (!x) return "jamais"; const m = Math.round((Date.now() - x) / 6e4); return m < 60 ? `il y a ${m} min` : m < 2880 ? `il y a ${Math.round(m/60)} h` : `il y a ${Math.round(m/1440)} j`; };
   const row = (k, v, ok) => `<div class="bet" style="grid-template-columns:minmax(0,1fr) auto"><div class="sel">${k}</div><b class="num" style="color:${ok===false?"var(--bad)":ok?"var(--home)":"inherit"}">${v}</b></div>`;
-  box.innerHTML = row("Bot Telegram", !t.configured ? "non configuré" : b.webhook ? "branché" : "webhook absent", t.configured && b.webhook)
+  const ml = r.mail || {};
+  box.innerHTML = row("E-mails (confirmation, mot de passe oublié)", ml.configured ? "activés" : "pas encore activés", !!ml.configured)
+    + row("Bot Telegram", !t.configured ? "non configuré" : b.webhook ? "branché" : "webhook absent", t.configured && b.webhook)
     + (b.error ? row("Dernière erreur Telegram", esc(b.error), false) : "")
     + row("Comptes reliés à Telegram", `${t.subscribers || 0}${t.by_tier ? " (" + Object.entries(t.by_tier).map(([k,v]) => `${PLAN_NAME[k]||k} ${v}`).join(", ") + ")" : ""}`)
     + row("Messages d'alerte envoyés", `${s.msgs || 0} (${s.sent || 0} réceptions)`)
@@ -1770,7 +1776,9 @@ async function loadAdmin(){
     + (s.last_text ? `<p class="note" style="margin:6px 0">« ${esc(s.last_text)} »</p>` : "")
     + row("Alertes préparées par la dernière collecte", `${t.queued || 0} · ${ago(t.queue_ts)}`)
     + row("Matchs surveillés pour les compos", (r.lineups || {}).watched || 0)
-    + row("Compos officielles reçues (48 h)", (r.lineups || {}).stored || 0);
+    + row("Compos officielles reçues (48 h)", (r.lineups || {}).stored || 0)
+    + `<p class="note" style="margin:14px 0 6px"><b>Derniers messages de l'assistant d'aide</b></p>`
+    + ((r.support || []).map(m => `<div class="bet" style="grid-template-columns:1fr"><div class="sel">${esc(m.msg)}<small>${esc(m.from)} · ${ago(m.ts)} · ${esc(m.page || "")}</small></div></div>`).join("") || '<p class="note">Aucun message pour l\'instant.</p>');
 }
 async function loadDevices(){
   const box = $("#c-dev"); if (!box) return;
@@ -1815,7 +1823,8 @@ function render(){
   const body = paused && ["picks","goal","ticket","lab"].includes(r.v) ? vPaused()
     : locked && SPORT_VIEWS.includes(r.v) ? `<h1 class="t">${SPORT_NAME[SPORT]}</h1>${lockBox("essentiel", `${SPORT_NAME[SPORT]} : inclus dans Essentiel et Pro`, LOCK_TXT[SPORT])}`
     : (V[r.v] || vMatchs)();
-  $("#view").innerHTML = body;
+  $("#view").innerHTML = verifyBanner() + body;
+  window.__czEmail = (ACCOUNT && ACCOUNT.email) || "";
   sportTabs();
   chrome();
   if (r.v === "compte" && !window.__BRIDGE__) { loadDevices(); loadAdmin(); }
@@ -1854,7 +1863,7 @@ function gate(v, x){
     const cur = ACCOUNT && ACCOUNT.tier && ACCOUNT.tier !== "gratuit" ? ACCOUNT.tier : null;
     const free = ACCOUNT && ACCOUNT.tier === "gratuit", over = ACCOUNT && !ACCOUNT.tier;
     c.innerHTML = logo + `<div style="text-align:center;margin-bottom:22px"><h2 style="font-family:var(--disp);font-size:28px">${over?"Ta version gratuite est terminée":"Choisis ton forfait"}</h2>
-      <p class="note" style="font-size:15px">${free?`Version gratuite : encore ${daysLeft(ACCOUNT.renews)} jour(s). `:""}Paiement mensuel par carte, sans engagement, annulable en un clic.</p></div>
+      <p class="note" style="font-size:15px">${free?`Tu es en version gratuite (sans limite de durée). `:""}Paiement mensuel par carte, sans engagement, annulable en un clic.</p></div>
       <div class="plans">${PLANS.map(p => `<div class="panel pl ${p.hot?"hot":""} ${cur===p.id?"cur":""}">${p.hot?`<span class="tag">${p.hot}</span>`:""}
         <h3>${p.name}</h3><div class="pr">${p.price} €<small> / mois</small></div>
         <ul>${p.feats.map(f => `<li class="${/^Tout /.test(f)?"inc":""}">${esc(f)}</li>`).join("")}</ul>
@@ -1898,12 +1907,23 @@ document.addEventListener("click", async e => {
     if (!r.ok) { const m = $("#g-msg"); if (m) m.textContent = r.reason === "whop_error" ? `Le paiement a été refusé par Whop (code ${r.status}). Détail : ${String(r.detail || "").slice(0, 160)}` : errMsg(r.reason); } }
 });
 
+let VERIFIED_MSG = "";
+function verifyBanner(){
+  if (!ACCOUNT || ACCOUNT.verified !== false) return "";
+  return `<div class="banner vbanner">📩 Confirme ton adresse e-mail : on t'a envoyé un lien à <b>${esc(ACCOUNT.email)}</b> (regarde aussi dans les spams).<button class="btn sm" data-vresend>Renvoyer l'e-mail</button></div>`;
+}
+document.addEventListener("click", async e => {
+  if (!e.target.closest("[data-vresend]")) return;
+  const r = await Auth.verifyResend();
+  toast(r.ok ? (r.already ? "Ton adresse est déjà confirmée" : "E-mail renvoyé : regarde ta boîte de réception") : r.reason === "too_many" ? "Trop de demandes, réessaie dans 15 minutes" : r.reason === "mail_not_configured" ? "L'envoi d'e-mails n'est pas encore activé, réessaie plus tard" : "L'envoi a échoué, réessaie");
+});
 async function start(){
   try {
     if (!window.__BRIDGE__) await boot();
     gate(null);
     if (!location.hash.startsWith("#/")) location.hash = "/matchs";
     render();
+    if (VERIFIED_MSG) { toast(VERIFIED_MSG === "ok" ? "✅ Adresse e-mail confirmée, merci !" : "Ce lien de confirmation n'est plus valable : renvoie-en un depuis la bannière"); if (VERIFIED_MSG === "ok" && ACCOUNT) ACCOUNT.verified = true; VERIFIED_MSG = ""; render(); }
     const cfg = call("get_config") || {};
     if (!cfg.books_chosen) gate("books");
   } catch(e) {
@@ -1919,6 +1939,7 @@ async function init(){
   try { CFG = await (await fetch("../config.json", {cache:"no-store"})).json(); } catch(e) { CFG = {}; }
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.get("reset")) return gate("reset", {code: h.get("reset")});
+  if (h.has("verified")) { VERIFIED_MSG = h.get("verified") === "1" ? "ok" : "bad"; history.replaceState(null, "", location.pathname); }
   const paid = location.hash === "#paid";
   if (paid) history.replaceState(null, "", location.pathname);
   SESSION = lsGet();
@@ -1932,5 +1953,6 @@ async function init(){
 }
 init();
 </script>
+<script src="../js/aide.js" defer></script>
 </body>
 </html>

@@ -31,7 +31,7 @@ scripts = re.findall(r"<script>(.*?)</script>", html, flags=re.S)
 hashes = " ".join("'sha256-%s'" % base64.b64encode(hashlib.sha256(s.encode("utf-8")).digest()).decode() for s in scripts)
 
 CSP = ("default-src 'self'; "
-       f"script-src {hashes} 'unsafe-eval' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; "
+       f"script-src 'self' {hashes} 'unsafe-eval' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; "
        "connect-src 'self' https://cdn.jsdelivr.net https://*.workers.dev https://api.cotescope.fr; "
        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; "
        "img-src 'self' data: https:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; "

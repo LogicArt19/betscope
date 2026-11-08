@@ -478,7 +478,8 @@ class Stats:
                     continue
                 # calendrier ESPN sur la période (1 requête / ligue / 3 h)
                 c = board.get(slug)
-                days = sorted({(t.astimezone(timezone.utc)).strftime("%Y%m%d") for t, _ in lst})
+                # NBA : ESPN range les matchs par date de la côte est américaine (UTC-5) -> on demande le bon jour
+                days = sorted({((t - timedelta(hours=6)) if slug == "nba" else t).astimezone(timezone.utc).strftime("%Y%m%d") for t, _ in lst})
                 if not c or time.time() - c["ts"] > 3 * 3600 or not set(days) <= set(c.get("days") or []):
                     # ESPN n'accepte qu'un jour par requête -> 1 requête par jour de match
                     evs, ok = [], False

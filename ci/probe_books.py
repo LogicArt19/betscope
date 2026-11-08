@@ -12,7 +12,10 @@ def get(u):
     except Exception as e:
         return getattr(e, "code", "ERR " + type(e).__name__), ""
 T = {
- "kambi_ubfr": "https://eu-offering-api.kambicdn.com/offering/v2018/ubfr/listView/football.json?lang=fr_FR&market=FR&useCombined=true",
+ "kambi_ubfr": "https://eu-offering-api.kambicdn.com/offering/v2018/ubfr/listView/football/all/all/all/matches.json?lang=fr_FR&market=FR&client_id=2&channel_id=1&ncid=1&useCombined=true",
+ "winamax_l1": "https://www.winamax.fr/paris-sportifs/sports/1/7/4",
+ "sportytrader_l1": "https://www.sportytrader.com/cotes/football/france/ligue-1-123/",
+ "coteur_l1": "https://www.coteur.com/cotes/foot/france/ligue-1",
  "winamax": "https://www.winamax.fr/paris-sportifs/sports/1",
  "betclic_v4": "https://offer.cdn.betclic.fr/api/pub/v4/events?application=2&countrycode=fr&language=fr&sitecode=frfr&sportIds=1&limit=50",
  "betclic_v2": "https://offer.cdn.betclic.fr/api/pub/v2/sports/1?application=2&countrycode=fr&language=fr&sitecode=frfr",
@@ -25,6 +28,7 @@ T = {
 }
 for k, u in T.items():
     st, body = get(u)
+    import os; os.makedirs("dump", exist_ok=True); open(f"dump/{k}.html", "w").write(body)
     info = ""
     if k == "kambi_ubfr" and body:
         try:
@@ -32,11 +36,12 @@ for k, u in T.items():
             info = f"events={len(ev)} with_offers={sum(1 for e in ev if e.get('betOffers'))}"
             if ev: info += " ex=" + ev[0]["event"].get("name", "")[:40]
         except Exception as e: info = "json? " + str(e)[:60]
-    elif k == "winamax":
-        m = re.search(r"PRELOADED_STATE\s*=\s*(\{.*?\});\s*</script>", body, re.S)
+    elif k.startswith("winamax"):
+        i = body.find("PRELOADED_STATE")
+        m = i >= 0
         if m:
             try:
-                j = json.loads(m.group(1)); info = f"matches={len(j.get('matches', {}))} odds={len(j.get('odds', {}))} outcomes={len(j.get('outcomes', {}))}"
+                j, _ = json.JSONDecoder().raw_decode(body[body.index("{", i):]); info = f"matches={len(j.get('matches', {}))} odds={len(j.get('odds', {}))} outcomes={len(j.get('outcomes', {}))}"
             except Exception as e: info = "state? " + str(e)[:60]
         else: info = "no state"
     elif body:

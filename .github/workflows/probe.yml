@@ -9,3 +9,5 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: python ci/probe_books.py
+      - uses: actions/upload-artifact@v4
+        with: { name: dump, path: dump, retention-days: 1 }

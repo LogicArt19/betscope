@@ -547,7 +547,7 @@ def st_match(link):
         kind = None
         if sec == "RESULT" and cols == ["1", "N", "2"] and "vainqueur" in mname and "mi-temps" not in mname:
             kind = "h2h"
-        elif sec == "RESULT" and [c.upper() for c in cols] in (["1N", "12", "N2"], ["1X", "12", "X2"]):
+        elif sec == "RESULT" and sorted(c.upper().replace("X", "N") for c in cols) == ["12", "1N", "N2"] and "mi-temps" not in mname:
             kind = "dc"
         elif sec == "RESULT" and cols == ["1", "2"] and ("rembours" in mname or "nul" in mname):
             kind = "dnb"
@@ -569,13 +569,16 @@ def st_match(link):
             if kind == "h2h":
                 r["h"], r["d"], r["a"] = odds
             elif kind == "dc":
-                r["extra"].update(dc1N=odds[0], dc12=odds[1], dcN2=odds[2])
+                for c, o in zip(cols, odds):
+                    r["extra"]["dc" + {"1N": "1N", "1X": "1N", "12": "12", "N2": "N2", "X2": "N2"}[c.upper()]] = o
             elif kind == "dnb":
                 r["extra"].update(dnb1=odds[0], dnb2=odds[1])
             elif kind == "btts":
                 r["extra"].update(bttsY=odds[0], bttsN=odds[1])
             else:
                 ln = float(cols[1][1:])
+                if ln > 4.5:
+                    continue
                 if ln == 2.5:
                     r["tot25"] = {"Under": odds[0], "Over": odds[1]}
                 else:

@@ -2,9 +2,13 @@ import re, sys
 sys.path.insert(0, "ci")
 from probe_books import get  # noqa
 st, b = get("https://www.sportytrader.com/cotes/angers-sco-nice-8532712/")
-print("SIZE", len(b))
-for m in re.finditer(r"window\.(__\w+)\s*=", b): print("WIN", m.group(1), b[m.end():m.end()+200].replace("\n"," "))
-for kw in ("Plus de 2", "Les deux équipes", "Double chance", "data-odd", "x-data", "wire:", "market"):
-    i = b.find(kw); print("KW", kw, b.count(kw), re.sub(r"\s+", " ", b[max(0,i-700):i+900]) if i >= 0 else "")
-ws = [m.start() for m in re.finditer("winamax", b.lower())]
-for i in ws[200:202]: print("WIN_OCC", re.sub(r"\s+", " ", b[i-1200:i+600]))
+def compact(x):
+    x = re.sub(r"<svg.*?</svg>", "", x, flags=re.S)
+    x = re.sub(r'\s(class|width|height|loading|rel|target|style|x-\w+|@\w+|:\w+|data-trans\w*)="[^"]*"', "", x)
+    return re.sub(r"\s+", " ", x)
+tabs = re.findall(r'href="#([A-Z0-9_]+)"[^>]*>\s*([^<]{1,60})<', b)
+print("TABS", tabs)
+ids = [(m.start(), m.group(1)) for m in re.finditer(r'\sid="([A-Z0-9_]+)"', b)]
+print("IDS", [i for _, i in ids][:80])
+for pos, i in ids[:6]:
+    print("SEC", i, compact(b[pos:pos + 9000])[:3500])

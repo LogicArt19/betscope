@@ -87,7 +87,7 @@ def tier_ok(need):
 
 
 BOOK_NAMES = {"betclic_fr": "Betclic", "winamax_fr": "Winamax", "unibet_fr": "Unibet (FDJ)",
-              "parionssport_fr": "Parions Sport (FDJ)", "bet365": "Bet365"}
+              "parionssport_fr": "Unibet (FDJ)", "bet365": "Bet365"}
 
 
 def book_name(cfg):
@@ -527,7 +527,7 @@ def demo_events(seed=None):
                                           "Betis", "Séville", "Real Sociedad"]),
     }
     books = [("pinnacle", "Pinnacle"), ("betclic_fr", "Betclic (FR)"), ("winamax_fr", "Winamax (FR)"),
-             ("unibet_fr", "Unibet (FR)"), ("pmu_fr", "PMU (FR)"), ("parionssport_fr", "Parions Sport (FR)"),
+             ("unibet_fr", "Unibet (FR)"), ("pmu_fr", "PMU (FR)"), ("parionssport_fr", "Unibet (FDJ)"),
              ("netbet_fr", "NetBet (FR)"), ("williamhill", "William Hill"), ("marathonbet", "Marathon Bet"),
              ("sport888", "888sport"), ("betsson", "Betsson"), ("onexbet", "1xBet")]
     events = []
@@ -2933,7 +2933,7 @@ class Api:
                 names = ", ".join(BOOK_NAMES.get(b_, b_) for b_ in sorted(allowed))
                 note = (f"{names} publie peu de cotes dans nos sources gratuites"
                         + (f" ({n_own} ticket{'s' if n_own > 1 else ''} avec ses cotes en premier)" if n_own else "")
-                        + ". Les autres tickets utilisent les vraies cotes de Winamax, Parions Sport, Unibet ou Bet365, indiquées sous chaque cote. "
+                        + ". Les autres tickets utilisent les vraies cotes de Winamax, Unibet (FDJ) ou Bet365, indiquées sous chaque cote. "
                           "Les cotes sont en général très proches d'un bookmaker à l'autre : vérifie-les chez toi avant de jouer.")
         if not res["options"] and cfg.get("bookmakers"):
             # rien chez tes bookmakers : on élargit aux cotes de tous les bookmakers suivis

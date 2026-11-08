@@ -345,7 +345,7 @@ def op_market_map(markets):
 
 # bookmakers français disponibles sur OddsPapi -> clé Cotescope et nom affiché (Betclic n'y est pas)
 OP_BOOKS = {"bet365.fr": ("bet365", "Bet365"), "winamax.fr": ("winamax_fr", "Winamax"),
-            "unibet.fr": ("unibet_fr", "Unibet (FDJ)"), "fdj": ("parionssport_fr", "Parions Sport (FDJ)")}
+            "unibet.fr": ("unibet_fr", "Unibet (FDJ)")}  # Parions Sport a fusionné avec Unibet
 
 
 def _op_parse(f, slug, op):
@@ -669,6 +669,75 @@ def collect_sportytrader(events, state, max_pages=190):
     return n_hit, new_events
 
 
+
+# Deuxième source : le site officiel d'Unibet (groupe FDJ). Ses pages publiques affichent le 1N2 de chaque match :
+# on l'utilise pour rafraîchir et vérifier la cote Unibet (heure officielle de Paris, directement chez le bookmaker).
+UNI_PAGES = ["/sport/football", "/sport/football/france/ligue-1-mcdonalds", "/sport/football/angleterre/premier-league"]
+
+
+def collect_unibet(events):
+    from zoneinfo import ZoneInfo
+    paris = ZoneInfo("Europe/Paris")
+    rows = {}
+    for path in UNI_PAGES:
+        try:
+            req = urllib.request.Request("https://www.unibet.fr" + path, headers=_ST_UA)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                raw = r.read()
+                if r.headers.get("Content-Encoding") == "gzip":
+                    raw = gzip.decompress(raw)
+            page = raw.decode("utf-8", "replace")
+        except Exception as e:
+            log("Unibet :", str(e)[:80])
+            continue
+        meta = {}
+        for js in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', page, re.S):
+            try:
+                data = json.loads(js)
+            except ValueError:
+                continue
+            for it in data if isinstance(data, list) else [data]:
+                if isinstance(it, dict) and it.get("@type") == "SportsEvent" and it.get("url"):
+                    meta[urllib.parse.urlparse(it["url"]).path] = it
+        for blk in page.split("<psel-event-main")[1:]:
+            m = re.search(r'href="(/paris-football/[^"#]+)"', blk)
+            if not m or m.group(1) not in meta:
+                continue
+            odds = [float(x.replace(",", ".")) for x in re.findall(r"<span>(\d{1,3},\d{2})</span>", blk[:6000])][:3]
+            it = meta[m.group(1)]
+            try:
+                start = datetime.fromisoformat(it["startDate"][:19]).replace(tzinfo=paris).astimezone(timezone.utc)
+            except (KeyError, ValueError):
+                continue
+            if len(odds) == 3 and min(odds) > 1:
+                rows[m.group(1)] = {"start": start, "home": (it.get("homeTeam") or {}).get("name", ""),
+                                    "away": (it.get("awayTeam") or {}).get("name", ""), "odds": odds}
+        time.sleep(0.6)
+    n = diff = 0
+    for r in rows.values():
+        ev = next((e for e in events if abs((b.parse_time(e["commence_time"]) - r["start"]).total_seconds()) <= 3 * 3600
+                   and _best_team(e["home_team"], [r["home"]]) and _best_team(e["away_team"], [r["away"]])), None)
+        if not ev:
+            continue
+        bk = next((x for x in ev.get("bookmakers", []) if x.get("key") == "unibet_fr"), None)
+        h2h = [{"name": ev["home_team"], "price": r["odds"][0]}, {"name": "Draw", "price": r["odds"][1]},
+               {"name": ev["away_team"], "price": r["odds"][2]}]
+        if bk is None:
+            ev.setdefault("bookmakers", []).append({"key": "unibet_fr", "title": "Unibet (FDJ)", "markets": [{"key": "h2h", "outcomes": h2h}], "_ts": time.time()})
+        else:
+            old = next((mk for mk in bk.get("markets", []) if mk.get("key") == "h2h"), None)
+            if old:
+                prev = sorted(o["price"] for o in old["outcomes"])
+                diff += any(abs(a - c) > 0.05 for a, c in zip(prev, sorted(r["odds"])))
+                old["outcomes"] = h2h
+            else:
+                bk["markets"].append({"key": "h2h", "outcomes": h2h})
+            bk["_ts"] = time.time()
+        n += 1
+    log(f"Unibet officiel : {len(rows)} matchs lus, {n} cotes 1N2 vérifiées et rafraîchies ({diff} avaient bougé depuis le comparateur)")
+    return n
+
+
 def self_test(snap):
     """Auto-test : fait tourner le vrai moteur sur les vraies données (comme l'appli d'un abonné Pro) et écrit
     dans le journal ce qu'un client verrait, bookmaker par bookmaker."""
@@ -680,7 +749,7 @@ def self_test(snap):
         api = b.Api(start_loop=False)
         api.load_snapshot(json.loads(json.dumps(tier_snapshot(snap, "pro"))))
         for books in (["betclic_fr", "winamax_fr", "parionssport_fr", "unibet_fr", "bet365"], ["betclic_fr"], ["winamax_fr"],
-                      ["parionssport_fr", "unibet_fr"], ["bet365"]):
+                      ["unibet_fr"], ["bet365"]):
             api.set_books(books)
             real = sum(1 for x in api._sel if not x.get("estimated"))
             res = []
@@ -1268,6 +1337,10 @@ def main():
             st.update_web(sorted({e["sport_key"] for e in added}), added)
     except Exception as e:
         log("SportyTrader :", e)
+    try:
+        collect_unibet(events)
+    except Exception as e:
+        log("Unibet :", e)
     try:
         n = publish_lineup_watch(events, st)
         log("surveillance des compos :", n, "matchs dans les 36 h")

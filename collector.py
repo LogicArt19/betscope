@@ -1370,8 +1370,9 @@ def main():
     }
     with open(os.path.join(CACHE, "snapshot.json"), "w", encoding="utf-8") as f:
         json.dump(snap, f)
-    wv = [w.get("v") or {} for w in snap["stats"].get("web", {}).values()]
-    log(f"snapshot : {len(events)} matchs, {len(wv)} fiches web, 5 derniers matchs des 2 équipes : "
+    _web = snap["stats"].get("web", {})
+    wv = [(_web.get(e["id"]) or {}).get("v") or {} for e in events]
+    log(f"snapshot : {len(events)} matchs, {sum(1 for v in wv if v)} avec fiche web, 5 derniers matchs des 2 équipes : "
         f"{sum(1 for v in wv if (v.get('form') or {}).get('home') and (v.get('form') or {}).get('away'))}, "
         f"buteurs/passeurs des 2 équipes : {sum(1 for v in wv if len(v.get('players') or {}) == 2)}")
     for tier in TIERS:

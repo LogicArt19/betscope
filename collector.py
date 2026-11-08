@@ -605,7 +605,7 @@ def collect_sportytrader(events, state, max_pages=190):
     offs = []
     for sk, link, h, a, t in listing:
         for e in events:
-            if e.get("sport_key") == sk and _best_team(e["home_team"], [h]) and _best_team(e["away_team"], [a]):
+            if e.get("_source") != "sportytrader" and e.get("sport_key") == sk and _best_team(e["home_team"], [h]) and _best_team(e["away_team"], [a]):
                 d = (b.parse_time(e["commence_time"]).replace(tzinfo=None) - t).total_seconds() / 3600
                 if abs(d) <= 14:
                     offs.append(round(d * 4) / 4)
@@ -615,7 +615,7 @@ def collect_sportytrader(events, state, max_pages=190):
     from zoneinfo import ZoneInfo
     la = datetime.now(ZoneInfo("America/Los_Angeles")).utcoffset().total_seconds() / -3600
     med = offs[len(offs) // 2] if offs else None
-    off = med if med is not None and len(offs) >= 6 and sum(1 for o in offs if o == med) >= 0.7 * len(offs) else la
+    off = la  # l'écart mesuré n'est affiché que pour contrôle
     known_ids = {e["id"] for e in events}
     new_events, n_hit = [], 0
     for sk, link, h, a, t in sorted(listing, key=lambda x: x[4]):

@@ -483,6 +483,7 @@ ST_LEAGUES = {
     "soccer_uefa_europa_conference_league": "football/europe/europa-conference-league-139206",
     "soccer_netherlands_eredivisie": "football/pays-bas/eredivisie-72", "soccer_portugal_primeira_liga": "football/portugal/primeira-liga-101",
     "soccer_belgium_first_div": "football/belgique/division-1a-32", "soccer_turkey_super_league": "football/turquie/super-lig-121",
+    "basketball_nba": "basket/usa/nba-306",
 }
 ST_BOOKS = {"betclic": ("betclic_fr", "Betclic"), "winamax": ("winamax_fr", "Winamax"),
             "unibet": ("unibet_fr", "Unibet (FDJ)"), "bet365": ("bet365", "Bet365")}
@@ -527,7 +528,7 @@ def html_unescape(x):
     return _h.unescape(x)
 
 
-def st_match(link):
+def st_match(link, basket=False):
     """Page d'un match -> {book_key: {'h','d','a','tot25','extra'}} pour les bookmakers suivis."""
     b_ = _st_compact(_st_get(link))
     secs = [(m.start(), m.group(1)) for m in re.finditer(r'\sid="([A-Z_]+)"', b_)]
@@ -545,7 +546,12 @@ def st_match(link):
         end = heads[i + 1].start() if i + 1 < len(heads) else len(b_)
         block = b_[hm.end():end]
         kind = None
-        if sec == "RESULT" and cols == ["1", "N", "2"] and "vainqueur" in mname and "mi-temps" not in mname:
+        if basket:
+            if sec == "RESULT" and cols == ["1", "2"] and "vainqueur" in mname:
+                kind = "h2h2"
+            elif sec == "UNDER_OVER" and len(cols) == 2 and re.fullmatch(r"-\d{2,3}\.5", cols[0]) and cols[1] == "+" + cols[0][1:]:
+                kind = "tot"
+        elif sec == "RESULT" and cols == ["1", "N", "2"] and "vainqueur" in mname and "mi-temps" not in mname:
             kind = "h2h"
         elif sec == "RESULT" and sorted(c.upper().replace("X", "N") for c in cols) == ["12", "1N", "N2"] and "mi-temps" not in mname:
             kind = "dc"
@@ -568,6 +574,10 @@ def st_match(link):
             r = res.setdefault(bk, {"extra": {}, "tot25": None})
             if kind == "h2h":
                 r["h"], r["d"], r["a"] = odds
+            elif kind == "h2h2":
+                r["h"], r["a"] = odds
+            elif kind == "tot" and basket:
+                r.setdefault("totals", {})[float(cols[1][1:])] = {"Under": odds[0], "Over": odds[1]}
             elif kind == "dc":
                 for c, o in zip(cols, odds):
                     r["extra"]["dc" + {"1N": "1N", "1X": "1N", "12": "12", "N2": "N2", "X2": "N2"}[c.upper()]] = o
@@ -625,7 +635,7 @@ def collect_sportytrader(events, state, max_pages=190):
         c = cache.get(link)
         if (not c or time.time() - c.get("ts", 0) > 2.5 * 3600) and n_pages < max_pages:
             try:
-                c = cache[link] = {"ts": time.time(), "books": st_match(link)}
+                c = cache[link] = {"ts": time.time(), "books": st_match(link, basket=sk.startswith("basketball"))}
                 n_pages += 1
             except Exception as e:
                 errors += 1
@@ -648,8 +658,13 @@ def collect_sportytrader(events, state, max_pages=190):
         real_all = dict(ev.get("_real_all") or {})
         for bk, hit in c["books"].items():
             key, title = ST_BOOKS[bk]
-            mkts = [{"key": "h2h", "outcomes": [{"name": ev["home_team"], "price": hit["h"]}, {"name": ev["away_team"], "price": hit["a"]},
-                                                {"name": "Draw", "price": hit["d"]}]}]
+            h2h = [{"name": ev["home_team"], "price": hit["h"]}, {"name": ev["away_team"], "price": hit["a"]}]
+            if hit.get("d"):
+                h2h.append({"name": "Draw", "price": hit["d"]})
+            mkts = [{"key": "h2h", "outcomes": h2h}]
+            if hit.get("totals"):  # NBA : toutes les lignes de points
+                mkts.append({"key": "totals", "outcomes": [o for ln, t in sorted(hit["totals"].items()) for o in
+                             ({"name": "Over", "price": t["Over"], "point": ln}, {"name": "Under", "price": t["Under"], "point": ln})]})
             if hit.get("tot25") and len(hit["tot25"]) == 2:
                 mkts.append({"key": "totals", "outcomes": [{"name": "Over", "price": hit["tot25"]["Over"], "point": 2.5},
                                                            {"name": "Under", "price": hit["tot25"]["Under"], "point": 2.5}]})

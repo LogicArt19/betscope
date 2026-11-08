@@ -59,7 +59,15 @@ FD_STAGES = {"LAST_16": "Round of 16", "QUARTER_FINALS": "Quarter-finals", "SEMI
 
 # recherche web sans clé : données publiques ESPN (absents, compos, actus)
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+ESPN_BASKET = "https://site.api.espn.com/apis/site/v2/sports/basketball"
+
+
+def _eb(slug):
+    return ESPN_BASKET if slug == "nba" else ESPN_BASE
+
+
 ESPN_SLUGS = {
+    "basketball_nba": "nba",
     "soccer_france_ligue_one": "fra.1", "soccer_france_ligue_two": "fra.2", "soccer_epl": "eng.1",
     "soccer_efl_champ": "eng.2", "soccer_spain_la_liga": "esp.1", "soccer_italy_serie_a": "ita.1",
     "soccer_germany_bundesliga": "ger.1", "soccer_uefa_champs_league": "uefa.champions",
@@ -384,6 +392,25 @@ class Stats:
                 on_change()
 
     # ---------- recherche web (ESPN, sans clé) ----------
+    def _nba_last_games(self, team_id):
+        """NBA : derniers matchs joués d'une franchise (calendrier ESPN), au même format que la forme foot."""
+        j = self._web_get(f"{ESPN_BASKET}/nba/teams/{team_id}/schedule")
+        out = []
+        for e in j.get("events") or []:
+            try:
+                c = e["competitions"][0]
+                if not ((c.get("status") or {}).get("type") or {}).get("completed"):
+                    continue
+                me = next(x for x in c["competitors"] if str(x["id"]) == str(team_id))
+                op = next(x for x in c["competitors"] if str(x["id"]) != str(team_id))
+                sc = lambda x: int(float((x.get("score") or {}).get("value") if isinstance(x.get("score"), dict) else x.get("score")))
+                gf, ga = sc(me), sc(op)
+                out.append({"res": "V" if gf > ga else "D", "gf": gf, "ga": ga, "opp": (op.get("team") or {}).get("displayName", ""),
+                            "home": me.get("homeAway") == "home", "date": str(e.get("date") or "")[:10], "id": str(e.get("id")), "comp": "NBA"})
+            except (KeyError, StopIteration, TypeError, ValueError):
+                continue
+        return sorted(out, key=lambda g: g["date"])[-10:]
+
     def _team_players(self, slug, team_id):
         """Effectif ESPN d'une équipe avec les stats de la saison : meilleurs buteurs et passeurs (cache 12 h)."""
         cache = self.data.setdefault("players_cache", {})
@@ -457,7 +484,7 @@ class Stats:
                     evs, ok = [], False
                     for day in days:
                         try:
-                            body = self._web_get(f"{ESPN_BASE}/{slug}/scoreboard?dates={day}")
+                            body = self._web_get(f"{_eb(slug)}/{slug}/scoreboard?dates={day}")
                             ok = True
                         except Exception as e:
                             err = f"recherche web ({slug}) : {e}"
@@ -488,7 +515,7 @@ class Stats:
                     if cur and time.time() - cur["ts"] < ttl and (cur.get("v") or {}).get("fmt") == 4:
                         continue
                     try:
-                        j = self._web_get(f"{ESPN_BASE}/{slug}/summary?event={m['id']}")
+                        j = self._web_get(f"{_eb(slug)}/{slug}/summary?event={m['id']}")
                         n_ok += 1
                     except Exception as e:
                         errors.append(f"recherche web : {e}")
@@ -505,7 +532,15 @@ class Stats:
                         parsed["weather"] = None
                     try:  # buteurs et passeurs de la saison (effectif ESPN avec les stats de chaque joueur)
                         tids = parsed.get("team_ids") or {}
-                        parsed["players"] = {side: self._team_players(slug, tids[side]) for side in ("home", "away") if tids.get(side)}
+                        if slug == "nba":
+                            parsed["players"] = {}
+                            for side in ("home", "away"):
+                                if tids.get(side) and not (parsed.get("form") or {}).get(side):
+                                    g = self._nba_last_games(tids[side])
+                                    if g:
+                                        parsed.setdefault("form", {})[side] = g
+                        else:
+                            parsed["players"] = {side: self._team_players(slug, tids[side]) for side in ("home", "away") if tids.get(side)}
                     except Exception:
                         parsed["players"] = {}
                     if not parsed.get("lineups"):

@@ -122,7 +122,8 @@ def server_call(path, license_key, method="GET", body=None, timeout=40):
 # Configuration
 # --------------------------------------------------------------------------
 
-SPORTS = {  # 100 % foot
+SPORTS = {  # foot + NBA
+    "basketball_nba": "NBA",
     "soccer_france_ligue_one": "Ligue 1",
     "soccer_france_ligue_two": "Ligue 2",
     "soccer_epl": "Premier League",
@@ -953,14 +954,16 @@ def analyze(events, cfg, now=None, info=None):
                         po = modelmod.p_over(mdl, float(a["point"]))
                         p_model = po if a["name"] == "Over" else (1 - po if po is not None else None)
                 w_eff = analysis_weight(w_stats, st)
-                if p_model is None and st:
+                if sport_key.startswith("basketball"):  # pas de modèle de buts ni de nul : la proba vient des cotes
+                    p_model, w_eff = None, 0.0
+                elif p_model is None and st:
                     # pas de modèle saison (pas de clé) : on utilise quand même la forme récente + face-à-face
                     p_model = form_proxy(st, side, mkey, a["name"], a["point"])
                     w_eff = analysis_weight(w_stats, st) * 0.6
                 if p_model is not None and 0 < w_eff <= 0.6:
                     p = (1 - w_eff) * p_market + w_eff * p_model
                 stat_sum = analyse_points(st, side, a["name"], a["point"], mkey, p_market, p_model, home, away) \
-                    if st else None
+                    if st and not sport_key.startswith("basketball") else None
                 playable = {k: v for k, v in a["prices"].items()
                             if (k in allowed if allowed else k not in EXCHANGES)}
                 if not playable:

@@ -158,7 +158,7 @@ DEFAULT_CONFIG = {
     "min_odds": 1.30,
     "max_odds": 6.00,
     "min_books": 4,
-    "horizon_hours": 168,
+    "horizon_hours": 384,
     "max_legs": 3,
     "min_combo_prob": 0.15,
     "min_stake": 0.50,
@@ -268,7 +268,7 @@ def load_config():
     if float(cfg.get("min_books", 4)) > 5:
         cfg["min_books"] = 4
     if cfg.get("cfg_version", 0) < 4:  # 1.4.0 : on regarde les 7 prochains jours
-        cfg["horizon_hours"] = max(float(cfg.get("horizon_hours", 168)), 168)
+        cfg["horizon_hours"] = max(float(cfg.get("horizon_hours", 384)), 384)
         cfg["cfg_version"] = 4
     cfg["sports"] = [k for k in cfg.get("sports", []) if k.startswith("soccer")] or list(DEFAULT_CONFIG["sports"])
     return cfg

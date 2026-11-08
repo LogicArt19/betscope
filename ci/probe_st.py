@@ -1,7 +1,7 @@
-import sys, os, json
+import sys, os, re
 sys.path.insert(0, os.getcwd())
 import collector as C
-for sk in ("soccer_france_ligue_one", "soccer_netherlands_eredivisie", "soccer_uefa_europa_league"):
-    L = C.st_list(C.ST_LEAGUES[sk]); print("LIST", sk, len(L), L[:3])
-    for link, h, a, t in L[:2]:
-        r = C.st_match(link); print("MATCH", h, a, t, json.dumps(r)[:1500])
+b_ = C._st_compact(C._st_get("/cotes/angers-sco-nice-8532712/"))
+for hm in re.finditer(r"<span> Bookmaker </span>((?: <span>[^<]*</span>)+?) <span> Bonus </span>", b_):
+    before = b_[max(0, hm.start() - 400):hm.start()]
+    print("HEAD", re.findall(r"<span\s*>([^<]{2,80})</span>", before)[-1:], re.findall(r"<span>([^<]*)</span>", hm.group(1)), re.findall(r'data-panel-key="([A-Z_0-9]+)"', before)[-1:])

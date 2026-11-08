@@ -1628,6 +1628,32 @@ def _solve(evs, L, k=None, lmin=1, lmax=12, banned=(), keep=None):
     return {"legs": [x[2] for x in legs], "leg_odds": [x[3] for x in legs], "odds": o, "p": p, "ev": p * o - 1}
 
 
+def _variants(t, evs, L, per_leg=3, keep=None):
+    """Variantes d'un ticket : on remplace un seul match par un autre (d'un match absent du ticket) qui garde
+    la cote demandée, en gardant les meilleures chances. Très rapide : pas de nouveau calcul complet."""
+    used = {l["event_id"] for l in t["legs"]}
+    out = []
+    for i, (leg, lo) in enumerate(zip(t["legs"], t["leg_odds"])):
+        base_o, base_p = t["odds"] / lo, t["p"] / max(1e-9, leg["p"])
+        cands = []
+        for e, opts in evs:
+            if e in used:
+                continue
+            for x in opts:
+                if keep is not None and not keep(x[2]):
+                    continue
+                if math.log(base_o * x[3]) >= L - 1e-9:
+                    cands.append((x[2]["p"], x))
+        cands.sort(key=lambda c: -c[0])
+        for _, x in cands[:per_leg]:
+            legs = t["legs"][:i] + [x[2]] + t["legs"][i + 1:]
+            lods = t["leg_odds"][:i] + [x[3]] + t["leg_odds"][i + 1:]
+            order = sorted(range(len(legs)), key=lambda j: legs[j]["start"])
+            o, p = base_o * x[3], base_p * x[2]["p"]
+            out.append({"legs": [legs[j] for j in order], "leg_odds": [lods[j] for j in order], "odds": o, "p": p, "ev": p * o - 1})
+    return out
+
+
 def backed_side(s):
     """Quelle équipe ce pari soutient : home, away, draw ou None (buts, les 2 marquent…)."""
     sel, home, away = s.get("selection", ""), s.get("home") or "", s.get("away") or ""
@@ -1740,45 +1766,83 @@ def _objective_plan(stake, target, selections, cfg):
                 ladder.append(t)
         if bi > 1:
             continue  # bookmakers secondaires : l'essentiel suffit
-        # 2. toutes les autres combinaisons solides : on retire tour à tour les matchs des meilleurs tickets
-        #    (énumération des k meilleurs, façon Lawler) jusqu'à avoir des dizaines de tickets différents
+        # 2. énumération des meilleures combinaisons (façon Lawler) : on retire tour à tour les matchs des meilleurs
+        #    tickets et on recalcule, pour obtenir des centaines de tickets différents, tous classés par chances
         import heapq
-        heap, tried, n_solve, n_new = [], set(), 0, 0
-        for t in ladder:
-            heapq.heappush(heap, (-t["p"], len(heap), frozenset(), t))
-        cap_s, cap_n = (40, 8) if cfg.get("_few") else (300, 75)
-        while heap and n_solve < cap_s and n_new < cap_n:
-            _, _, ban, t = heapq.heappop(heap)
-            key = tuple(sorted(l["uid"] for l in t["legs"]))
-            if key not in found:
-                n_new += 1
-                add("alt", f"Autre combinaison en {len(t['legs'])} matchs", one(t), btitle)
-            for l in t["legs"]:
-                nb = ban | {l["event_id"]}
-                sig = (nb, len(t["legs"]))
-                if sig in tried or len(nb) > 6:
+
+        def enumerate_combos(seeds, keep, cap_new, cap_solve, kind, title_fn):
+            heap, tried, n_solve, n_new = [], set(), 0, 0
+            floor_p = max((t["p"] for t in seeds), default=0) * 0.05
+            for t in seeds:
+                heapq.heappush(heap, (-t["p"], len(heap), frozenset(), t))
+            while heap and n_solve < cap_solve and n_new < cap_new:
+                _, _, ban, t = heapq.heappop(heap)
+                key = tuple(sorted(l["uid"] for l in t["legs"]))
+                if key not in found:
+                    n_new += 1
+                add(kind, title_fn(t), one(t), btitle)
+                for l in t["legs"]:
+                    nb = ban | {l["event_id"]}
+                    sig = (nb, len(t["legs"]))
+                    if sig in tried or len(nb) > 7:
+                        continue
+                    tried.add(sig)
+                    n_solve += 1
+                    t2 = solve(banned=nb, keep=keep, lmin=max(lmin, len(t["legs"]) - 1), lmax=min(lmax, len(t["legs"]) + 1))
+                    if t2 and t2["p"] >= floor_p:
+                        heapq.heappush(heap, (-t2["p"], n_solve + 1000, nb, t2))
+
+        few = bool(cfg.get("_few"))
+        enumerate_combos(ladder, None, 8 if few else 260, 40 if few else 600, "alt",
+                         lambda t: f"Autre combinaison en {len(t['legs'])} matchs")
+        if not few:
+            # 3 à 6. pour chaque filtre (championnat, jour, famille de paris, niveau de sécurité) : plusieurs tickets
+            themes = []
+            for lg in sorted({s["sport_key"] for s, o in items}):
+                name = next(s["sport"] for s, o in items if s["sport_key"] == lg)
+                themes.append(("league", f"Uniquement {name}", lambda s, lg=lg: s["sport_key"] == lg, {}))
+            for d in sorted({s["start"].astimezone().date() for s, o in items})[:5]:
+                themes.append(("day", f"Uniquement les matchs du {JOURS[d.weekday()]} {d:%d/%m}",
+                               lambda s, d=d: s["start"].astimezone().date() == d, {}))
+            for fam, (cats, label) in FAMILIES.items():
+                themes.append(("fam", label[0].upper() + label[1:], lambda s, c=cats: s.get("cat") in c, {}))
+            CAT_LABEL = {"1n2": "Uniquement des victoires / nuls (1N2)", "dc": "Uniquement des doubles chances",
+                         "dnb": "Uniquement des « remboursé si nul »", "total": "Uniquement plus / moins de buts",
+                         "team": "Uniquement les buts d'une équipe", "btts": "Uniquement « les deux équipes marquent »"}
+            cats_here = {s.get("cat") for s, o in items}
+            for c, lab in CAT_LABEL.items():
+                if c in cats_here:
+                    themes.append(("cat", lab, lambda s, c=c: s.get("cat") == c, {}))
+            leagues_here = sorted({s["sport_key"] for s, o in items})
+            if len(leagues_here) > 1:
+                for lg in leagues_here[:8]:
+                    name = next(s["sport"] for s, o in items if s["sport_key"] == lg)
+                    for fam, (cats, label) in FAMILIES.items():
+                        themes.append(("league", f"{name} · {label}", lambda s, lg=lg, c=cats: s["sport_key"] == lg and s.get("cat") in c, {}))
+            for th in (0.80, 0.75, 0.70, 0.65, 0.60):
+                themes.append(("fav", f"Chaque sélection à {th * 100:.0f} % ou plus", lambda s, th=th: s["p"] >= th, {"safety": th}))
+            for kind, title, keep, extra in themes:
+                seeds = [t for t in (solve(keep=keep),) if t]
+                if not seeds:
                     continue
-                tried.add(sig)
-                n_solve += 1
-                t2 = solve(banned=nb, lmin=max(lmin, len(t["legs"]) - 1), lmax=min(lmax, len(t["legs"]) + 1))
-                if t2 and t2["p"] >= best["p"] * 0.25:
-                    heapq.heappush(heap, (-t2["p"], n_solve + 1000, nb, t2))
-        # 3. un seul championnat
-        for lg in sorted({s["sport_key"] for s, o in items}):
-            name = next(s["sport"] for s, o in items if s["sport_key"] == lg)
-            add("league", f"Uniquement {name}", one(solve(keep=lambda s, lg=lg: s["sport_key"] == lg)), btitle)
-        # 4. par jour : un ticket fixé vite
-        days = sorted({s["start"].astimezone().date() for s, o in items})
-        for d in days[:4]:
-            add("day", f"Uniquement les matchs du {JOURS[d.weekday()]} {d:%d/%m}",
-                one(solve(keep=lambda s, d=d: s["start"].astimezone().date() == d)), btitle)
-        # 5. par famille de paris
-        for fam, (cats, label) in FAMILIES.items():
-            add("fam", label[0].upper() + label[1:], one(solve(keep=lambda s, c=cats: s.get("cat") in c)), btitle)
-        # 6. sélections toutes au-dessus d'un seuil de chances
-        for th in (0.80, 0.75, 0.70, 0.65, 0.60):
-            add("fav", f"Chaque sélection à {th * 100:.0f} % ou plus",
-                one(solve(keep=lambda s, th=th: s["p"] >= th)), btitle, {"safety": th})
+                k0 = len(seeds[0]["legs"])
+                for k in (k0 - 1, k0 + 1):
+                    if lmin <= k <= lmax:
+                        t = solve(keep=keep, k=k)
+                        if t:
+                            seeds.append(t)
+                add(kind, title, one(seeds[0]), btitle, extra)
+                enumerate_combos(seeds, keep, 20, 36, kind, lambda t, title=title: title)
+                for v in sorted((v for t0 in seeds for v in _variants(t0, evs, L, 2, keep)), key=lambda v: -v["p"])[:12]:
+                    add(kind, title, one(v), btitle, extra)
+            # 7 bis. variantes des meilleurs tickets : un seul match change, la cote visée est toujours atteinte
+            tops = sorted((o["tickets"][0] for o in found.values() if len(o["tickets"]) == 1 and o.get("book") == btitle),
+                          key=lambda t: -t["p"])[:40]
+            vs = sorted((v for t0 in tops for v in _variants(t0, evs, L, 3)), key=lambda v: -v["p"])
+            for v in vs[:400]:
+                if len(found) >= 420:
+                    break
+                add("var", f"Variante en {len(v['legs'])} matchs (un match change)", one(v), btitle)
         # 7. plusieurs tickets sur des matchs différents : un seul gagnant suffit
         for n in (2, 3):
             st = round(stake / n, 2)
@@ -1822,7 +1886,7 @@ def _objective_plan(stake, target, selections, cfg):
         for o in sorted(evs.values(), reverse=True)[:lmax]:
             prod *= o
         max_odds = max(max_odds, prod)
-    return {"stake": stake, "target": target, "need_odds": need1, "options": options[:80], "n_found": len(options),
+    return {"stake": stake, "target": target, "need_odds": need1, "options": options[:300], "n_found": len(options),
             "max_odds": max_odds}
 
 
@@ -1911,7 +1975,7 @@ def ser_objective(res, cfg):
                 "value": t["ev"] >= float(cfg["min_ev"]) and tier_ok("elite"),
                 "legs": [{"uid": l["uid"], "selection": l["selection"], "match": l["match"], "date": fmt_date(l["start"]),
                           "conf": l.get("conf"), "q": (l.get("stats") or {}).get("q"),
-                          "sport": l["sport"], "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
+                          "sport": l["sport"], "cat": l.get("cat"), "odds": lo, "p": round(l["p"], 4), "estimated": bool(l.get("estimated")),
                           "min_odds": l.get("min_odds"), "market": l["market"], "ts": l["start"].timestamp(),
                           "league": l.get("sport"), "event_id": l["event_id"], "book": l.get("book"), "odds_ts": l.get("odds_ts"),
                           "p_market": round(l.get("p_market", l["p"]), 4),

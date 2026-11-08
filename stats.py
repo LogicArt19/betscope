@@ -1054,6 +1054,7 @@ class Stats:
                     if not res[eid]["lineups"]:
                         res[eid]["lineups"] = w["lineups"]
                     res[eid]["news"] = w["news"]
+                    res[eid]["gnews"] = w.get("gnews") or []
                     res[eid]["last_xi"] = w.get("last_xi") or []
                     self._fill_from_web(res[eid], w)
             # matchs sans stats (pas de clé) : on garde quand même les infos web
@@ -1068,7 +1069,7 @@ class Stats:
                             "away": ev.get("away_team", ""), "form_home": None, "form_away": None,
                             "table_home": None, "table_away": None, "inj_home": w["inj_home"],
                             "inj_away": w["inj_away"], "model": None, "pred": None, "h2h": [], "h2h_sum": None,
-                            "lineups": w["lineups"], "news": w["news"], "last_xi": w.get("last_xi") or []}
+                            "lineups": w["lineups"], "news": w["news"], "gnews": w.get("gnews") or [], "last_xi": w.get("last_xi") or []}
                 self._fill_from_web(res[eid], w)
             for eid, r in res.items():
                 r["sources"] = self._sources(eid, r)

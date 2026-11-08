@@ -478,6 +478,8 @@ const Auth = {
   pause: days => server("/api/pause","POST",{days}),
   tgLink: () => server("/api/telegram/link","POST",{}),
   tgUnlink: () => server("/api/telegram/unlink","POST",{}),
+  tgTest: () => server("/api/telegram/test","POST",{}),
+  adminStatus: () => server("/api/admin/status"),
   kick: id => server("/api/logout","POST",{id}),
 };
 function loadScript(src){ return new Promise((ok, ko) => { const s=document.createElement("script"); s.src=src; s.crossOrigin="anonymous"; if (PYODIDE_SRI && src.endsWith("pyodide.js")) s.integrity=PYODIDE_SRI; s.onload=ok; s.onerror=()=>ko(Object.assign(new Error("network"),{reason:"network"})); document.head.appendChild(s); }); }
@@ -905,7 +907,21 @@ function tabInfos(e, i){
     <h2 class="s">Cartons et arbitre</h2>${cardsBox(e, i)}
     <h2 class="s">Actus de dernière minute</h2>
     ${rank() < 3 ? lockBox("elite", "Actus de dernière minute", "Les infos trouvées sur le web juste avant le match.") :
-      (i.news||[]).length ? `<div class="panel">${i.news.map(n => `<div class="bet" style="grid-template-columns:1fr"><div class="sel">${esc(n.title)}<small>${esc(n.desc||"")}</small></div></div>`).join("")}</div>` : `<div class="panel empty"><b>Rien de neuf pour l'instant</b>Les actus sont vérifiées plusieurs fois avant le match.</div>`}`;
+      newsBlock(i)}`;
+}
+function newsBlock(i){
+  const safe = u => /^https:\/\//.test(u || "") ? u : "";
+  const ago = d => { const t = Date.parse(d); if (!t) return ""; const h = Math.round((Date.now() - t) / 36e5); return h < 1 ? "à l'instant" : h < 48 ? `il y a ${h} h` : `il y a ${Math.round(h/24)} j`; };
+  const g = i.gnews || [], n = i.news || [];
+  if (!g.length && !n.length) return `<div class="panel empty"><b>Rien de neuf pour l'instant</b>La veille web repasse sur ce match à chaque collecte.</div>`;
+  const flagged = g.filter(x => (x.tags||[]).length).length;
+  return `<div class="panel">
+    <p class="note" style="padding:10px 14px 0">🔎 Veille automatique : à chaque collecte, Cotescope cherche les articles récents sur ce match et repère les mots qui comptent (blessé, forfait, suspendu, compo…). ${flagged ? `<b>${flagged} article(s) signalent quelque chose d'important.</b>` : "Rien d'alarmant repéré."} Lis la source avant de parier : un titre ne suffit pas.</p>
+    ${g.map(x => `<div class="bet" style="grid-template-columns:1fr"><div class="sel">${safe(x.url) ? `<a href="${esc(safe(x.url))}" target="_blank" rel="noopener nofollow">${esc(x.title)}</a>` : esc(x.title)}
+      ${(x.tags||[]).map(t => `<span class="pill" style="background:var(--bad);color:#fff;margin-left:6px">${esc(t)}</span>`).join("")}
+      <small>${esc(x.source||"")}${x.date ? " · " + ago(x.date) : ""}</small></div></div>`).join("")}
+    ${n.map(x => `<div class="bet" style="grid-template-columns:1fr"><div class="sel">${safe(x.url) ? `<a href="${esc(safe(x.url))}" target="_blank" rel="noopener nofollow">${esc(x.title)}</a>` : esc(x.title)}<small>ESPN · ${esc(x.desc||"")}</small></div></div>`).join("")}
+  </div>`;
 }
 
 /* ======================================================================
@@ -1081,7 +1097,7 @@ function vGoal(){
       <div id="g-out">${out}</div>
     </div>`;
 }
-let GSORT = "p", GLEGS = "all", GOPEN = new Set([0]), GMORE = 15;
+let GSORT = "p", GLEGS = "all", GLG = "", GCAT = "", GOPEN = new Set([0]), GMORE = 20;
 // une sélection d'un ticket : clic = page du match avec toutes les analyses
 const formHtml = f => (f || "").split("").map(c => `<i class="ff ${c}">${c}</i>`).join("");
 const badF = f => { f = (f || "").slice(0, 5); return f.length >= 4 && ((f.match(/D/g) || []).length >= 3 || (!/V/.test(f) && (f.match(/D/g) || []).length >= 2)); };
@@ -1099,6 +1115,12 @@ function goalList(r){
   let opts = r.options.map((o, i) => ({...o, rank: i + 1}));
   const counts = [...new Set(opts.map(o => o.n_legs))].sort((a, b) => a - b);
   if (GLEGS !== "all") opts = opts.filter(o => String(o.n_legs) === GLEGS);
+  const legsOf = o => o.tickets.flatMap(t => t.legs);
+  const lgs = [...new Set(r.options.flatMap(o => legsOf(o).map(l => l.sport)))].filter(Boolean).sort();
+  const CATN = {"1n2":"Victoire / nul", dc:"Double chance", dnb:"Remboursé si nul", total:"Plus / moins de buts", team:"Buts d'une équipe", btts:"Les 2 marquent", exact:"Score exact", hcp:"Handicap", mtft:"Mi-temps / fin"};
+  const cats = [...new Set(r.options.flatMap(o => legsOf(o).map(l => l.cat)))].filter(Boolean);
+  if (GLG) opts = opts.filter(o => legsOf(o).every(l => l.sport === GLG));
+  if (GCAT) opts = opts.filter(o => legsOf(o).some(l => l.cat === GCAT));
   const by = {p: (a, b) => b.p_hit - a.p_hit, legs: (a, b) => a.n_legs - b.n_legs || b.p_hit - a.p_hit,
               soon: (a, b) => a.ends_ts - b.ends_ts || b.p_hit - a.p_hit, gain: (a, b) => b.ret - a.ret || b.p_hit - a.p_hit};
   opts.sort(by[GSORT]);
@@ -1109,7 +1131,11 @@ function goalList(r){
        <span class="note">Le meilleur : <b style="font-size:16px;color:var(--home)">${pc(top.p_hit, top.p_hit < .1 ? 1 : 0)}</b> de chances</span></div>
       <div class="gfair">Classement objectif : les chances de chaque pari viennent de nos analyses (forme, absents, classement, face-à-face, modèle de buts) croisées avec les cotes des bookmakers professionnels, sans leur marge. Plus les données d'un match sont complètes, plus nos analyses pèsent. Uniquement de vraies cotes de bookmakers (jamais d'estimation), avec le bookmaker et l'heure du relevé : vérifie la cote chez toi avant de jouer, elle a pu bouger. Jamais d'équipe en mauvaise série (3 défaites sur les 5 derniers matchs) ni de pari contre une équipe qui gagne tout. Ordre : d'abord les tickets avec de vraies cotes (pas d'estimation ≈) et dont chaque pari a au moins 1 chance sur 2, puis les plus probables, en favorisant les matchs les mieux analysés (la note « analyse » indique la part des données trouvées : forme, absents, classement, face-à-face). Touche un match pour voir toute son analyse.</div>
       <div class="gbar">${[["p","Plus de chances"],["legs","Moins de matchs"],["soon","Fini le plus tôt"],["gain","Plus gros gain"]].map(([k,l]) => `<button class="chip ${GSORT===k?"on":""}" data-gsort="${k}">${l}</button>`).join("")}</div>
-      <div class="gbar" style="margin-bottom:14px"><button class="chip ${GLEGS==="all"?"on":""}" data-glegs="all">Tous</button>${counts.map(c => `<button class="chip ${GLEGS===String(c)?"on":""}" data-glegs="${c}">${c} match${c>1?"s":""}</button>`).join("")}</div>`;
+      <div class="gbar" style="margin-bottom:14px"><button class="chip ${GLEGS==="all"?"on":""}" data-glegs="all">Tous</button>${counts.map(c => `<button class="chip ${GLEGS===String(c)?"on":""}" data-glegs="${c}">${c} match${c>1?"s":""}</button>`).join("")}</div>
+      <div class="gbar" style="margin-bottom:14px;gap:8px">
+        <select class="sel2" id="g-flg" style="max-width:230px"><option value="">Tous les championnats</option>${lgs.map(x => `<option value="${esc(x)}" ${GLG===x?"selected":""}>Uniquement ${esc(x)}</option>`).join("")}</select>
+        <select class="sel2" id="g-fcat" style="max-width:230px"><option value="">Tous les types de paris</option>${cats.map(x => `<option value="${esc(x)}" ${GCAT===x?"selected":""}>Avec ${esc(CATN[x]||x)}</option>`).join("")}</select>
+        <span class="note">${opts.length} ticket${opts.length>1?"s":""} avec ces filtres</span></div>`;
   const card = o => {
     const open = GOPEN.has(o.rank - 1);
     return `<div class="panel opt sm ${o.rank===1?"best":""}">
@@ -1125,13 +1151,17 @@ function goalList(r){
   };
   const shown = opts.slice(0, GMORE);
   return head + shown.map(card).join("")
-    + (opts.length > GMORE ? `<button class="btn ghost" data-gmore style="width:100%;margin:6px 0 12px">Voir ${Math.min(15, opts.length - GMORE)} tickets de plus (${opts.length - GMORE} restants)</button>` : "")
+    + (opts.length > GMORE ? `<button class="btn ghost" data-gmore style="width:100%;margin:6px 0 12px">Voir ${Math.min(30, opts.length - GMORE)} tickets de plus (${opts.length - GMORE} restants)</button>` : "")
     + (r.locked_more ? lockBox("pro", `${r.locked_more} autre${r.locked_more>1?"s":""} ticket${r.locked_more>1?"s":""} trouvé${r.locked_more>1?"s":""}`, "Toutes les combinaisons qui atteignent ton objectif, classées par chances, avec tri et filtres.") : "");
 }
+document.addEventListener("change", e => {
+  if (e.target.id === "g-flg") { GLG = e.target.value; GMORE = 20; render(); }
+  if (e.target.id === "g-fcat") { GCAT = e.target.value; GMORE = 20; render(); }
+});
 document.addEventListener("click", e => {
   const s = e.target.closest("[data-gsort]"); if (s) { GSORT = s.dataset.gsort; GMORE = 15; render(); return; }
   const l = e.target.closest("[data-glegs]"); if (l) { GLEGS = l.dataset.glegs; GMORE = 15; render(); return; }
-  if (e.target.closest("[data-gmore]")) { GMORE += 15; render(); return; }
+  if (e.target.closest("[data-gmore]")) { GMORE += 30; render(); return; }
   const o = e.target.closest("[data-gopen]"); if (o) { const i = +o.dataset.gopen; GOPEN.has(i) ? GOPEN.delete(i) : GOPEN.add(i); render(); }
 });
 document.addEventListener("click", e => {
@@ -1550,6 +1580,7 @@ function vCompte(){
       <div class="panel box"><h3>Championnats affichés</h3><div class="books" id="c-lg">${(cfg._sports||[]).map(s => `<label class="${hid.has(s.key)?"":"on"}"><input type="checkbox" value="${s.key}" ${hid.has(s.key)?"":"checked"}>${esc(s.label)}</label>`).join("") || '<p class="note">Aucun championnat couvert pour l\'instant.</p>'}</div></div>
       ${capitalPanel()}
       ${tgPanel()}
+      ${a.status === "owner" ? `<div class="panel box"><h3>État du service <span class="pill">propriétaire</span></h3><div id="c-adm"><p class="note">Chargement…</p></div></div>` : ""}
       <div class="panel box"><h3>Appareils connectés</h3><p class="note" style="margin-bottom:10px">5 appareils maximum. Un appareil que tu ne reconnais pas ? Déconnecte-le, puis change ton mot de passe.</p>
         <div id="c-dev"><p class="note">Chargement…</p></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn" id="c-out">Se déconnecter</button><button class="btn" id="c-outall">Déconnecter tous les appareils</button></div></div>
@@ -1561,7 +1592,7 @@ function tgPanel(){
   if (rank() < 3) return `<div class="panel box"><h3>Alertes Telegram</h3>${what}${lockBox("elite", "Alertes sur ton téléphone", "Reçois les compos officielles et les opportunités directement sur Telegram.")}</div>`;
   if (!a.tg_bot && !window.__BRIDGE__) return `<div class="panel box"><h3>Alertes Telegram</h3>${what}<p class="note">Les alertes ouvrent très bientôt.</p></div>`;
   return `<div class="panel box"><h3>Alertes Telegram ${a.tg ? '<span class="pill ok">activées</span>' : ""}</h3>${what}
-    ${a.tg ? `<button class="btn" id="tg-off">Arrêter les alertes</button>` : `<button class="btn go" id="tg-on">Recevoir les alertes sur Telegram</button><p class="note" style="margin-top:8px">Telegram s'ouvre : appuie sur « Démarrer », c'est tout.</p>`}</div>`;
+    ${a.tg ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn go" id="tg-test">Envoyer une alerte test</button><button class="btn" id="tg-off">Arrêter les alertes</button></div>` : `<button class="btn go" id="tg-on">Recevoir les alertes sur Telegram</button><p class="note" style="margin-top:8px">Telegram s'ouvre : appuie sur « Démarrer », c'est tout.</p>`}</div>`;
 }
 document.addEventListener("click", async e => {
   if (e.target.closest("#tg-on")) {
@@ -1570,6 +1601,7 @@ document.addEventListener("click", async e => {
     if (r.ok) { if (w) w.location = r.url; else location.href = r.url; toast("Appuie sur « Démarrer » dans Telegram"); setTimeout(async () => { await Auth.me(true); render(); }, 15000); }
     else { if (w) w.close(); toast(errMsg(r.reason)); }
   }
+  if (e.target.closest("#tg-test")) { const r = await Auth.tgTest(); toast(r.ok ? "Alerte envoyée : regarde Telegram" : r.reason === "not_linked" ? "Relie d'abord Telegram" : "Telegram n'a pas répondu, réessaie"); }
   if (e.target.closest("#tg-off")) { const r = await Auth.tgUnlink(); if (r.ok) { ACCOUNT.tg = false; toast("Alertes arrêtées"); render(); } }
 });
 function capitalPanel(){
@@ -1590,6 +1622,23 @@ document.addEventListener("click", e => {
   call("save_config", {bankroll: n("#bk-s"), daily_max_pct: n("#bk-d") || 10, stop_loss: n("#bk-l"), kelly_fraction: n("#bk-k") || .25});
   toast("Capital enregistré"); render();
 });
+async function loadAdmin(){
+  const box = $("#c-adm"); if (!box) return;
+  const r = await Auth.adminStatus();
+  if (!r.ok) { box.innerHTML = `<p class="note">${esc(errMsg(r.reason))}</p>`; return; }
+  const t = r.telegram || {}, s = t.stats || {}, b = t.bot || {};
+  const ago = x => { if (!x) return "jamais"; const m = Math.round((Date.now() - x) / 6e4); return m < 60 ? `il y a ${m} min` : m < 2880 ? `il y a ${Math.round(m/60)} h` : `il y a ${Math.round(m/1440)} j`; };
+  const row = (k, v, ok) => `<div class="bet" style="grid-template-columns:minmax(0,1fr) auto"><div class="sel">${k}</div><b class="num" style="color:${ok===false?"var(--bad)":ok?"var(--home)":"inherit"}">${v}</b></div>`;
+  box.innerHTML = row("Bot Telegram", !t.configured ? "non configuré" : b.webhook ? "branché" : "webhook absent", t.configured && b.webhook)
+    + (b.error ? row("Dernière erreur Telegram", esc(b.error), false) : "")
+    + row("Comptes reliés à Telegram", `${t.subscribers || 0}${t.by_tier ? " (" + Object.entries(t.by_tier).map(([k,v]) => `${PLAN_NAME[k]||k} ${v}`).join(", ") + ")" : ""}`)
+    + row("Messages d'alerte envoyés", `${s.msgs || 0} (${s.sent || 0} réceptions)`)
+    + row("Dernière alerte", ago(s.last))
+    + (s.last_text ? `<p class="note" style="margin:6px 0">« ${esc(s.last_text)} »</p>` : "")
+    + row("Alertes préparées par la dernière collecte", `${t.queued || 0} · ${ago(t.queue_ts)}`)
+    + row("Matchs surveillés pour les compos", (r.lineups || {}).watched || 0)
+    + row("Compos officielles reçues (48 h)", (r.lineups || {}).stored || 0);
+}
 async function loadDevices(){
   const box = $("#c-dev"); if (!box) return;
   const r = await Auth.devices();
@@ -1628,7 +1677,7 @@ function render(){
   const paused = ACCOUNT && ACCOUNT.pause && ACCOUNT.pause > Date.now();
   $("#view").innerHTML = paused && ["picks","goal","ticket","lab"].includes(r.v) ? vPaused() : (V[r.v] || vMatchs)();
   chrome();
-  if (r.v === "compte" && !window.__BRIDGE__) loadDevices();
+  if (r.v === "compte" && !window.__BRIDGE__) { loadDevices(); loadAdmin(); }
 }
 
 /* ======================================================================

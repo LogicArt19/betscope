@@ -131,6 +131,7 @@ def tier_snapshot(snap, tier):
     for eid, w in (st.get("web") or {}).items():
         v = dict(w.get("v") or {})
         v["news"] = []
+        v["gnews"] = []
         if tier == "gratuit":
             v.update(inj_home=[], inj_away=[], lineups=[], last_xi=[], weather=None, cards=None, referee="")
         web[eid] = dict(w, v=v)
@@ -935,6 +936,93 @@ def add_fd_h2h(events, st):
     return n
 
 
+# ---------------------------------------------------------------------------
+# Veille web automatique : pour chaque match des 48 h, on cherche les articles récents (Google Actualités,
+# flux RSS public et gratuit) et on repère les mots qui comptent pour un pari : blessé, forfait, suspendu…
+# Ce n'est pas une IA payante : c'est une recherche automatique, triée et résumée par des règles simples.
+NEWS_KEYS = {
+    "absence": ("bless", "forfait", "absent", "incertain", "touché", "indisponible", "out ", "injur", "doubt", "ruled out",
+                "lesion", "lesión", "baja", "infortun", "verletz", "fehlt", "ausfall", "blessure"),
+    "suspension": ("suspen", "carton rouge", "exclu", "squalific", "sancion", "gesperrt", "red card", "ban "),
+    "coach": ("entraîneur", "limog", "démission", "sacked", "nouvel entraîneur", "interim", "intérim", "esonero", "destitu"),
+    "lineup": ("compo", "titulaire", "onze de départ", "lineup", "line-up", "starting xi", "rotation", "groupe convoqué", "convoqu"),
+}
+NEWS_LABEL = {"absence": "Blessure / absence", "suspension": "Suspension", "coach": "Banc / entraîneur", "lineup": "Compo / groupe"}
+
+
+def _gnews(q, lang):
+    hl, gl = {"fr": ("fr", "FR"), "en": ("en-GB", "GB"), "es": ("es", "ES"), "it": ("it", "IT"), "de": ("de", "DE"), "pt": ("pt-PT", "PT")}.get(lang, ("fr", "FR"))
+    url = ("https://news.google.com/rss/search?q=" + urllib.parse.quote(q + " when:4d") +
+           f"&hl={hl}&gl={gl}&ceid={gl}:{hl.split('-')[0]}")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; CotescopeBot/1.0; +https://cotescope.fr)"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        raw = r.read()
+    import xml.etree.ElementTree as ET
+    out = []
+    for it in ET.fromstring(raw).iter("item"):
+        title = (it.findtext("title") or "").strip()
+        src = it.find("source")
+        source = (src.text or "").strip() if src is not None else ""
+        if source and title.endswith(" - " + source):
+            title = title[: -len(source) - 3]
+        pub = it.findtext("pubDate") or ""
+        try:
+            ts = datetime.strptime(pub[:25], "%a, %d %b %Y %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            ts = 0
+        out.append({"title": title, "url": (it.findtext("link") or "").strip(), "source": source, "ts": ts})
+    return out
+
+
+LEAGUE_LANG = {"soccer_france": "fr", "soccer_spain": "es", "soccer_italy": "it", "soccer_germany": "de",
+               "soccer_portugal": "pt", "soccer_epl": "en", "soccer_efl": "en", "soccer_netherlands": "en"}
+
+
+def add_web_news(events, st, state, max_matches=70):
+    """Veille automatique par match (cache 3 h) : titres, source, lien, et ce que l'article signale."""
+    now = datetime.now(timezone.utc)
+    cache = state.setdefault("gnews", {})
+    web = st.data.setdefault("web", {})
+    soon = [e for e in events if now - timedelta(hours=2) < b.parse_time(e["commence_time"]) < now + timedelta(hours=48)]
+    soon.sort(key=lambda e: b.parse_time(e["commence_time"]))
+    n_req = n_items = n_flag = 0
+    for e in soon[:max_matches]:
+        eid, h, a = e["id"], e.get("home_team", ""), e.get("away_team", "")
+        c = cache.get(eid)
+        if not c or now.timestamp() - c.get("ts", 0) > 3 * 3600:
+            items = []
+            langs = ["fr"] + ([LEAGUE_LANG.get(next((k for k in LEAGUE_LANG if e.get("sport_key", "").startswith(k)), ""), "en")])
+            for lang in dict.fromkeys(langs):
+                try:
+                    items += _gnews(f'"{h}" "{a}"', lang)
+                    n_req += 1
+                except Exception:
+                    pass
+                time.sleep(0.4)
+            seen, keep = set(), []
+            for it in sorted(items, key=lambda x: -x["ts"]):
+                k = re.sub(r"\W+", "", it["title"].lower())[:60]
+                if k in seen or not it["title"] or now.timestamp() - it["ts"] > 5 * 86400:
+                    continue
+                seen.add(k)
+                low = " " + it["title"].lower() + " "
+                it["tags"] = [NEWS_LABEL[t] for t, ws in NEWS_KEYS.items() if any(w in low for w in ws)]
+                keep.append(it)
+            keep.sort(key=lambda x: (-len(x["tags"]), -x["ts"]))
+            c = cache[eid] = {"ts": now.timestamp(), "items": keep[:8]}
+        if not c["items"]:
+            continue
+        w = web.setdefault(eid, {"ts": 0, "v": {"inj_home": [], "inj_away": [], "lineups": [], "news": [], "form": {}, "h2h": []}})
+        v = w.setdefault("v", {})
+        v["gnews"] = [{"title": it["title"], "url": it["url"], "source": it["source"], "date": datetime.fromtimestamp(it["ts"], timezone.utc).strftime("%Y-%m-%dT%H:%MZ") if it["ts"] else "",
+                       "tags": it.get("tags", [])} for it in c["items"]]
+        n_items += len(c["items"])
+        n_flag += sum(1 for it in c["items"] if it.get("tags"))
+    live = {e["id"] for e in events}
+    state["gnews"] = {k: v for k, v in cache.items() if k in live}
+    return n_req, n_items, n_flag
+
+
 def main():
     state = load_state()
     cfg = dict(b.DEFAULT_CONFIG, api_key=os.environ.get("ODDS_KEY", ""), sports=SPORTS, demo=False)
@@ -984,6 +1072,12 @@ def main():
         log("face-à-face (football-data.co.uk) :", n, "matchs complétés")
     except Exception as e:
         log("face-à-face :", e)
+
+    try:
+        r = add_web_news(events, st, state)
+        log("veille web (Google Actualités) : %d recherches, %d articles, %d signalent une absence / suspension / compo" % r)
+    except Exception as e:
+        log("veille web :", e)
 
     # 3) scores pour l'historique
     state["scores"] = collect_scores(state, sorted({S.ESPN_SLUGS[s] for s in SPORTS if s in S.ESPN_SLUGS}))

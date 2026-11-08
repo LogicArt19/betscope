@@ -332,6 +332,11 @@ async function tgBroadcast(env, minTier, text) {
   for (const s of Object.values(subs)) {
     if ((rank[s.tier] || 0) >= rank[minTier] && n < 40) { if (await tgSend(env, s.chat, text)) n++; }
   }
+  if (n) { // petit compteur pour l'état visible par le propriétaire (une écriture par envoi groupé)
+    const st = (await env.KV.get("tg_stats", "json")) || { sent: 0, msgs: 0 };
+    st.sent += n; st.msgs += 1; st.last = Date.now(); st.last_text = String(text).replace(/<[^>]+>/g, "").slice(0, 140);
+    await env.KV.put("tg_stats", JSON.stringify(st));
+  }
   return n;
 }
 const escH = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
@@ -586,6 +591,29 @@ export default {
       if (subs[user.email]) { await tgSend(env, subs[user.email].chat, "🔕 Alertes Cotescope arrêtées depuis ton compte."); delete subs[user.email]; await env.KV.put("tg_subs", JSON.stringify(subs)); }
       delete user.tg; await putUser(env, user);
       return json(req, { ok: true });
+    }
+    // alerte de test : envoie un message sur le Telegram relié du compte connecté
+    if (p === "/api/telegram/test" && req.method === "POST") {
+      if (!user) return json(req, { ok: false, reason: "session" }, 401);
+      if (!user.tg) return json(req, { ok: false, reason: "not_linked" }, 400);
+      const ok = await tgSend(env, user.tg, "✅ <b>Test Cotescope</b> : les alertes arrivent bien ici. Tu recevras les paris value, les grosses chutes de cotes et les compos officielles (forfait Pro).");
+      return json(req, { ok });
+    }
+    // état des alertes et des collectes, réservé au propriétaire
+    if (p === "/api/admin/status") {
+      if (!user || !owners(env).includes(user.email)) return json(req, { ok: false, reason: "forbidden" }, 403);
+      const subs = await tgSubs(env), q = (await env.KV.get("alerts_out", "json")) || {}, w = (await env.KV.get("lineup_watch", "json")) || {};
+      const lus = await env.KV.list({ prefix: "lu:", limit: 200 });
+      const byTier = {};
+      for (const x of Object.values(subs)) byTier[x.tier || "gratuit"] = (byTier[x.tier || "gratuit"] || 0) + 1;
+      let bot = null;
+      if (tgToken(env)) {
+        try { const r = await fetch(`https://api.telegram.org/bot${tgToken(env)}/getWebhookInfo`); const j = await r.json();
+              bot = { ok: !!j.ok, webhook: !!(j.result && j.result.url), pending: (j.result || {}).pending_update_count || 0, error: (j.result || {}).last_error_message || null }; } catch (e) { bot = { ok: false }; }
+      }
+      return json(req, { ok: true, telegram: { configured: !!tgToken(env), bot, subscribers: Object.keys(subs).length, by_tier: byTier,
+        stats: (await env.KV.get("tg_stats", "json")) || { sent: 0, msgs: 0 }, queued: (q.items || []).length, queue_ts: q.built ? q.built * 1000 : null },
+        lineups: { watched: (w.list || []).length, stored: lus.keys.length } });
     }
     // pause volontaire (jeu responsable) : 1, 7 ou 30 jours, impossible à raccourcir une fois lancée
     if (p === "/api/pause" && req.method === "POST") {

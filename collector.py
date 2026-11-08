@@ -587,7 +587,7 @@ def st_match(link):
 
 
 def collect_sportytrader(events, state, max_pages=190):
-    """Va lire les cotes publiques de chaque match des 7 prochains jours, ajoute les bookmakers suivis aux matchs
+    """Va lire les cotes publiques de chaque match des 16 prochains jours (trêves internationales comprises), ajoute les bookmakers suivis aux matchs
     connus, et crée les matchs des championnats que la source principale ne couvre pas (même moteur, mêmes analyses)."""
     stc = state.setdefault("sportytrader", {})
     cache = stc.setdefault("m", {})
@@ -610,12 +610,17 @@ def collect_sportytrader(events, state, max_pages=190):
                 if abs(d) <= 14:
                     offs.append(round(d * 4) / 4)
     offs.sort()
-    off = offs[len(offs) // 2] if offs else -1.0
+    # la page s'affiche à l'heure de la côte ouest des États-Unis pour un serveur américain : on part de là,
+    # et on vérifie avec les matchs connus (si l'écart mesuré est net et stable, on le prend)
+    from zoneinfo import ZoneInfo
+    la = datetime.now(ZoneInfo("America/Los_Angeles")).utcoffset().total_seconds() / -3600
+    med = offs[len(offs) // 2] if offs else None
+    off = med if med is not None and len(offs) >= 6 and sum(1 for o in offs if o == med) >= 0.7 * len(offs) else la
     known_ids = {e["id"] for e in events}
     new_events, n_hit = [], 0
     for sk, link, h, a, t in sorted(listing, key=lambda x: x[4]):
         start = (t + timedelta(hours=off)).replace(tzinfo=timezone.utc)
-        if not (now - timedelta(hours=2) < start < now + timedelta(days=7)):
+        if not (now - timedelta(hours=2) < start < now + timedelta(days=16)):
             continue
         c = cache.get(link)
         if (not c or time.time() - c.get("ts", 0) > 2.5 * 3600) and n_pages < max_pages:
@@ -660,7 +665,7 @@ def collect_sportytrader(events, state, max_pages=190):
     stc["m"] = {k: v for k, v in cache.items() if k in live}
     events.extend(new_events)
     log(f"SportyTrader : {len(listing)} matchs listés, {n_pages} pages lues, {n_hit} cotes (match x bookmaker), "
-        f"{len(new_events)} matchs ajoutés hors source principale, décalage horaire {off:+.2f} h, {errors} erreur(s)")
+        f"{len(new_events)} matchs ajoutés hors source principale, décalage horaire {off:+.2f} h (mesuré {med}), {errors} erreur(s)")
     return n_hit, new_events
 
 

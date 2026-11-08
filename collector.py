@@ -1370,7 +1370,10 @@ def main():
     }
     with open(os.path.join(CACHE, "snapshot.json"), "w", encoding="utf-8") as f:
         json.dump(snap, f)
-    log(f"snapshot : {len(events)} matchs, {len(snap['stats'].get('web', {}))} fiches web")
+    wv = [w.get("v") or {} for w in snap["stats"].get("web", {}).values()]
+    log(f"snapshot : {len(events)} matchs, {len(wv)} fiches web, 5 derniers matchs des 2 équipes : "
+        f"{sum(1 for v in wv if (v.get('form') or {}).get('home') and (v.get('form') or {}).get('away'))}, "
+        f"buteurs/passeurs des 2 équipes : {sum(1 for v in wv if len(v.get('players') or {}) == 2)}")
     for tier in TIERS:
         cf_put("snapshot_" + tier, tier_snapshot(snap, tier))
     try:

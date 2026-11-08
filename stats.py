@@ -384,6 +384,32 @@ class Stats:
                 on_change()
 
     # ---------- recherche web (ESPN, sans clé) ----------
+    def _team_players(self, slug, team_id):
+        """Effectif ESPN d'une équipe avec les stats de la saison : meilleurs buteurs et passeurs (cache 12 h)."""
+        cache = self.data.setdefault("players_cache", {})
+        key = f"{slug}:{team_id}"
+        c = cache.get(key)
+        if c and time.time() - c["ts"] < 12 * 3600:
+            return c["v"]
+        j = self._web_get(f"{ESPN_BASE}/{slug}/teams/{team_id}/roster")
+        rows = []
+        for a in j.get("athletes") or []:
+            st = {}
+            for cat in (((a.get("statistics") or {}).get("splits") or {}).get("categories") or []):
+                for x in cat.get("stats") or []:
+                    st[x.get("name")] = x.get("value") or 0
+            g, ast = int(st.get("totalGoals") or 0), int(st.get("goalAssists") or 0)
+            apps = int(st.get("appearances") or st.get("starts") or 0)
+            if g or ast:
+                rows.append({"n": a.get("displayName") or a.get("fullName") or "", "pos": ((a.get("position") or {}).get("abbreviation") or ""),
+                             "g": g, "a": ast, "m": apps, "sh": int(st.get("shotsOnTarget") or 0),
+                             "inj": bool(a.get("injuries"))})
+        v = {"scorers": sorted([r for r in rows if r["g"]], key=lambda r: (-r["g"], -r["a"]))[:8],
+             "assists": sorted([r for r in rows if r["a"]], key=lambda r: (-r["a"], -r["g"]))[:6],
+             "goals": sum(r["g"] for r in rows)}
+        cache[key] = {"ts": time.time(), "v": v}
+        return v
+
     def _web_get(self, url):
         wait = 1.0 - (time.time() - getattr(self, "_web_last", 0))
         if wait > 0:
@@ -459,7 +485,7 @@ class Stats:
                     mins = (t - now).total_seconds() / 60
                     ttl = 10 * 60 if mins < 120 else (45 * 60 if mins < 24 * 60 else 3 * 3600)
                     cur = web.get(ev["id"])
-                    if cur and time.time() - cur["ts"] < ttl and (cur.get("v") or {}).get("fmt") == 3:
+                    if cur and time.time() - cur["ts"] < ttl and (cur.get("v") or {}).get("fmt") == 4:
                         continue
                     try:
                         j = self._web_get(f"{ESPN_BASE}/{slug}/summary?event={m['id']}")
@@ -468,7 +494,7 @@ class Stats:
                         errors.append(f"recherche web : {e}")
                         continue
                     parsed = self._parse_summary(j)
-                    parsed["fmt"] = 3  # format ESPN « lastFiveGames » : les anciennes fiches sont refaites
+                    parsed["fmt"] = 4  # forme lue au bon endroit + buteurs/passeurs : les anciennes fiches sont refaites
                     try:
                         parsed["stakes"] = season_stakes(parsed.get("table_all") or [], parsed.get("team_ids") or {}, slug)
                     except Exception:
@@ -477,6 +503,11 @@ class Stats:
                         parsed["weather"] = self._weather(parsed.get("venue") or {}, t)
                     except Exception:
                         parsed["weather"] = None
+                    try:  # buteurs et passeurs de la saison (effectif ESPN avec les stats de chaque joueur)
+                        tids = parsed.get("team_ids") or {}
+                        parsed["players"] = {side: self._team_players(slug, tids[side]) for side in ("home", "away") if tids.get(side)}
+                    except Exception:
+                        parsed["players"] = {}
                     if not parsed.get("lineups"):
                         try:
                             parsed["last_xi"] = self._last_xi(slug, parsed)
@@ -588,7 +619,7 @@ class Stats:
         # forme récente, face-à-face et classement (ESPN, sans clé)
         out["form"] = {}
         bx = j.get("boxscore") or {}
-        for blk in (bx.get("lastFiveGames") or bx.get("form") or []):  # ESPN : « lastFiveGames » (ancien nom : « form »)
+        for blk in (j.get("lastFiveGames") or bx.get("lastFiveGames") or bx.get("form") or []):  # ESPN : « lastFiveGames » (en haut du résumé depuis 2026)
             try:
                 tid_ = str((blk.get("team") or {}).get("id"))
                 side = side_by_team.get(tid_)
@@ -1164,6 +1195,8 @@ class Stats:
                 "scored_in": round(sum(g["gf"] > 0 for g in last) / len(last), 2), "src": "ESPN"}
 
     def _fill_from_web(self, r, w):
+        if w.get("players"):
+            r["players"] = w["players"]
         if not r.get("model") and w.get("model"):
             r["model"] = w["model"]
         if w.get("cards"):

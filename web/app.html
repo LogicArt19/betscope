@@ -739,6 +739,13 @@ function formBox(name, f, tbl){
     <div class="flist">${(f.last||[]).map(g => `<div class="fg"><span class="fr ${g.res}">${g.res}</span><div class="fm"><b>${{V:"Victoire",N:"Nul",D:"Défaite"}[g.res]||""} ${esc(g.score)}</b> ${g.home?"contre":"chez"} ${esc(g.opp)}<small>${esc(g.date||"")}${g.comp?" · "+esc(g.comp):""} · ${g.home?"domicile":"extérieur"}</small></div></div>`).join("")}</div>
     <p class="note" style="margin-top:10px">${esc(f.streak_txt||"")}${f.home_rec?` · domicile ${esc(f.home_rec)} · extérieur ${esc(f.away_rec)}`:""}</p></div>`;
 }
+function playersBox(name, p){
+  if (!p || (!(p.scorers||[]).length && !(p.assists||[]).length)) return `<div class="panel box"><h3>${esc(name)}</h3><p class="note">Pas encore de stats de joueurs pour cette équipe.</p></div>`;
+  const row = (x, main) => `<div class="fg"><span class="fr ${main==="g"?"V":"N"}" style="min-width:28px">${main==="g"?x.g:x.a}</span><div class="fm"><b>${esc(x.n)}</b>${x.inj?' <span class="pill bad">blessé</span>':""}<small>${esc(x.pos||"")}${x.m?` · ${x.m} matchs`:""} · ${x.g} but${x.g>1?"s":""} · ${x.a} passe${x.a>1?"s":""} déc.</small></div></div>`;
+  return `<div class="panel box"><h3>${esc(name)}${p.goals?` <span class="pill">${p.goals} buts</span>`:""}</h3>
+    <p class="note" style="margin-bottom:6px"><b>Buteurs</b></p><div class="flist">${(p.scorers||[]).slice(0,5).map(x => row(x, "g")).join("") || '<p class="note">–</p>'}</div>
+    <p class="note" style="margin:10px 0 6px"><b>Passeurs décisifs</b></p><div class="flist">${(p.assists||[]).slice(0,4).map(x => row(x, "a")).join("") || '<p class="note">–</p>'}</div></div>`;
+}
 const injList = l => (l && l.length) ? `<ul class="args">${l.map(i => `<li>${esc(i.player)} <span class="pill ${i.type==="out"?"bad":"warn"}">${esc(i.status||i.type||"")}</span> <span class="note">${esc(i.reason||"")}</span></li>`).join("")}</ul>` : `<p class="note">Aucun absent signalé.</p>`;
 /* ---------- mini terrain ---------- */
 function plDepth(p){
@@ -847,7 +854,8 @@ function statsCompare(e, i){
 }
 function tabEquipes(e, i){
   const top = `<h2 class="s" style="margin-top:0">Statistiques comparées</h2>${statsCompare(e, i)}
-    <h2 class="s">Forme récente</h2><div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}</div>`;
+    <h2 class="s">Forme récente</h2><div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}</div>
+    <h2 class="s">Buteurs et passeurs décisifs (saison)</h2><div class="grid2">${playersBox(e.home, (i.players||{}).home)}${playersBox(e.away, (i.players||{}).away)}</div>`;
   if (rank() < 2) return top + lockBox("pro", "Absents et compositions sur le terrain", "Les blessés et suspendus pondérés par leur importance, et les compos placées sur un mini terrain.");
   return top + `<h2 class="s">Compositions</h2>${lineupsBlock(e, i)}
     <h2 class="s">Absents</h2><div class="grid2">

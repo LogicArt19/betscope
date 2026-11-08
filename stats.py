@@ -451,9 +451,9 @@ class Stats:
                     continue
                 # calendrier ESPN sur la période (1 requête / ligue / 3 h)
                 c = board.get(slug)
-                if not c or time.time() - c["ts"] > 3 * 3600:
+                days = sorted({(t.astimezone(timezone.utc)).strftime("%Y%m%d") for t, _ in lst})
+                if not c or time.time() - c["ts"] > 3 * 3600 or not set(days) <= set(c.get("days") or []):
                     # ESPN n'accepte qu'un jour par requête -> 1 requête par jour de match
-                    days = sorted({(t.astimezone(timezone.utc)).strftime("%Y%m%d") for t, _ in lst})
                     evs, ok = [], False
                     for day in days:
                         try:
@@ -476,7 +476,7 @@ class Stats:
                     if not ok:
                         errors.append(err)
                         continue
-                    board[slug] = c = {"ts": time.time(), "list": evs}
+                    board[slug] = c = {"ts": time.time(), "list": evs, "days": days}
                 # détail de chaque match : plus souvent quand le match approche (compos ~1 h avant)
                 for t, ev in sorted(lst, key=lambda x: x[0]):
                     m = self._match_one(ev, c["list"])

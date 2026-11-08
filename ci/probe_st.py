@@ -1,14 +1,10 @@
-import re, sys, html
+import re, sys
 sys.path.insert(0, "ci")
 from probe_books import get  # noqa
-st, body = get("https://www.sportytrader.com/cotes/football/france/ligue-1-123/")
-links = sorted(set(re.findall(r'href="(https://www\.sportytrader\.com/cotes/[^"]+)"', body)) | set("https://www.sportytrader.com" + x for x in re.findall(r'href="(/cotes/[^"]+)"', body)))
-print("LINKS", len(links)); [print("  L", l) for l in links[:40]]
-def text(b): return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " | ", re.sub(r"<(script|style)[^>]*>.*?</\1>", "", b, flags=re.S))))
-t = text(body); i = t.find("Betclic"); print("LISTTEXT", t[max(0,i-1500):i+1500])
-cand = [l for l in links if l.count("/") >= 8 or re.search(r"-\d+/$", l) and "ligue-1-123" not in l]
-for l in cand[:2]:
-    st, b = get(l); t = text(b)
-    print("MATCH", l, st, len(b), {n: b.lower().count(n) for n in ("betclic", "winamax", "unibet", "bet365", "pmu", "parions")})
-    j = t.find("Betclic"); print("MTEXT", t[max(0, j-800):j+3500])
-    print("JSONLD", re.findall(r'application/ld\+json">(.{0,600})', b)[:2])
+st, b = get("https://www.sportytrader.com/cotes/angers-sco-nice-8532712/")
+print("SIZE", len(b))
+for m in re.finditer(r"window\.(__\w+)\s*=", b): print("WIN", m.group(1), b[m.end():m.end()+200].replace("\n"," "))
+for kw in ("Plus de 2", "Les deux équipes", "Double chance", "data-odd", "x-data", "wire:", "market"):
+    i = b.find(kw); print("KW", kw, b.count(kw), re.sub(r"\s+", " ", b[max(0,i-700):i+900]) if i >= 0 else "")
+ws = [m.start() for m in re.finditer("winamax", b.lower())]
+for i in ws[200:202]: print("WIN_OCC", re.sub(r"\s+", " ", b[i-1200:i+600]))

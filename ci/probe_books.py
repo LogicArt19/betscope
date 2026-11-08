@@ -26,6 +26,8 @@ T = {
  "coteur": "https://www.coteur.com/",
  "matchendirect": "https://www.matchendirect.fr/paris-sportifs/",
 }
+if __name__ != "__main__":
+    T = {}
 for k, u in T.items():
     st, body = get(u)
     import os; os.makedirs("dump", exist_ok=True); open(f"dump/{k}.html", "w").write(body)

@@ -45,5 +45,15 @@ for k, u in T.items():
             except Exception as e: info = "state? " + str(e)[:60]
         else: info = "no state"
     elif body:
-        info = f"cotes-like={len(re.findall(r'[>\"\\s]\\d,\\d\\d<', body))} json={body[:1] in '[{'}"
+        low = body.lower()
+        names = {n: low.count(n) for n in ("betclic", "winamax", "unibet", "bet365", "parions", "pmu")}
+        marks = [m for m in ("__NEXT_DATA__", "__NUXT__", "window.__", "application/ld+json", "data-odd", "data-cote", "odds") if m in body]
+        nums = re.findall(r"(?<![\d.,])\d{1,2}[.,]\d{2}(?![\d.,])", body)
+        info = f"names={names} marks={marks} decimals={len(nums)}"
+        for n in ("betclic", "winamax"):
+            for mm in re.finditer(n, low):
+                seg = body[mm.start():mm.start() + 600]
+                if re.search(r"\d[.,]\d\d", seg):
+                    print("   SNIP", k, n, re.sub(r"\s+", " ", body[max(0, mm.start() - 300):mm.start() + 500])[:800])
+                    break
     print(f"{k:14s} {st} size={len(body)} {info}")

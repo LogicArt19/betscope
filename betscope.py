@@ -122,8 +122,10 @@ def server_call(path, license_key, method="GET", body=None, timeout=40):
 # Configuration
 # --------------------------------------------------------------------------
 
-SPORTS = {  # foot + NBA
+SPORTS = {  # foot + NBA + tennis
     "basketball_nba": "NBA",
+    "tennis_atp": "Tennis ATP",
+    "tennis_wta": "Tennis WTA",
     "soccer_france_ligue_one": "Ligue 1",
     "soccer_france_ligue_two": "Ligue 2",
     "soccer_epl": "Premier League",
@@ -582,7 +584,7 @@ def parse_time(s):
 
 
 def selection_label(mkey, name, point, home, away, sport_key):
-    unit = "buts" if sport_key.startswith("soccer") else "pts"
+    unit = "buts" if sport_key.startswith("soccer") else ("jeux" if sport_key.startswith("tennis") else "pts")
     if mkey == "h2h":
         if name == "Draw":
             return "Match nul"
@@ -954,7 +956,7 @@ def analyze(events, cfg, now=None, info=None):
                         po = modelmod.p_over(mdl, float(a["point"]))
                         p_model = po if a["name"] == "Over" else (1 - po if po is not None else None)
                 w_eff = analysis_weight(w_stats, st)
-                if sport_key.startswith("basketball"):  # pas de modèle de buts ni de nul : la proba vient des cotes
+                if not sport_key.startswith("soccer"):  # pas de modèle de buts ni de nul : la proba vient des cotes
                     p_model, w_eff = None, 0.0
                 elif p_model is None and st:
                     # pas de modèle saison (pas de clé) : on utilise quand même la forme récente + face-à-face
@@ -963,7 +965,7 @@ def analyze(events, cfg, now=None, info=None):
                 if p_model is not None and 0 < w_eff <= 0.6:
                     p = (1 - w_eff) * p_market + w_eff * p_model
                 stat_sum = analyse_points(st, side, a["name"], a["point"], mkey, p_market, p_model, home, away) \
-                    if st and not sport_key.startswith("basketball") else None
+                    if st and sport_key.startswith("soccer") else None
                 playable = {k: v for k, v in a["prices"].items()
                             if (k in allowed if allowed else k not in EXCHANGES)}
                 if not playable:
@@ -1109,7 +1111,8 @@ WORST_EV = -0.09  # au-delà, la cote est vraiment mauvaise : jamais proposée
 
 
 def sport_family(sport_key):
-    return "nba" if str(sport_key).startswith("basketball") else "foot"
+    k = str(sport_key)
+    return "nba" if k.startswith("basketball") else ("tennis" if k.startswith("tennis") else "foot")
 
 
 def market_duo(ev):
@@ -2801,7 +2804,7 @@ class Api:
 
     def set_sport(self, mode):
         """Onglet Foot ou NBA : tout l'affichage (matchs, pronostics, Objectif) suit ce choix."""
-        mode = "nba" if mode == "nba" else "foot"
+        mode = mode if mode in ("nba", "tennis") else "foot"
         if mode != self._sport_mode():
             self._sport = mode
             self._reanalyze()
@@ -2834,7 +2837,7 @@ class Api:
                     return h2h.get(name)
                 trio = [g(f"Victoire {home}"), g("Match nul"), g(f"Victoire {away}")]
                 probs = [round(t["p"], 4) if t else None for t in trio]
-                if sport_family(ev.get("sport_key", "")) == "nba":  # pas de match nul au basket
+                if sport_family(ev.get("sport_key", "")) in ("nba", "tennis"):  # pas de match nul
                     probs = [probs[0], 0.0, probs[2]] if probs[0] is not None and probs[2] is not None else (market_duo(ev) or probs)
                     trio[1] = None
                 elif None in probs:  # ton bookmaker n'a pas (encore) ce match : vraies chances du marché quand même
@@ -2844,7 +2847,7 @@ class Api:
                 fh, fa = st.get("form_home") or {}, st.get("form_away") or {}
                 loc = start.astimezone()
                 out.append({
-                    "id": eid, "sport_key": ev.get("sport_key"), "league": SPORTS.get(ev.get("sport_key"), ev.get("sport_title", "")),
+                    "id": eid, "sport_key": ev.get("sport_key"), "league": (ev.get("sport_title") if str(ev.get("sport_key", "")).startswith("tennis") and ev.get("sport_title") else SPORTS.get(ev.get("sport_key"), ev.get("sport_title", ""))),
                     "home": home, "away": away, "ts": start.timestamp(), "day": loc.date().isoformat(),
                     "time": loc.strftime("%H:%M"), "date": fmt_date(start), "round": st.get("round_label", ""),
                     "probs": probs, "odds": odds, "n_bets": len(sel),

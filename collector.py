@@ -528,7 +528,7 @@ def html_unescape(x):
     return _h.unescape(x)
 
 
-def st_match(link, basket=False):
+def st_match(link, basket=False, tennis=False):
     """Page d'un match -> {book_key: {'h','d','a','tot25','extra'}} pour les bookmakers suivis."""
     b_ = _st_compact(_st_get(link))
     secs = [(m.start(), m.group(1)) for m in re.finditer(r'\sid="([A-Z_]+)"', b_)]
@@ -546,7 +546,13 @@ def st_match(link, basket=False):
         end = heads[i + 1].start() if i + 1 < len(heads) else len(b_)
         block = b_[hm.end():end]
         kind = None
-        if basket:
+        if tennis:
+            if sec == "RESULT" and cols == ["1", "2"] and "vainqueur" in mname:
+                kind = "h2h2"
+            elif sec == "UNDER_OVER" and len(cols) == 2 and re.fullmatch(r"-\d{2}\.5", cols[0]) and cols[1] == "+" + cols[0][1:] \
+                    and "set" not in mname:
+                kind = "tot"
+        elif basket:
             if sec == "RESULT" and cols == ["1", "2"] and "vainqueur" in mname:
                 kind = "h2h2"
             elif sec == "UNDER_OVER" and len(cols) == 2 and re.fullmatch(r"-\d{2,3}\.5", cols[0]) and cols[1] == "+" + cols[0][1:]:
@@ -576,7 +582,7 @@ def st_match(link, basket=False):
                 r["h"], r["d"], r["a"] = odds
             elif kind == "h2h2":
                 r["h"], r["a"] = odds
-            elif kind == "tot" and basket:
+            elif kind == "tot" and (basket or tennis):
                 r.setdefault("totals", {})[float(cols[1][1:])] = {"Under": odds[0], "Over": odds[1]}
             elif kind == "dc":
                 for c, o in zip(cols, odds):
@@ -603,10 +609,23 @@ def collect_sportytrader(events, state, max_pages=190):
     cache = stc.setdefault("m", {})
     now = datetime.now(timezone.utc)
     listing, n_pages, errors = [], 0, 0
-    for sk, path in ST_LEAGUES.items():
+    leagues, tour_title, link_title = list(ST_LEAGUES.items()), {}, {}
+    try:  # tennis : les tournois changent chaque semaine -> on lit la liste du moment (ATP et WTA)
+        tp = _st_get("/cotes/tennis/")
+        for path in sorted(set(re.findall(r'href="(?:https://www\.sportytrader\.com)?/cotes/(tennis/(?:atp|wta)[a-z0-9-]*/[a-z0-9-]+-\d+)/"', tp))):
+            if "qualif" in path or "double" in path:
+                continue
+            leagues.append(("tennis_wta" if "/wta" in path else "tennis_atp", path))
+            nm = re.sub(r"-\d+$", "", path.rsplit("/", 1)[-1]).split("-")
+            tour_title[path] = ("WTA " if "/wta" in path else "ATP ") + " ".join(w.capitalize() for w in nm)
+    except Exception as e:
+        log("SportyTrader (tennis) :", str(e)[:80])
+    for sk, path in leagues:
         try:
             for link, h, a, t in st_list(path):
                 listing.append((sk, link, h, a, t))
+                if path in tour_title:
+                    link_title[link] = tour_title[path]
         except Exception as e:
             errors += 1
             log(f"SportyTrader ({b.SPORTS.get(sk, sk)}) :", str(e)[:80])
@@ -635,7 +654,7 @@ def collect_sportytrader(events, state, max_pages=190):
         c = cache.get(link)
         if (not c or time.time() - c.get("ts", 0) > 2.5 * 3600) and n_pages < max_pages:
             try:
-                c = cache[link] = {"ts": time.time(), "books": st_match(link, basket=sk.startswith("basketball"))}
+                c = cache[link] = {"ts": time.time(), "books": st_match(link, basket=sk.startswith("basketball"), tennis=sk.startswith("tennis"))}
                 n_pages += 1
             except Exception as e:
                 errors += 1
@@ -652,7 +671,7 @@ def collect_sportytrader(events, state, max_pages=190):
             eid = "st" + link.rstrip("/").rsplit("-", 1)[-1]
             if eid in known_ids:
                 continue
-            ev = {"id": eid, "sport_key": sk, "sport_title": b.SPORTS.get(sk, sk), "home_team": h, "away_team": a,
+            ev = {"id": eid, "sport_key": sk, "sport_title": link_title.get(link) or b.SPORTS.get(sk, sk), "home_team": h, "away_team": a,
                   "commence_time": start.strftime("%Y-%m-%dT%H:%M:%SZ"), "bookmakers": [], "_source": "sportytrader"}
             new_events.append(ev)
         real_all = dict(ev.get("_real_all") or {})
@@ -1395,6 +1414,9 @@ def main():
     log(f"NBA : {len(nba)} matchs, {sum(1 for e in nba if len(e.get('bookmakers') or []) >= 2)} avec au moins 2 bookmakers, "
         f"derniers matchs des 2 équipes : {sum(1 for v in nv if (v.get('form') or {}).get('home') and (v.get('form') or {}).get('away'))}, "
         f"blessés vérifiés : {sum(1 for v in nv if v)}")
+    ten = [e for e in events if e["sport_key"].startswith("tennis")]
+    log(f"Tennis : {len(ten)} matchs ({', '.join(sorted({e.get('sport_title', '') for e in ten}))}), "
+        f"{sum(1 for e in ten if len(e.get('bookmakers') or []) >= 2)} avec au moins 2 bookmakers")
     for tier in TIERS:
         cf_put("snapshot_" + tier, tier_snapshot(snap, tier))
     try:

@@ -469,6 +469,198 @@ def collect_oddspapi(events, state):
     return n
 
 
+
+# ---------------------------------------------------------------------------
+# Comparateur de cotes public (SportyTrader) : vraies cotes de Betclic, Winamax, Unibet (FDJ) et Bet365, tous les
+# types de paris utiles (1N2, double chance, remboursé si nul, plus/moins 0,5 à 4,5, les 2 marquent), lues
+# directement sur les pages publiques. Gratuit, sans clé, pour tous les championnats couverts.
+ST_BASE = "https://www.sportytrader.com"
+ST_LEAGUES = {
+    "soccer_france_ligue_one": "football/france/ligue-1-123", "soccer_france_ligue_two": "football/france/ligue-2-124",
+    "soccer_epl": "football/angleterre/premier-league-49", "soccer_spain_la_liga": "football/espagne/laliga-108",
+    "soccer_italy_serie_a": "football/italie/serie-a-79", "soccer_germany_bundesliga": "football/allemagne/bundesliga-65",
+    "soccer_uefa_champs_league": "football/europe/ligue-des-champions-8", "soccer_uefa_europa_league": "football/europe/ligue-europa-481",
+    "soccer_uefa_europa_conference_league": "football/europe/europa-conference-league-139206",
+    "soccer_netherlands_eredivisie": "football/pays-bas/eredivisie-72", "soccer_portugal_primeira_liga": "football/portugal/primeira-liga-101",
+    "soccer_belgium_first_div": "football/belgique/division-1a-32", "soccer_turkey_super_league": "football/turquie/super-lig-121",
+}
+ST_BOOKS = {"betclic": ("betclic_fr", "Betclic"), "winamax": ("winamax_fr", "Winamax"),
+            "unibet": ("unibet_fr", "Unibet (FDJ)"), "bet365": ("bet365", "Bet365")}
+ST_MONTHS = {"janv": 1, "févr": 2, "fevr": 2, "mars": 3, "avr": 4, "mai": 5, "juin": 6, "juil": 7, "août": 8, "aout": 8,
+             "sept": 9, "oct": 10, "nov": 11, "déc": 12, "dec": 12}
+_ST_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+          "Accept-Language": "fr-FR,fr;q=0.9"}
+
+
+def _st_get(path):
+    req = urllib.request.Request(ST_BASE + path, headers=_ST_UA)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        raw = r.read()
+        if r.headers.get("Content-Encoding") == "gzip":
+            raw = gzip.decompress(raw)
+    return raw.decode("utf-8", "replace")
+
+
+def _st_compact(x):
+    x = re.sub(r"<svg.*?</svg>", "", x, flags=re.S)
+    x = re.sub(r'\s(class|width|height|loading|rel|target|style|onclick|x-[\w-]+|@[\w.-]+|:[\w-]+|data-(?!panel-key)[\w-]+)="[^"]*"', "", x)
+    return re.sub(r"\s+", " ", x)
+
+
+def st_list(path):
+    """Page d'un championnat -> [(lien, 'Équipe A', 'Équipe B', datetime naïve affichée)]."""
+    page = _st_get(f"/cotes/{path}/")
+    out, now = [], datetime.now()
+    for m in re.finditer(r'<span[^>]*>\s*(\d{1,2}) ([a-zéû]+)\.? - (\d{1,2}):(\d{2})\s*</span>\s*<span[^>]*>\s*<a href="(/cotes/[a-z0-9-]+-\d+/)"[^>]*>\s*([^<]+?)\s*</a>', page):
+        d, mon, hh, mm, link, name = m.groups()
+        mo = ST_MONTHS.get(mon[:4].rstrip(".")) or ST_MONTHS.get(mon[:3])
+        if not mo or " - " not in name:
+            continue
+        y = now.year + (1 if mo < now.month - 6 else 0)
+        h, a = [html_unescape(x.strip()) for x in name.split(" - ", 1)]
+        out.append((link, h, a, datetime(y, mo, int(d), int(hh), int(mm))))
+    return out
+
+
+def html_unescape(x):
+    import html as _h
+    return _h.unescape(x)
+
+
+def st_match(link):
+    """Page d'un match -> {book_key: {'h','d','a','tot25','extra'}} pour les bookmakers suivis."""
+    b_ = _st_compact(_st_get(link))
+    secs = [(m.start(), m.group(1)) for m in re.finditer(r'\sid="([A-Z_]+)"', b_)]
+    res = {}
+    heads = list(re.finditer(r"<span> Bookmaker </span>((?: <span>[^<]*</span>)+?) <span> Bonus </span>", b_))
+    for i, hm in enumerate(heads):
+        sec = next((sname for pos, sname in reversed(secs) if pos < hm.start()), "")
+        if sec not in ("RESULT", "UNDER_OVER", "GOAL"):
+            continue
+        cols = [c.strip() for c in re.findall(r"<span>([^<]*)</span>", hm.group(1))]
+        before = b_[max(0, hm.start() - 400):hm.start()]
+        names = re.findall(r"<span\s*>([^<]{2,80})</span>", before)
+        mname = (names[-1] if names else "").strip().lower()
+        pk = re.findall(r'data-panel-key="([A-Z_0-9]+)"', before)
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(b_)
+        block = b_[hm.end():end]
+        kind = None
+        if sec == "RESULT" and cols == ["1", "N", "2"] and "vainqueur" in mname and "mi-temps" not in mname:
+            kind = "h2h"
+        elif sec == "RESULT" and [c.upper() for c in cols] in (["1N", "12", "N2"], ["1X", "12", "X2"]):
+            kind = "dc"
+        elif sec == "RESULT" and cols == ["1", "2"] and ("rembours" in mname or "nul" in mname):
+            kind = "dnb"
+        elif sec == "GOAL" and cols == ["Oui", "Non"] and "2 équipes" in mname and "mi-temps" not in mname:
+            kind = "btts"
+        elif sec == "UNDER_OVER" and len(cols) == 2 and re.fullmatch(r"-\d\.5", cols[0]) and cols[1] == "+" + cols[0][1:] \
+                and (not pk or pk[-1].startswith("UNDER_OVER_")):
+            kind = "tot"
+        if not kind:
+            continue
+        for row in block.split('<a href="/book/')[1:]:
+            bk = row.split("/", 1)[0]
+            if bk not in ST_BOOKS:
+                continue
+            odds = [float(x) for x in re.findall(r"<span\s*>\s*(\d{1,3}\.\d{1,2})\s*</span>", row)][:len(cols)]
+            if len(odds) != len(cols) or min(odds) <= 1.0:
+                continue
+            r = res.setdefault(bk, {"extra": {}, "tot25": None})
+            if kind == "h2h":
+                r["h"], r["d"], r["a"] = odds
+            elif kind == "dc":
+                r["extra"].update(dc1N=odds[0], dc12=odds[1], dcN2=odds[2])
+            elif kind == "dnb":
+                r["extra"].update(dnb1=odds[0], dnb2=odds[1])
+            elif kind == "btts":
+                r["extra"].update(bttsY=odds[0], bttsN=odds[1])
+            else:
+                ln = float(cols[1][1:])
+                if ln == 2.5:
+                    r["tot25"] = {"Under": odds[0], "Over": odds[1]}
+                else:
+                    r["extra"].update({f"u{ln:g}": odds[0], f"o{ln:g}": odds[1]})
+    return {k: v for k, v in res.items() if v.get("h")}
+
+
+def collect_sportytrader(events, state, max_pages=130):
+    """Va lire les cotes publiques de chaque match des 3 prochains jours, ajoute les bookmakers suivis aux matchs
+    connus, et crée les matchs des championnats que la source principale ne couvre pas (même moteur, mêmes analyses)."""
+    stc = state.setdefault("sportytrader", {})
+    cache = stc.setdefault("m", {})
+    now = datetime.now(timezone.utc)
+    listing, n_pages, errors = [], 0, 0
+    for sk, path in ST_LEAGUES.items():
+        try:
+            for link, h, a, t in st_list(path):
+                listing.append((sk, link, h, a, t))
+        except Exception as e:
+            errors += 1
+            log(f"SportyTrader ({b.SPORTS.get(sk, sk)}) :", str(e)[:80])
+        time.sleep(0.6)
+    # décalage horaire de la page (calculé sur les matchs connus, sinon heure de Paris)
+    offs = []
+    for sk, link, h, a, t in listing:
+        for e in events:
+            if e.get("sport_key") == sk and _best_team(e["home_team"], [h]) and _best_team(e["away_team"], [a]):
+                d = (b.parse_time(e["commence_time"]).replace(tzinfo=None) - t).total_seconds() / 3600
+                if abs(d) <= 14:
+                    offs.append(round(d * 4) / 4)
+    offs.sort()
+    off = offs[len(offs) // 2] if offs else -1.0
+    known_ids = {e["id"] for e in events}
+    new_events, n_hit = [], 0
+    for sk, link, h, a, t in sorted(listing, key=lambda x: x[4]):
+        start = (t + timedelta(hours=off)).replace(tzinfo=timezone.utc)
+        if not (now - timedelta(hours=2) < start < now + timedelta(hours=72)):
+            continue
+        c = cache.get(link)
+        if (not c or time.time() - c.get("ts", 0) > 2.5 * 3600) and n_pages < max_pages:
+            try:
+                c = cache[link] = {"ts": time.time(), "books": st_match(link)}
+                n_pages += 1
+            except Exception as e:
+                errors += 1
+                if errors <= 5:
+                    log("SportyTrader (match) :", str(e)[:80])
+            time.sleep(0.8)
+        if not c or not c.get("books"):
+            continue
+        ev = next((e for e in events if e.get("sport_key") == sk and abs((b.parse_time(e["commence_time"]) - start).total_seconds()) <= 6 * 3600
+                   and _best_team(e["home_team"], [h]) and _best_team(e["away_team"], [a])), None)
+        if ev is None:
+            ev = next((e for e in new_events if e["id"] == "st" + link.rstrip("/").rsplit("-", 1)[-1]), None)
+        if ev is None:
+            eid = "st" + link.rstrip("/").rsplit("-", 1)[-1]
+            if eid in known_ids:
+                continue
+            ev = {"id": eid, "sport_key": sk, "sport_title": b.SPORTS.get(sk, sk), "home_team": h, "away_team": a,
+                  "commence_time": start.strftime("%Y-%m-%dT%H:%M:%SZ"), "bookmakers": [], "_source": "sportytrader"}
+            new_events.append(ev)
+        real_all = dict(ev.get("_real_all") or {})
+        for bk, hit in c["books"].items():
+            key, title = ST_BOOKS[bk]
+            mkts = [{"key": "h2h", "outcomes": [{"name": ev["home_team"], "price": hit["h"]}, {"name": ev["away_team"], "price": hit["a"]},
+                                                {"name": "Draw", "price": hit["d"]}]}]
+            if hit.get("tot25") and len(hit["tot25"]) == 2:
+                mkts.append({"key": "totals", "outcomes": [{"name": "Over", "price": hit["tot25"]["Over"], "point": 2.5},
+                                                           {"name": "Under", "price": hit["tot25"]["Under"], "point": 2.5}]})
+            ev["bookmakers"] = [x for x in ev.get("bookmakers", []) if x.get("key") != key]
+            ev["bookmakers"].append({"key": key, "title": title, "markets": mkts, "_ts": c["ts"],
+                                     "last_update": datetime.fromtimestamp(c["ts"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+            for lab, pr in hit["extra"].items():
+                real_all.setdefault(lab, {})[key] = [pr, title]
+            n_hit += 1
+        if real_all:
+            ev["_real_all"] = real_all
+    live = {x[1] for x in listing}
+    stc["m"] = {k: v for k, v in cache.items() if k in live}
+    events.extend(new_events)
+    log(f"SportyTrader : {len(listing)} matchs listés, {n_pages} pages lues, {n_hit} cotes (match x bookmaker), "
+        f"{len(new_events)} matchs ajoutés hors source principale, décalage horaire {off:+.2f} h, {errors} erreur(s)")
+    return n_hit, new_events
+
+
 def self_test(snap):
     """Auto-test : fait tourner le vrai moteur sur les vraies données (comme l'appli d'un abonné Pro) et écrit
     dans le journal ce qu'un client verrait, bookmaker par bookmaker."""
@@ -1062,6 +1254,12 @@ def main():
         collect_oddspapi(events, state)
     except Exception as e:
         log("OddsPapi :", e)
+    try:  # en dernier : ses cotes sont les plus récentes et couvrent Betclic
+        _, added = collect_sportytrader(events, state)
+        if added:
+            st.update_web(sorted({e["sport_key"] for e in added}), added)
+    except Exception as e:
+        log("SportyTrader :", e)
     try:
         n = publish_lineup_watch(events, st)
         log("surveillance des compos :", n, "matchs dans les 36 h")
@@ -1085,7 +1283,7 @@ def main():
 
     keep = ("fixtures", "results", "standings", "scorers", "h2h", "web", "inj_day", "pred", "lineups")
     snap = {
-        "ts": state.get("odds_ts", 0), "built": time.time(), "sports": SPORTS,
+        "ts": state.get("odds_ts", 0), "built": time.time(), "sports": sorted(set(SPORTS) | {e["sport_key"] for e in events}),
         "events": events, "quota": state.get("quota"), "stats": {k: st.data.get(k, {}) for k in keep},
         "scores": state["scores"], "app_version": b.APP_VERSION,
     }

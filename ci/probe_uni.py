@@ -11,5 +11,5 @@ for x in lds:
     try: d = json.loads(x); print("OK", type(d).__name__, len(d) if isinstance(d, list) else list(d)[:3])
     except Exception as e: print("ERR", e, x[max(0, e.pos-60):e.pos+60] if hasattr(e, "pos") else "")
 blks = page.split("<psel-event-main")[1:]; print("BLKS", len(blks))
-if blks: print("B0", re.findall(r'href="([^"]+)"', blks[0])[:3], re.findall(r"<span>(\d{1,3},\d{2})</span>", blks[0][:6000])[:4])
+if blks: print("B0", re.findall(r'href="([^"]+)"', blks[0])[:3], re.findall(r"<span[^>]*>\s*(\d{1,3},\d{2})\s*</span>", blks[0][:8000])[:4])
 C.collect_unibet([])

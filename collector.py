@@ -703,7 +703,7 @@ def collect_unibet(events):
             m = re.search(r'href="(/paris-football/[^"#]+)"', blk)
             if not m or m.group(1) not in meta:
                 continue
-            odds = [float(x.replace(",", ".")) for x in re.findall(r"<span>(\d{1,3},\d{2})</span>", blk[:6000])][:3]
+            odds = [float(x.replace(",", ".")) for x in re.findall(r"<span[^>]*>\s*(\d{1,3},\d{2})\s*</span>", blk[:8000])][:3]
             it = meta[m.group(1)]
             try:
                 start = datetime.fromisoformat(it["startDate"][:19]).replace(tzinfo=paris).astimezone(timezone.utc)

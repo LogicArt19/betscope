@@ -586,8 +586,8 @@ def st_match(link):
     return {k: v for k, v in res.items() if v.get("h")}
 
 
-def collect_sportytrader(events, state, max_pages=130):
-    """Va lire les cotes publiques de chaque match des 3 prochains jours, ajoute les bookmakers suivis aux matchs
+def collect_sportytrader(events, state, max_pages=190):
+    """Va lire les cotes publiques de chaque match des 7 prochains jours, ajoute les bookmakers suivis aux matchs
     connus, et crée les matchs des championnats que la source principale ne couvre pas (même moteur, mêmes analyses)."""
     stc = state.setdefault("sportytrader", {})
     cache = stc.setdefault("m", {})
@@ -615,7 +615,7 @@ def collect_sportytrader(events, state, max_pages=130):
     new_events, n_hit = [], 0
     for sk, link, h, a, t in sorted(listing, key=lambda x: x[4]):
         start = (t + timedelta(hours=off)).replace(tzinfo=timezone.utc)
-        if not (now - timedelta(hours=2) < start < now + timedelta(hours=72)):
+        if not (now - timedelta(hours=2) < start < now + timedelta(days=7)):
             continue
         c = cache.get(link)
         if (not c or time.time() - c.get("ts", 0) > 2.5 * 3600) and n_pages < max_pages:

@@ -1,7 +1,7 @@
 import sys, os, re, json, urllib.request
 sys.path.insert(0, os.getcwd())
 import collector as C
-for path in ("/cotes/basketball/usa/nba-306/", "/cotes/basketball/", "/cotes/basketball/etats-unis/nba-306/"):
+for path in ("/cotes/basket/usa/nba-306/", "/cotes/basket-ball/usa/nba-306/", "/cotes/basket/etats-unis/nba-306/", "/cotes/basket/"):
     try:
         p = C._st_get(path); links = sorted(set(re.findall(r'href="(/cotes/[a-z0-9-]+/)"', p)))
         print("P", path, len(p), [l for l in links if "nba" in l or "basket" in l][:15])

@@ -1108,6 +1108,29 @@ MODES = {
 WORST_EV = -0.09  # au-delà, la cote est vraiment mauvaise : jamais proposée
 
 
+def sport_family(sport_key):
+    return "nba" if str(sport_key).startswith("basketball") else "foot"
+
+
+def market_duo(ev):
+    """NBA : vraies chances des 2 équipes (marges retirées), sans match nul."""
+    home, away = ev.get("home_team"), ev.get("away_team")
+    acc, n = [0.0, 0.0], 0
+    for bk in ev.get("bookmakers", []):
+        for m in bk.get("markets", []):
+            if m.get("key") != "h2h":
+                continue
+            pr = {o.get("name"): o.get("price") for o in m.get("outcomes", [])}
+            try:
+                inv = [1 / pr[home], 1 / pr[away]]
+            except (KeyError, TypeError, ZeroDivisionError):
+                continue
+            t = sum(inv)
+            acc = [acc[0] + inv[0] / t, acc[1] + inv[1] / t]
+            n += 1
+    return [round(acc[0] / n, 4), 0.0, round(acc[1] / n, 4)] if n else None
+
+
 def market_trio(ev):
     """Vraies chances 1N2 du marché (marges retirées, bookmakers précis pondérés), sans dépendre de ton bookmaker."""
     home, away = ev.get("home_team"), ev.get("away_team")
@@ -2671,6 +2694,7 @@ class Api:
                 self._days = day_options(self._events, self._info)
                 hidden = set(cfg.get("hide_sports") or [])
                 events = [e for e in self._events if e.get("sport_key") not in hidden] if hidden else self._events
+                events = [e for e in events if sport_family(e.get("sport_key", "")) == self._sport_mode()]
                 events = filter_events(events, cfg.get("day_filter", "all"), self._info)
                 present = {bk.get("key") for ev in self._events for bk in ev.get("bookmakers", [])}
                 mine = {b.strip().lower() for b in cfg.get("bookmakers", "").split(",") if b.strip()}
@@ -2772,6 +2796,19 @@ class Api:
             return ser_bet(x, self._cfg) if x else None
 
     # ---- appli web : liste des matchs et page d'un match ----
+    def _sport_mode(self):
+        return getattr(self, "_sport", "foot")
+
+    def set_sport(self, mode):
+        """Onglet Foot ou NBA : tout l'affichage (matchs, pronostics, Objectif) suit ce choix."""
+        mode = "nba" if mode == "nba" else "foot"
+        if mode != self._sport_mode():
+            self._sport = mode
+            self._reanalyze()
+        n = sum(1 for e in self._events if sport_family(e.get("sport_key", "")) == mode)
+        return {"sport": mode, "n_events": n,
+                "has_nba": any(sport_family(e.get("sport_key", "")) == "nba" for e in self._events)}
+
     def get_matches(self):
         """Tous les matchs à venir, avec les vraies chances 1N2, la meilleure cote et un résumé."""
         now = datetime.now(timezone.utc)
@@ -2786,7 +2823,7 @@ class Api:
                     start = parse_time(ev["commence_time"])
                 except (KeyError, ValueError):
                     continue
-                if start <= now or ev.get("sport_key") in hidden:
+                if start <= now or ev.get("sport_key") in hidden or sport_family(ev.get("sport_key", "")) != self._sport_mode():
                     continue
                 eid = ev.get("id")
                 sel = by_ev.get(eid, [])
@@ -2797,7 +2834,10 @@ class Api:
                     return h2h.get(name)
                 trio = [g(f"Victoire {home}"), g("Match nul"), g(f"Victoire {away}")]
                 probs = [round(t["p"], 4) if t else None for t in trio]
-                if None in probs:  # ton bookmaker n'a pas (encore) ce match : vraies chances du marché quand même
+                if sport_family(ev.get("sport_key", "")) == "nba":  # pas de match nul au basket
+                    probs = [probs[0], 0.0, probs[2]] if probs[0] is not None and probs[2] is not None else (market_duo(ev) or probs)
+                    trio[1] = None
+                elif None in probs:  # ton bookmaker n'a pas (encore) ce match : vraies chances du marché quand même
                     probs = market_trio(ev) or probs
                 odds = [{"odds": t["odds"], "book": t["book"], "uid": t["uid"]} if t else None for t in trio]
                 best = max(sel, key=lambda z: z["p"] * _trust(z), default=None) if sel else None

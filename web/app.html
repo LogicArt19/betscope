@@ -371,6 +371,10 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
   .lock{flex-wrap:wrap}.lock .btn{margin-left:0}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.sportbar{display:flex;gap:6px;padding:4px;margin:0 0 18px;background:var(--deck);border:1px solid var(--rim);border-radius:14px;width:max-content;max-width:100%}
+.sportbar button{display:flex;align-items:center;gap:8px;padding:9px 18px;border:0;border-radius:10px;background:transparent;color:var(--fog);font:inherit;font-weight:600;font-size:14.5px;cursor:pointer}
+.sportbar button.on{background:var(--chalk);color:var(--night)}
+.odds3.two .ob{flex:1}
 </style>
 </head>
 <body>
@@ -517,6 +521,7 @@ async function boot(){
   gate("loading", {text:"Analyse de tous les matchs…"});
   await new Promise(r => setTimeout(r, 30));
   web.load_snapshot(snapText); nextSnap = Date.now() + 10*60*1000; persist();
+  SPINFO = call("set_sport", SPORT) || {};
   setInterval(tick, 60*1000);
 }
 async function tick(){
@@ -532,6 +537,17 @@ async function tick(){
    État + routes
    ====================================================================== */
 let ST = {}, MATCHES = [], DATA = {picks:[], probable:[], combos:[]}, BSET = new Set(), DAY = null, LEAGUE = "all";
+let SPORT = (() => { try { return localStorage.getItem("cotescope_sport") === "nba" ? "nba" : "foot"; } catch (e) { return "foot"; } })(), SPINFO = {};
+function setSport(m){
+  SPORT = m; try { localStorage.setItem("cotescope_sport", m); } catch (e) {}
+  SPINFO = call("set_sport", m) || {}; DAY = null; LEAGUE = "all"; GLG = ""; GCAT = ""; GMORE = 20;
+  if (typeof GOAL !== "undefined") { GOAL.res = null; GOAL.leagues = null; }
+}
+const SPORT_VIEWS = ["matchs", "picks", "goal", "lab"];
+function sportBar(){
+  const b = (k, ico, l) => `<button class="${SPORT===k?"on":""}" data-sport="${k}">${ico}<span>${l}</span></button>`;
+  return `<div class="sportbar">${b("foot", "⚽", "Foot")}${b("nba", "🏀", "NBA · Basket")}</div>`;
+}
 const tier = () => ST.tier || (ACCOUNT && ACCOUNT.tier) || "elite";
 const rank = () => RANK[tier()] ?? 3;
 function refreshState(){
@@ -568,6 +584,7 @@ function lockBox(need, title, text){
 }
 document.addEventListener("click", e => { if (e.target.closest("[data-plans]")) gate("plans"); });
 
+const isNba = m => String(m.sport_key || "").startsWith("basketball");
 function spec(p, big){
   if (!p || p.some(x => x == null)) return `<div class="spec${big?" big":""}"></div>`;
   return `<div class="spec${big?" big":""}"><i class="h" style="width:${p[0]*100}%"></i><i class="d" style="width:${p[1]*100}%"></i><i class="a" style="width:${p[2]*100}%"></i></div>`;
@@ -606,15 +623,15 @@ function vMatchs(){
     <div class="match" data-go="match" data-arg="${esc(m.id)}">
       <div class="tm">${esc(m.time)}<small>${esc(m.round || "")}</small></div>
       <div class="teams"><div><span class="dot h"></span>${esc(m.home)}${formDots(m.form_home)}</div><div><span class="dot a"></span>${esc(m.away)}${formDots(m.form_away)}</div></div>
-      <div class="sp3">${spec(m.probs)}<div class="specl"><span class="h">${pc(m.probs[0])}</span><span class="d">${pc(m.probs[1])}</span><span class="a">${pc(m.probs[2])}</span></div></div>
-      <div class="odds3">${["1","N","2"].map((l,i) => { const o = m.odds[i]; return o ? `<button class="ob ${BSET.has(o.uid)?"in":""}" data-add="${esc(o.uid)}" title="${esc(book(o.book))}"><small>${l}</small><b>${fr(o.odds)}</b></button>` : `<span class="ob"><small>${l}</small><b>–</b></span>`; }).join("")}</div>
+      <div class="sp3">${spec(m.probs)}<div class="specl"><span class="h">${pc(m.probs[0])}</span>${isNba(m) ? "" : `<span class="d">${pc(m.probs[1])}</span>`}<span class="a">${pc(m.probs[2])}</span></div></div>
+      <div class="odds3${isNba(m) ? " two" : ""}">${(isNba(m) ? [["1",0],["2",2]] : [["1",0],["N",1],["2",2]]).map(([l,i]) => { const o = m.odds[i]; return o ? `<button class="ob ${BSET.has(o.uid)?"in":""}" data-add="${esc(o.uid)}" title="${esc(book(o.book))}"><small>${l}</small><b>${fr(o.odds)}</b></button>` : `<span class="ob"><small>${l}</small><b>–</b></span>`; }).join("")}</div>
       <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
     </div>`;
   const banner = ST.tier === "gratuit" && ACCOUNT ? `<div class="banner">Version gratuite : tous les matchs, pari « résultat du match ». Encore ${daysLeft(ACCOUNT.renews)} jour(s).<button class="btn sm go" data-plans>Voir les forfaits</button></div>` : "";
   return `
     ${banner}
-    <h1 class="t">Matchs</h1>
-    <p class="lead">Les vraies chances de chaque issue, calculées à partir des cotes de 10 bookmakers et de la forme des équipes. Touche une cote pour l'ajouter à ton ticket.</p>
+    <h1 class="t">${SPORT === "nba" ? "Matchs NBA" : "Matchs de foot"}</h1>
+    <p class="lead">${SPORT === "nba" ? "Les vraies chances de victoire de chaque franchise, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365 (prolongations comprises, pas de match nul)." : "Les vraies chances de chaque issue, calculées à partir des cotes de 10 bookmakers et de la forme des équipes."} Touche une cote pour l'ajouter à ton ticket.</p>
     <p class="note fresh">Cotes mises à jour ${ago(Math.max(0, ...MATCHES.filter(m => m.day === DAY).map(m => m.odds_ts || 0)))}. Elles peuvent avoir bougé chez ton bookmaker : tape la vraie cote dans la page du match pour un verdict exact.</p>
     <div class="days">${keys.map(dayChip).join("") || ""}</div>
     ${leagues.length > 1 ? `<div class="chips" style="margin-bottom:6px"><button class="chip ${LEAGUE==="all"?"on":""}" data-lg="all">Tous<b>${MATCHES.filter(m=>m.day===DAY).length}</b></button>${leagues.map(l => `<button class="chip ${LEAGUE===l?"on":""}" data-lg="${esc(l)}">${esc(l)}<b>${MATCHES.filter(m=>m.day===DAY&&m.league===l).length}</b></button>`).join("")}</div>` : ""}
@@ -1162,6 +1179,10 @@ function goalList(r){
     + (opts.length > GMORE ? `<button class="btn ghost" data-gmore style="width:100%;margin:6px 0 12px">Voir ${Math.min(30, opts.length - GMORE)} tickets de plus (${opts.length - GMORE} restants)</button>` : "")
     + (r.locked_more ? lockBox("pro", `${r.locked_more} autre${r.locked_more>1?"s":""} ticket${r.locked_more>1?"s":""} trouvé${r.locked_more>1?"s":""}`, "Toutes les combinaisons qui atteignent ton objectif, classées par chances, avec tri et filtres.") : "");
 }
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-sport]");
+  if (b && b.dataset.sport !== SPORT) { setSport(b.dataset.sport); render(); }
+});
 document.addEventListener("change", e => {
   if (e.target.id === "g-flg") { GLG = e.target.value; GMORE = 20; render(); }
   if (e.target.id === "g-fcat") { GCAT = e.target.value; GMORE = 20; render(); }
@@ -1683,7 +1704,11 @@ function render(){
   const r = route();
   const V = {matchs:vMatchs, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, lab:vLab, ticket:vTicket, bilan:vBilan, compte:vCompte};
   const paused = ACCOUNT && ACCOUNT.pause && ACCOUNT.pause > Date.now();
-  $("#view").innerHTML = paused && ["picks","goal","ticket","lab"].includes(r.v) ? vPaused() : (V[r.v] || vMatchs)();
+  const nbaLocked = SPORT === "nba" && !SPINFO.n_events && rank() < 2;
+  const body = paused && ["picks","goal","ticket","lab"].includes(r.v) ? vPaused()
+    : nbaLocked && SPORT_VIEWS.includes(r.v) ? `<h1 class="t">NBA · Basket</h1>${lockBox("essentiel", "La NBA est incluse dans Essentiel et Pro", "Tous les matchs NBA avec les vraies cotes de Betclic, Winamax, Unibet et Bet365 (vainqueur, total de points), les blessés, le classement et les derniers résultats de chaque franchise.")}`
+    : (V[r.v] || vMatchs)();
+  $("#view").innerHTML = (SPORT_VIEWS.includes(r.v) ? sportBar() : "") + body;
   chrome();
   if (r.v === "compte" && !window.__BRIDGE__) { loadDevices(); loadAdmin(); }
 }

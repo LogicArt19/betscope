@@ -772,6 +772,192 @@ def collect_unibet(events):
     return n
 
 
+
+# ---------------------------------------------------------------------------
+# Tennis : classement ATP/WTA, derniers matchs, série, fatigue, tie-breaks, face-à-face (ESPN, gratuit)
+ESPN_TENNIS = "https://site.api.espn.com/apis/site/v2/sports/tennis"
+
+
+def _tn(name):
+    t = _ud.normalize("NFD", str(name or "")).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z ]", " ", t)).strip()
+
+
+def _espn_json(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 Cotescope"})
+    with urllib.request.urlopen(req, timeout=25) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def tennis_stats(events, st, state):
+    ten = [e for e in events if str(e.get("sport_key", "")).startswith("tennis")]
+    if not ten:
+        return 0
+    tc = state.setdefault("tennis", {"days": {}, "rank": {}, "bio": {}})
+    now = time.time()
+    # 1) classements (toutes les 12 h)
+    for lg in ("atp", "wta"):
+        r = tc["rank"].get(lg)
+        if not r or now - r["ts"] > 12 * 3600:
+            try:
+                j = _espn_json(f"{ESPN_TENNIS}/{lg}/rankings")
+                ranks = {}
+                for x in (j.get("rankings") or [{}])[0].get("ranks", []):
+                    a = x.get("athlete") or {}
+                    ranks[str(a.get("id"))] = {"rank": x.get("current"), "prev": x.get("previous"), "pts": x.get("points"),
+                                               "trend": x.get("trend"), "name": a.get("displayName", "")}
+                tc["rank"][lg] = {"ts": now, "r": ranks}
+            except Exception as e:
+                log(f"tennis classement {lg} :", str(e)[:80])
+    # 2) résultats des 6 dernières semaines (tableaux ESPN ; les jours passés sont gardés)
+    today = datetime.now(timezone.utc).date()
+    for lg in ("atp", "wta"):
+        for back in range(0, 45, 3):
+            d = (today - timedelta(days=back)).strftime("%Y%m%d")
+            key = f"{lg}:{d}"
+            c = tc["days"].get(key)
+            if c and (back > 3 or now - c["ts"] < 3 * 3600):
+                continue
+            try:
+                j = _espn_json(f"{ESPN_TENNIS}/{lg}/scoreboard?dates={d}")
+            except Exception:
+                continue
+            ms = []
+            for ev in j.get("events") or []:
+                tour = ev.get("name") or ev.get("shortName") or ""
+                for g in ev.get("groupings") or []:
+                    if "single" not in str((g.get("grouping") or {}).get("slug") or (g.get("grouping") or {}).get("displayName") or "").lower():
+                        continue
+                    for c2 in g.get("competitions") or []:
+                        if not (((c2.get("status") or {}).get("type") or {}).get("completed")):
+                            continue
+                        cps = c2.get("competitors") or []
+                        if len(cps) != 2 or not any(x.get("winner") for x in cps):
+                            continue
+                        pl = []
+                        for x in cps:
+                            sets = [(int(ls.get("value") or 0), ls.get("tiebreak")) for ls in x.get("linescores") or []]
+                            pl.append({"id": str(x.get("id")), "n": (x.get("athlete") or {}).get("displayName", ""), "w": bool(x.get("winner")), "sets": sets})
+                        ms.append({"id": str(c2.get("id")), "date": str(c2.get("date") or "")[:10], "tour": tour,
+                                   "round": (c2.get("round") or {}).get("displayName", ""), "p": pl})
+            tc["days"][key] = {"ts": now, "m": ms}
+            time.sleep(0.3)
+    tc["days"] = {k: v for k, v in tc["days"].items() if k.split(":")[1] >= (today - timedelta(days=50)).strftime("%Y%m%d")}
+    # index des matchs par joueur
+    allm = {}
+    for v in tc["days"].values():
+        for m in v["m"]:
+            allm[m["id"]] = m
+    by_pl, names = {}, {}
+    for m in allm.values():
+        for x in m["p"]:
+            by_pl.setdefault(x["id"], []).append(m)
+            names.setdefault(_tn(x["n"]), x["id"])
+    for lg in ("atp", "wta"):
+        for pid, r in ((tc["rank"].get(lg) or {}).get("r") or {}).items():
+            names.setdefault(_tn(r["name"]), pid)
+
+    def find(name):
+        n = _tn(name)
+        if n in names:
+            return names[n]
+        parts = n.split()
+        if not parts:
+            return None
+        last, first = parts[-1], parts[0][:1]
+        cands = [pid for nm, pid in names.items() if nm.split() and nm.split()[-1] == last and nm[:1] == first]
+        if len(cands) == 1:
+            return cands[0]
+        cands = [pid for nm, pid in names.items() if nm.endswith(" " + " ".join(parts[-2:]))] if len(parts) > 2 else []
+        return cands[0] if len(cands) == 1 else None
+
+    rank_of = lambda pid, lg: ((tc["rank"].get(lg) or {}).get("r") or {}).get(pid)
+
+    def profile(pid, lg):
+        ms = sorted(by_pl.get(pid, []), key=lambda m: m["date"], reverse=True)
+        games, tb_w, tb_l, top_w, top_l, sets_w, sets_l = [], 0, 0, 0, 0, 0, 0
+        for m in ms:
+            me = next(x for x in m["p"] if x["id"] == pid)
+            op = next(x for x in m["p"] if x["id"] != pid)
+            sw = sum(1 for a, b2 in zip(me["sets"], op["sets"]) if a[0] > b2[0])
+            sl = sum(1 for a, b2 in zip(me["sets"], op["sets"]) if a[0] < b2[0])
+            sets_w += sw
+            sets_l += sl
+            for a, b2 in zip(me["sets"], op["sets"]):
+                if {a[0], b2[0]} == {6, 7} or a[1] is not None:
+                    if a[0] > b2[0]:
+                        tb_w += 1
+                    else:
+                        tb_l += 1
+            orank = (rank_of(op["id"], lg) or {}).get("rank")
+            if orank and orank <= 20:
+                top_w += me["w"]
+                top_l += not me["w"]
+            score = " ".join(f"{a[0]}-{b2[0]}" for a, b2 in zip(me["sets"], op["sets"]))
+            games.append({"res": "V" if me["w"] else "D", "gf": sw, "ga": sl, "opp": op["n"], "opp_rank": orank, "home": True,
+                          "date": m["date"], "comp": f"{m['tour']} · {m['round']}".strip(" ·"), "score": score, "id": m["id"]})
+        rk = rank_of(pid, lg) or {}
+        last10 = games[:10]
+        streak, first = 0, (games[0]["res"] if games else "")
+        for g_ in games:
+            if g_["res"] != first:
+                break
+            streak += 1
+        d14 = (today - timedelta(days=14)).isoformat()
+        return {"id": pid, "rank": rk.get("rank"), "prev": rk.get("prev"), "pts": rk.get("pts"), "trend": rk.get("trend"),
+                "played": len(games), "won": sum(g_["res"] == "V" for g_ in games),
+                "win10": round(sum(g_["res"] == "V" for g_ in last10) / len(last10), 2) if last10 else None,
+                "streak": streak if first == "V" else -streak, "m14": sum(1 for g_ in games if g_["date"] >= d14),
+                "tb": [tb_w, tb_l], "top20": [top_w, top_l], "sets": [sets_w, sets_l],
+                "last": last10, "games": games[:15]}
+
+    web = st.data.setdefault("web", {})
+    n_ok = 0
+    for e in ten:
+        lg = "wta" if "wta" in e["sport_key"] else "atp"
+        ph, pa = find(e["home_team"]), find(e["away_team"])
+        if not (ph or pa):
+            continue
+        prof = {}
+        for side, pid in (("home", ph), ("away", pa)):
+            if not pid:
+                continue
+            pr = profile(pid, lg)
+            b_ = tc["bio"].get(pid)
+            if not b_ or now - b_["ts"] > 7 * 86400:
+                try:
+                    a = _espn_json(f"https://site.web.api.espn.com/apis/common/v3/sports/tennis/{lg}/athletes/{pid}").get("athlete") or {}
+                    b_ = tc["bio"][pid] = {"ts": now, "age": a.get("age"), "hand": (a.get("hand") or {}).get("displayValue"),
+                                           "height": a.get("displayHeight"), "pro": a.get("debutYear")}
+                except Exception:
+                    b_ = {}
+            pr["bio"] = {k: v for k, v in (b_ or {}).items() if k != "ts"}
+            prof[side] = pr
+        h2h = []
+        if ph and pa:
+            for m in by_pl.get(ph, []):
+                if any(x["id"] == pa for x in m["p"]):
+                    w = next(x for x in m["p"] if x["w"])
+                    h2h.append({"date": m["date"], "winner": w["n"], "tour": m["tour"], "round": m["round"],
+                                "score": " ".join(f"{a[0]}-{b2[0]}" for a, b2 in zip(m["p"][0]["sets"], m["p"][1]["sets"]))})
+        # petit modèle : points au classement (puissance 0,85) corrigés par la forme sur 10 matchs
+        model = None
+        hp, ap = prof.get("home", {}), prof.get("away", {})
+        if hp.get("pts") and ap.get("pts"):
+            sh, sa = hp["pts"] ** 0.85, ap["pts"] ** 0.85
+            p = sh / (sh + sa)
+            if hp.get("win10") is not None and ap.get("win10") is not None:
+                p = min(0.97, max(0.03, p + 0.15 * (hp["win10"] - ap["win10"])))
+            model = {"home": round(p, 3), "away": round(1 - p, 3)}
+        w = web.setdefault(e["id"], {"ts": now, "v": {"inj_home": [], "inj_away": [], "lineups": [], "news": [], "form": {}, "h2h": []}})
+        v = w.setdefault("v", {})
+        v["tennis"] = {"home": prof.get("home"), "away": prof.get("away"), "h2h": sorted(h2h, key=lambda x: x["date"], reverse=True), "model": model}
+        v["form"] = {side: prof[side]["games"] for side in prof if prof[side]["games"]}
+        n_ok += 1
+    log(f"Tennis (ESPN) : {len(allm)} matchs récents indexés, {n_ok}/{len(ten)} matchs à venir avec stats des joueurs")
+    return n_ok
+
+
 def self_test(snap):
     """Auto-test : fait tourner le vrai moteur sur les vraies données (comme l'appli d'un abonné Pro) et écrit
     dans le journal ce qu'un client verrait, bookmaker par bookmaker."""
@@ -1375,6 +1561,10 @@ def main():
         collect_unibet(events)
     except Exception as e:
         log("Unibet :", e)
+    try:
+        tennis_stats(events, st, state)
+    except Exception as e:
+        log("Tennis (ESPN) :", e)
     try:
         n = publish_lineup_watch(events, st)
         log("surveillance des compos :", n, "matchs dans les 36 h")

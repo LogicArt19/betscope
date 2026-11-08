@@ -956,7 +956,10 @@ def analyze(events, cfg, now=None, info=None):
                         po = modelmod.p_over(mdl, float(a["point"]))
                         p_model = po if a["name"] == "Over" else (1 - po if po is not None else None)
                 w_eff = analysis_weight(w_stats, st)
-                if not sport_key.startswith("soccer"):  # pas de modèle de buts ni de nul : la proba vient des cotes
+                if sport_key.startswith("tennis") and mkey == "h2h" and side in ("home", "away") \
+                        and ((st or {}).get("tennis") or {}).get("model"):
+                    p_model, w_eff = st["tennis"]["model"][side], 0.25  # classement + forme des 10 derniers matchs
+                elif not sport_key.startswith("soccer"):  # pas de modèle de buts ni de nul : la proba vient des cotes
                     p_model, w_eff = None, 0.0
                 elif p_model is None and st:
                     # pas de modèle saison (pas de clé) : on utilise quand même la forme récente + face-à-face
@@ -1112,7 +1115,7 @@ WORST_EV = -0.09  # au-delà, la cote est vraiment mauvaise : jamais proposée
 
 def sport_family(sport_key):
     k = str(sport_key)
-    return "nba" if k.startswith("basketball") else ("tennis" if k.startswith("tennis") else "foot")
+    return "nba" if k.startswith("basketball") else ("wta" if k.startswith("tennis_wta") else ("atp" if k.startswith("tennis") else "foot"))
 
 
 def market_duo(ev):
@@ -2804,13 +2807,23 @@ class Api:
 
     def set_sport(self, mode):
         """Onglet Foot ou NBA : tout l'affichage (matchs, pronostics, Objectif) suit ce choix."""
-        mode = mode if mode in ("nba", "tennis") else "foot"
+        mode = {"tennis": "atp"}.get(mode, mode)
+        mode = mode if mode in ("nba", "atp", "wta") else "foot"
         if mode != self._sport_mode():
             self._sport = mode
             self._reanalyze()
         n = sum(1 for e in self._events if sport_family(e.get("sport_key", "")) == mode)
-        return {"sport": mode, "n_events": n,
-                "has_nba": any(sport_family(e.get("sport_key", "")) == "nba" for e in self._events)}
+        now = datetime.now(timezone.utc)
+        counts = {}
+        for e in self._events:
+            try:
+                if parse_time(e["commence_time"]) <= now:
+                    continue
+            except (KeyError, ValueError):
+                continue
+            f = sport_family(e.get("sport_key", ""))
+            counts[f] = counts.get(f, 0) + 1
+        return {"sport": mode, "n_events": n, "counts": counts}
 
     def get_matches(self):
         """Tous les matchs à venir, avec les vraies chances 1N2, la meilleure cote et un résumé."""
@@ -2837,7 +2850,7 @@ class Api:
                     return h2h.get(name)
                 trio = [g(f"Victoire {home}"), g("Match nul"), g(f"Victoire {away}")]
                 probs = [round(t["p"], 4) if t else None for t in trio]
-                if sport_family(ev.get("sport_key", "")) in ("nba", "tennis"):  # pas de match nul
+                if sport_family(ev.get("sport_key", "")) != "foot":  # pas de match nul
                     probs = [probs[0], 0.0, probs[2]] if probs[0] is not None and probs[2] is not None else (market_duo(ev) or probs)
                     trio[1] = None
                 elif None in probs:  # ton bookmaker n'a pas (encore) ce match : vraies chances du marché quand même
@@ -2853,6 +2866,8 @@ class Api:
                     "probs": probs, "odds": odds, "n_bets": len(sel),
                     "conf": round(sum(x.get("conf", 50) for x in sel) / len(sel)) if sel else None,
                     "form_home": fh.get("form", ""), "form_away": fa.get("form", ""),
+                    "rank_home": ((st.get("tennis") or {}).get("home") or {}).get("rank"),
+                    "rank_away": ((st.get("tennis") or {}).get("away") or {}).get("rank"),
                     "n_value": sum(1 for x in sel if is_value(x, self._cfg)) if tier_ok("elite") else None,
                     "lineups": bool(st.get("lineups")),
                     "odds_ts": ev.get("_odds_ts") or self._last_fetch,

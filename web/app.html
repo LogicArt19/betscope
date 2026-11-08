@@ -371,13 +371,48 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
   .lock{flex-wrap:wrap}.lock .btn{margin-left:0}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-nav.sports{position:sticky;top:64px;z-index:19;display:flex;gap:4px;padding:0 28px;background:var(--night);border-bottom:1px solid var(--rim);overflow-x:auto;scrollbar-width:none}
-nav.sports::-webkit-scrollbar{display:none}
-nav.sports button{display:flex;align-items:center;gap:9px;padding:14px 22px 12px;border:0;border-bottom:3px solid transparent;background:transparent;color:var(--fog);font:inherit;font-weight:700;font-size:15.5px;letter-spacing:.02em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
-nav.sports button .ico{font-size:19px}
-nav.sports button:hover{color:var(--chalk)}
-nav.sports button.on{color:var(--chalk);border-bottom-color:var(--home)}
-@media (max-width:900px){nav.sports{top:56px;padding:0 10px;justify-content:space-around}nav.sports button{flex:1;justify-content:center;padding:12px 8px 10px;font-size:14px}}
+body{--sp:#26e0b8;--sp2:#0f8f75;--spbg:rgba(38,224,184,.10)}
+body[data-sport="nba"]{--sp:#ff8a3d;--sp2:#c4531a;--spbg:rgba(255,138,61,.11)}
+body[data-sport="tennis"]{--sp:#d8f04a;--sp2:#8aa514;--spbg:rgba(216,240,74,.10)}
+nav.sports{position:sticky;top:64px;z-index:19;padding:12px 28px 0;background:linear-gradient(180deg,rgba(6,10,18,.96),rgba(6,10,18,.88));backdrop-filter:blur(14px);border-bottom:1px solid var(--rim)}
+.sp-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:1100px;margin:0 auto;padding-bottom:12px}
+.sp-card{position:relative;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:16px;border:1px solid var(--rim);background:var(--deck);color:var(--fog);text-align:left;cursor:pointer;overflow:hidden;transition:transform .15s,border-color .15s,background .15s}
+.sp-card:hover{transform:translateY(-1px);border-color:var(--rim2)}
+.sp-card .sp-ico{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.04)}
+.sp-card .sp-ico svg{width:28px;height:28px}
+.sp-card .sp-txt{display:flex;flex-direction:column;min-width:0}
+.sp-card .sp-txt b{color:var(--chalk);font-family:var(--disp);font-size:17px;letter-spacing:.02em}
+.sp-card .sp-txt small{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-card .sp-n{margin-left:auto;font-weight:800;font-size:13px;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--fog)}
+.sp-foot{--c:#26e0b8}.sp-nba{--c:#ff8a3d}.sp-tennis{--c:#d8f04a}
+.sp-card .sp-ico{color:var(--c)}
+.sp-card.on{border-color:var(--c);background:linear-gradient(135deg,color-mix(in srgb,var(--c) 22%,transparent),color-mix(in srgb,var(--c) 6%,transparent) 60%);box-shadow:0 0 0 1px var(--c) inset,0 8px 30px -12px var(--c)}
+.sp-card.on .sp-ico{background:var(--c);color:#071017}
+.sp-card.on .sp-n{background:var(--c);color:#071017}
+.sp-card.on::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--c)}
+.sp-sub{display:flex;gap:8px;max-width:1100px;margin:0 auto;padding:0 0 12px}
+.sp-sub button{display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:999px;border:1px solid var(--rim);background:transparent;color:var(--fog);font-weight:700;font-size:14px;cursor:pointer}
+.sp-sub button .g{font-size:16px}
+.sp-sub button em{font-style:normal;font-size:12px;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,.07)}
+.sp-sub button.on{border-color:var(--sp);color:#071017;background:var(--sp)}
+.sp-sub button.on em{background:rgba(0,0,0,.15)}
+h1.t{display:flex;align-items:center;gap:12px}
+h1.t::before{content:"";width:6px;height:28px;border-radius:3px;background:var(--sp);box-shadow:0 0 14px var(--sp)}
+.day.on{border-color:var(--sp)!important;background:var(--spbg)!important}.day.on .c{color:var(--sp)!important}
+.chip.on{border-color:var(--sp)!important;background:var(--spbg)!important}.chip.on b{color:var(--sp)!important}
+.tabs2 button.on{border-color:var(--sp)!important}
+nav.tabs button.on::after{background:var(--sp)!important;box-shadow:0 0 10px var(--sp)!important}
+.lg{color:var(--sp)}
+.rk{display:inline-block;min-width:26px;margin-right:7px;padding:1px 6px;border-radius:6px;background:var(--spbg);color:var(--sp);font-size:11.5px;font-weight:800;text-align:center}
+.tcard .thead{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+.tcard .trank{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;width:70px;height:70px;border-radius:16px;background:var(--spbg);border:1px solid var(--sp)}
+.tcard .trank small{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--fog)}
+.tcard .trank b{font-family:var(--disp);font-size:26px;color:var(--chalk);line-height:1}
+.tcard .trank em{font-style:normal;font-size:11px;font-weight:800}.tcard .trank em.up{color:var(--home)}.tcard .trank em.down{color:var(--bad)}
+.tcard .tchips{display:flex;flex-wrap:wrap;gap:8px}
+.tcard .tchips span{padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--rim);font-weight:800;color:var(--chalk)}
+.tcard .tchips small{font-weight:600;color:var(--fog)}
+@media (max-width:900px){nav.sports{top:56px;padding:10px 10px 0}.sp-row{gap:6px;padding-bottom:10px}.sp-card{flex-direction:column;align-items:center;gap:6px;padding:10px 6px;text-align:center}.sp-card .sp-txt small{display:none}.sp-card .sp-txt b{font-size:13.5px}.sp-card .sp-ico{width:38px;height:38px}.sp-card .sp-ico svg{width:24px;height:24px}.sp-card .sp-n{position:absolute;top:6px;right:6px;font-size:11px;padding:2px 7px}.sp-sub{justify-content:center}.sp-sub button{flex:1;justify-content:center;padding:8px 10px;font-size:13px}}
 .odds3.two .ob{flex:1}
 </style>
 </head>
@@ -542,18 +577,29 @@ async function tick(){
    État + routes
    ====================================================================== */
 let ST = {}, MATCHES = [], DATA = {picks:[], probable:[], combos:[]}, BSET = new Set(), DAY = null, LEAGUE = "all";
-let SPORT = (() => { try { const v = localStorage.getItem("cotescope_sport"); return ["nba", "tennis"].includes(v) ? v : "foot"; } catch (e) { return "foot"; } })(), SPINFO = {};
+let SPORT = (() => { try { const v = localStorage.getItem("cotescope_sport"); return v === "tennis" ? "atp" : (["nba", "atp", "wta"].includes(v) ? v : "foot"); } catch (e) { return "foot"; } })(), SPINFO = {};
 function setSport(m){
   SPORT = m; try { localStorage.setItem("cotescope_sport", m); } catch (e) {}
   SPINFO = call("set_sport", m) || {}; DAY = null; LEAGUE = "all"; GLG = ""; GCAT = ""; GMORE = 20;
   if (typeof GOAL !== "undefined") { GOAL.res = null; GOAL.leagues = null; }
+  document.body.dataset.sport = SFAM();
 }
+const SFAM = () => (SPORT === "atp" || SPORT === "wta") ? "tennis" : SPORT;
 const SPORT_VIEWS = ["matchs", "picks", "goal", "lab"];
-const SPORT_TABS = [["foot", "⚽", "Foot"], ["nba", "🏀", "NBA"], ["tennis", "🎾", "Tennis"]];
-const SPORT_NAME = {foot: "Foot", nba: "NBA · Basket", tennis: "Tennis"};
+const SPORT_TABS = [["foot", "Football", "Ligue 1, Premier League, Liga, Serie A…"], ["nba", "Basket · NBA", "Toutes les franchises"], ["tennis", "Tennis", "ATP · WTA"]];
+const SPORT_NAME = {foot: "Football", nba: "Basket · NBA", atp: "Tennis · Hommes (ATP)", wta: "Tennis · Femmes (WTA)"};
+const SPORT_SVG = {
+  foot: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9.5"/><path d="M12 7.2l4.1 3-1.6 4.8h-5l-1.6-4.8z"/><path d="M12 2.5v4.7M16.1 10.2l4.4-1.4M14.5 15l2.7 3.9M9.5 15l-2.7 3.9M7.9 10.2L3.5 8.8"/></svg>`,
+  nba: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5v19"/><path d="M5.2 5.2c3.3 3.3 3.3 10.3 0 13.6M18.8 5.2c-3.3 3.3-3.3 10.3 0 13.6"/></svg>`,
+  tennis: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9.5"/><path d="M5.3 5.3c3.6 3.6 3.6 9.8 0 13.4M18.7 5.3c-3.6 3.6-3.6 9.8 0 13.4"/></svg>`};
 function sportTabs(){
   const el = $("#sports"); if (!el) return;
-  el.innerHTML = SPORT_TABS.map(([k, ico, l]) => `<button class="${SPORT===k?"on":""}" data-sport="${k}"><span class="ico">${ico}</span>${l}</button>`).join("");
+  const c = SPINFO.counts || {}, fam = SFAM();
+  const n = k => k === "tennis" ? (c.atp || 0) + (c.wta || 0) : (c[k] || 0);
+  el.innerHTML = `<div class="sp-row">${SPORT_TABS.map(([k, l, sub]) => `<button class="sp-card sp-${k} ${fam===k?"on":""}" data-sport="${k === "tennis" ? (fam === "tennis" ? SPORT : "atp") : k}">
+      <span class="sp-ico">${SPORT_SVG[k]}</span><span class="sp-txt"><b>${l}</b><small>${sub}</small></span><span class="sp-n">${n(k)}</span></button>`).join("")}</div>
+    ${fam === "tennis" ? `<div class="sp-sub"><button class="${SPORT==="atp"?"on":""}" data-sport="atp"><span class="g">♂</span>Hommes · ATP<em>${c.atp || 0}</em></button><button class="${SPORT==="wta"?"on":""}" data-sport="wta"><span class="g">♀</span>Femmes · WTA<em>${c.wta || 0}</em></button></div>` : ""}`;
+  document.body.dataset.sport = fam;
 }
 const tier = () => ST.tier || (ACCOUNT && ACCOUNT.tier) || "elite";
 const rank = () => RANK[tier()] ?? 3;
@@ -629,7 +675,7 @@ function vMatchs(){
   const row = m => `
     <div class="match" data-go="match" data-arg="${esc(m.id)}">
       <div class="tm">${esc(m.time)}<small>${esc(m.round || "")}</small></div>
-      <div class="teams"><div><span class="dot h"></span>${esc(m.home)}${formDots(m.form_home)}</div><div><span class="dot a"></span>${esc(m.away)}${formDots(m.form_away)}</div></div>
+      <div class="teams"><div><span class="dot h"></span>${m.rank_home?`<span class="rk">${m.rank_home}</span>`:""}${esc(m.home)}${formDots(m.form_home)}</div><div><span class="dot a"></span>${m.rank_away?`<span class="rk">${m.rank_away}</span>`:""}${esc(m.away)}${formDots(m.form_away)}</div></div>
       <div class="sp3">${spec(m.probs)}<div class="specl"><span class="h">${pc(m.probs[0])}</span>${isNba(m) ? "" : `<span class="d">${pc(m.probs[1])}</span>`}<span class="a">${pc(m.probs[2])}</span></div></div>
       <div class="odds3${isNba(m) ? " two" : ""}">${(isNba(m) ? [["1",0],["2",2]] : [["1",0],["N",1],["2",2]]).map(([l,i]) => { const o = m.odds[i]; return o ? `<button class="ob ${BSET.has(o.uid)?"in":""}" data-add="${esc(o.uid)}" title="${esc(book(o.book))}"><small>${l}</small><b>${fr(o.odds)}</b></button>` : `<span class="ob"><small>${l}</small><b>–</b></span>`; }).join("")}</div>
       <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
@@ -637,9 +683,10 @@ function vMatchs(){
   const banner = ST.tier === "gratuit" && ACCOUNT ? `<div class="banner">Version gratuite : tous les matchs, pari « résultat du match ». Encore ${daysLeft(ACCOUNT.renews)} jour(s).<button class="btn sm go" data-plans>Voir les forfaits</button></div>` : "";
   return `
     ${banner}
-    <h1 class="t">${{foot: "Matchs de foot", nba: "Matchs NBA", tennis: "Matchs de tennis"}[SPORT]}</h1>
+    <h1 class="t">${{foot: "Matchs de foot", nba: "Matchs NBA", atp: "Tennis · Hommes", wta: "Tennis · Femmes"}[SPORT]}</h1>
     <p class="lead">${{nba: "Les vraies chances de victoire de chaque franchise, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365 (prolongations comprises, pas de match nul).",
-      tennis: "Les vraies chances de victoire de chaque joueur ou joueuse (ATP et WTA), calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365.",
+      atp: "Circuit ATP. Les vraies chances de chaque joueur, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365, du classement et des 10 derniers matchs.",
+      wta: "Circuit WTA. Les vraies chances de chaque joueuse, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365, du classement et des 10 derniers matchs.",
       foot: "Les vraies chances de chaque issue, calculées à partir des cotes de 10 bookmakers et de la forme des équipes."}[SPORT]} Touche une cote pour l'ajouter à ton ticket.</p>
     <p class="note fresh">Cotes mises à jour ${ago(Math.max(0, ...MATCHES.filter(m => m.day === DAY).map(m => m.odds_ts || 0)))}. Elles peuvent avoir bougé chez ton bookmaker : tape la vraie cote dans la page du match pour un verdict exact.</p>
     <div class="days">${keys.map(dayChip).join("") || ""}</div>
@@ -670,12 +717,13 @@ function vMatch(id){
   if (!e) return `<button class="back" data-go="matchs">← Matchs</button><div class="panel empty"><b>Match introuvable</b>Il a peut-être déjà commencé.</div>`;
   const info = e.info || {}, nv = info.neutral || {}, m = MATCHES.find(x => x.id === id) || {};
   const fin = (nv.rows || []).find(r => r.final), p = fin ? fin.p : m.probs;
-  const t = [["analyse","Analyse"],["paris","Tous les paris"],["equipes","Équipes"],["h2h","Face-à-face"],["infos","Infos du match"]];
+  const tennis = String(e.sport_key || m.sport_key || "").startsWith("tennis");
+  const t = [["analyse","Analyse"],["paris","Tous les paris"],["equipes", tennis ? "Joueurs" : "Équipes"],["h2h","Face-à-face"],["infos","Infos du match"]];
   let body = "";
   if (MTAB === "analyse") body = voteBox(e) + tabAnalyse(e, nv);
   else if (MTAB === "paris") body = tabParis(e);
-  else if (MTAB === "equipes") body = tabEquipes(e, info);
-  else if (MTAB === "h2h") body = tabH2H(e, info);
+  else if (MTAB === "equipes") body = tennis ? tabJoueurs(e, info) : tabEquipes(e, info);
+  else if (MTAB === "h2h") body = tennis ? tabTennisH2H(e, info) : tabH2H(e, info);
   else body = tabInfos(e, info);
   return `
     ${backBtn()}
@@ -887,6 +935,53 @@ function tabEquipes(e, i){
     <h2 class="s">Absents</h2><div class="grid2">
     <div class="panel box"><h3>${esc(e.home)}</h3>${injList(i.inj_home)}</div>
     <div class="panel box"><h3>${esc(e.away)}</h3>${injList(i.inj_away)}</div></div>`;
+}
+/* ---------- tennis ---------- */
+function tabJoueurs(e, i){
+  const T = i.tennis || {}, h = T.home, a = T.away;
+  if (!h && !a) return `<div class="panel empty"><b>Stats des joueurs pas encore trouvées</b>Le classement et les derniers matchs arrivent à la prochaine collecte.</div>`;
+  const pct = x => x == null ? "–" : Math.round(x * 100) + " %";
+  const rec = x => x ? `${x[0]}-${x[1]}` : "–";
+  const ratio = x => x && (x[0] + x[1]) ? x[0] / (x[0] + x[1]) : null;
+  const rows = [
+    ["Classement", h&&h.rank, a&&a.rank, "low", v => v ? v + "e" : "–"],
+    ["Points au classement", h&&h.pts, a&&a.pts, "high", v => v ? Math.round(v).toLocaleString("fr-FR") : "–"],
+    ["Victoires sur les 10 derniers", h&&h.win10, a&&a.win10, "high", pct],
+    ["Série en cours", h&&h.streak, a&&a.streak, "high", v => v == null ? "–" : v > 0 ? v + " V" : v < 0 ? -v + " D" : "–"],
+    ["Sets gagnés (6 semaines)", ratio(h&&h.sets), ratio(a&&a.sets), "high", pct],
+    ["Tie-breaks gagnés", ratio(h&&h.tb), ratio(a&&a.tb), "high", pct],
+    ["Matchs joués en 14 jours", h&&h.m14, a&&a.m14, null, v => v == null ? "–" : v],
+  ];
+  const row = ([lab, x, y, better, f]) => {
+    const nx = +x || 0, ny = +y || 0, tot = Math.abs(nx) + Math.abs(ny) || 1;
+    const hw = better && x != null && y != null && x !== y ? ((better === "high") === (nx > ny)) : false, aw = better && x != null && y != null && x !== y && !hw;
+    return `<div class="r"><span class="v ${hw?"win":""}">${f(x)}</span><div class="m">${esc(lab)}<div class="bar"><b style="width:${better==="low"&&nx&&ny?Math.round(ny/(nx+ny)*100):Math.round(Math.abs(nx)/tot*100)}%"></b><u style="width:${better==="low"&&nx&&ny?Math.round(nx/(nx+ny)*100):Math.round(Math.abs(ny)/tot*100)}%"></u></div></div><span class="v a ${aw?"win":""}">${f(y)}</span></div>`;
+  };
+  const card = (name, p, side) => {
+    if (!p) return `<div class="panel box"><h3>${esc(name)}</h3><p class="note">Stats indisponibles.</p></div>`;
+    const b = p.bio || {}, tr = String(p.trend || "");
+    return `<div class="panel box tcard ${side}">
+      <div class="thead"><div class="trank"><small>Rang</small><b>${p.rank || "–"}</b>${tr && tr !== "-" ? `<em class="${tr.startsWith("+")?"up":"down"}">${tr.startsWith("+")?"▲":"▼"} ${esc(tr.replace(/[+-]/,""))}</em>` : ""}</div>
+        <div><h3>${esc(name)}</h3><p class="note">${[b.age && b.age + " ans", b.hand && (b.hand === "Right" ? "droitier" : b.hand === "Left" ? "gaucher" : b.hand), b.height, b.pro && "pro depuis " + b.pro].filter(Boolean).map(esc).join(" · ") || "&nbsp;"}</p></div></div>
+      <div class="tchips"><span>${p.won}-${p.played - p.won} <small>en 6 semaines</small></span><span>${rec(p.top20)} <small>contre le top 20</small></span><span>${rec(p.tb)} <small>tie-breaks</small></span></div>
+      <p class="note" style="margin:12px 0 6px"><b>10 derniers matchs</b></p>
+      <div class="flist">${(p.last||[]).map(g => `<div class="fg"><span class="fr ${g.res}">${g.res}</span><div class="fm"><b>${g.res==="V"?"Victoire":"Défaite"} ${esc(g.score||"")}</b> contre ${g.opp_rank?`<span class="rk">${g.opp_rank}</span>`:""}${esc(g.opp)}<small>${esc(String(g.date||"").split("-").reverse().slice(0,2).join("/"))} · ${esc(g.comp||"")}</small></div></div>`).join("") || '<p class="note">Aucun match récent trouvé.</p>'}</div>
+    </div>`;
+  };
+  const md = T.model;
+  return `<div class="panel box"><h3 style="display:flex;justify-content:space-between"><span style="color:var(--home)">${esc(e.home)}</span><span style="color:var(--away)">${esc(e.away)}</span></h3>
+      <div class="cmp">${rows.map(row).join("")}</div>
+      ${md ? `<p class="note" style="margin-top:12px">Lecture des stats (classement + forme) : <b>${esc(e.home)} ${Math.round(md.home*100)} %</b> · <b>${esc(e.away)} ${Math.round(md.away*100)} %</b>. Elle compte pour un quart dans les vraies chances, le reste vient des cotes.</p>` : ""}
+      ${(h && h.m14 >= 5) || (a && a.m14 >= 5) ? `<p class="note">⚠️ Fatigue possible : ${[h && h.m14 >= 5 && esc(e.home) + " a joué " + h.m14 + " matchs en 14 jours", a && a.m14 >= 5 && esc(e.away) + " a joué " + a.m14 + " matchs en 14 jours"].filter(Boolean).join(" · ")}.</p>` : ""}</div>
+    <div class="grid2" style="margin-top:14px">${card(e.home, h, "h")}${card(e.away, a, "a")}</div>`;
+}
+function tabTennisH2H(e, i){
+  if (rank() < 2) return lockBox("pro", "Face-à-face", "Les dernières confrontations entre les deux joueurs, avec les scores.");
+  const h = ((i.tennis || {}).h2h) || [];
+  if (!h.length) return `<div class="panel empty"><b>Pas de confrontation sur les 6 dernières semaines</b>Regarde le classement et la forme dans l'onglet Joueurs.</div>`;
+  const wh = h.filter(x => x.winner === e.home).length;
+  return `<div class="stats" style="margin-bottom:14px"><div class="panel stat"><small>Victoires ${esc(e.home)}</small><b>${wh}</b></div><div class="panel stat"><small>Victoires ${esc(e.away)}</small><b>${h.length - wh}</b></div></div>
+    <div class="panel">${h.map(g => `<div class="bet" style="grid-template-columns:96px minmax(0,1fr) auto"><span class="note">${esc(String(g.date||"").split("-").reverse().join("/"))}</span><div class="sel">Gagné par ${esc(g.winner)}<small>${esc(g.tour)} · ${esc(g.round)}</small></div><b class="num">${esc(g.score)}</b></div>`).join("")}</div>`;
 }
 function tabH2H(e, i){
   if (rank() < 2) return lockBox("pro", "Face-à-face", "Les dernières confrontations en championnat, leurs scores et la moyenne de buts.");
@@ -1714,8 +1809,9 @@ function render(){
   const V = {matchs:vMatchs, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, lab:vLab, ticket:vTicket, bilan:vBilan, compte:vCompte};
   const paused = ACCOUNT && ACCOUNT.pause && ACCOUNT.pause > Date.now();
   const locked = SPORT !== "foot" && !SPINFO.n_events && rank() < 2;
+  const TEN = "Les vraies cotes de Betclic, Winamax, Unibet et Bet365 (vainqueur, nombre de jeux), le classement, les 10 derniers matchs, la série en cours, la fatigue, les tie-breaks et le face-à-face.";
   const LOCK_TXT = {nba: "Tous les matchs NBA avec les vraies cotes de Betclic, Winamax, Unibet et Bet365 (vainqueur, total de points), les blessés, le classement et les derniers résultats de chaque franchise.",
-                    tennis: "Les matchs ATP et WTA avec les vraies cotes de Betclic, Winamax, Unibet et Bet365 (vainqueur, nombre de jeux)."};
+                    atp: TEN, wta: TEN};
   const body = paused && ["picks","goal","ticket","lab"].includes(r.v) ? vPaused()
     : locked && SPORT_VIEWS.includes(r.v) ? `<h1 class="t">${SPORT_NAME[SPORT]}</h1>${lockBox("essentiel", `${SPORT_NAME[SPORT]} : inclus dans Essentiel et Pro`, LOCK_TXT[SPORT])}`
     : (V[r.v] || vMatchs)();

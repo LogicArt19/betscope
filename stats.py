@@ -1233,6 +1233,8 @@ class Stats:
     def _fill_from_web(self, r, w):
         if w.get("players"):
             r["players"] = w["players"]
+        if w.get("tennis"):
+            r["tennis"] = w["tennis"]
         if not r.get("model") and w.get("model"):
             r["model"] = w["model"]
         if w.get("cards"):

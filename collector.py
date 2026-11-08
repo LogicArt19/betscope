@@ -1390,6 +1390,11 @@ def main():
     log(f"snapshot : {len(events)} matchs, {sum(1 for v in wv if v)} avec fiche web, 5 derniers matchs des 2 équipes : "
         f"{sum(1 for v in wv if (v.get('form') or {}).get('home') and (v.get('form') or {}).get('away'))}, "
         f"buteurs/passeurs des 2 équipes : {sum(1 for v in wv if len(v.get('players') or {}) == 2)}")
+    nba = [e for e in events if e["sport_key"].startswith("basketball")]
+    nv = [(_web.get(e["id"]) or {}).get("v") or {} for e in nba]
+    log(f"NBA : {len(nba)} matchs, {sum(1 for e in nba if len(e.get('bookmakers') or []) >= 2)} avec au moins 2 bookmakers, "
+        f"derniers matchs des 2 équipes : {sum(1 for v in nv if (v.get('form') or {}).get('home') and (v.get('form') or {}).get('away'))}, "
+        f"blessés vérifiés : {sum(1 for v in nv if v)}")
     for tier in TIERS:
         cf_put("snapshot_" + tier, tier_snapshot(snap, tier))
     try:

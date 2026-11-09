@@ -77,7 +77,7 @@ h2.s small{font-family:var(--body);font-weight:500;font-size:13px;color:var(--di
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;border-radius:11px;font-weight:700;font-size:14.5px;border:1px solid var(--rim2);background:var(--deck2);transition:border-color .15s,background .15s}
 .btn:hover{border-color:#3A4C78}
 .btn.go{background:var(--sp,var(--home));border-color:var(--sp,var(--home));color:#071017}
-.btn.go:hover{background:#4AF0CC}
+.btn.go:hover{background:color-mix(in srgb,var(--sp,var(--home)) 82%,white)}
 .btn.sm{padding:6px 11px;font-size:13px;border-radius:9px}
 .btn:disabled{opacity:.5;cursor:default}
 .in{width:100%;padding:11px 13px;border-radius:11px;background:var(--night);border:1px solid var(--rim2);color:var(--chalk);font-size:15px}
@@ -188,6 +188,38 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .pick .sel{font-weight:700;font-size:15px}
 .pick .sel small{display:block;font-weight:500;color:var(--fog);font-size:13px}
 .goal{display:grid;grid-template-columns:330px 1fr;gap:18px;align-items:start}
+.gx{position:relative;margin:0 0 22px;padding:22px 24px;border-radius:20px;border:1px solid var(--rim);background:radial-gradient(120% 140% at 0% 0%,var(--spbg),transparent 55%),var(--deck);overflow:hidden}
+.gx-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.gx-tag{display:inline-flex;align-items:center;gap:8px;padding:5px 11px;border-radius:999px;background:var(--spbg);border:1px solid color-mix(in srgb,var(--sp) 40%,transparent);font-weight:700;font-size:13px;color:var(--chalk)}
+.gx-tag .d{width:7px;height:7px;border-radius:50%;background:var(--sp);box-shadow:0 0 8px var(--sp)}
+.gx-sent{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-family:var(--disp);font-size:clamp(22px,3vw,32px);font-weight:700;color:var(--chalk)}
+.gx-in{display:inline-flex;align-items:baseline;gap:4px;padding:4px 14px;border-radius:14px;border:1px solid var(--rim2);background:rgba(0,0,0,.25);cursor:text;transition:border-color .15s}
+.gx-in:focus-within{border-color:var(--sp)}
+.gx-in input{width:4ch;min-width:2ch;max-width:7ch;border:0;outline:0;background:transparent;color:var(--sp);font:inherit;text-align:right;field-sizing:content}
+.gx-in i{font-style:normal;color:var(--fog);font-size:.7em}
+.gx-go{margin-left:auto;font-family:var(--body,inherit);font-size:15px;padding:13px 22px}
+.gx-need{margin-top:10px;color:var(--fog);font-size:14.5px}.gx-need b{color:var(--chalk)}
+.gx-f{margin-top:18px;border-top:1px solid var(--rim);padding-top:14px}
+.gx-f summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;list-style:none;cursor:pointer}
+.gx-f summary::-webkit-details-marker{display:none}
+.gx-f summary span{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1px solid var(--rim);background:rgba(255,255,255,.02);font-size:13px;font-weight:600;color:var(--chalk)}
+.gx-f summary span small{color:var(--fog);font-weight:500}
+.gx-f summary em{margin-left:auto;font-style:normal;font-weight:700;font-size:13.5px;color:var(--sp)}
+.gx-f summary em::after{content:" ▾"}.gx-f[open] summary em::after{content:" ▴"}
+.gx-rows{display:grid;gap:12px;margin-top:16px}
+.gx-row{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:start}
+.gx-row>label{padding-top:7px;font-size:13px;font-weight:600;color:var(--fog)}
+.gx-row .tgl{display:flex;flex-wrap:wrap;gap:6px}
+.gx-mm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.gx-mm .in{width:76px;padding:8px 10px}
+.gtool{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:6px 0 16px;padding:12px 14px;border-radius:14px;border:1px solid var(--rim);background:var(--deck)}
+.gtool label{display:flex;flex-direction:column;gap:4px}.gtool label small{font-size:11.5px;color:var(--fog);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.gtool .sel2{min-width:150px}.gtool .gcount{margin-left:auto;padding-bottom:9px}
+@media (max-width:900px){.gtool label{flex:1 1 45%}.gtool .sel2{min-width:0;width:100%}.gtool .gcount{width:100%;margin:0;padding:0}}
+details.gfair{margin:10px 0 14px;font-size:13px;color:var(--fog);line-height:1.55}
+details.gfair summary{cursor:pointer;color:var(--sp);font-weight:600;list-style:none}
+details.gfair summary::-webkit-details-marker{display:none}
+details.gfair[open] summary{margin-bottom:8px}
+@media (max-width:900px){.gx{padding:18px 16px}.gx-sent{font-size:22px;gap:8px}.gx-go{margin-left:0;width:100%}.gx-row{grid-template-columns:1fr;gap:6px}.gx-row>label{padding-top:0}.gx-f summary em{width:100%;margin:4px 0 0}}
 .goalf{padding:20px;position:sticky;top:84px}
 .money{display:flex;align-items:center;gap:8px}
 .money .in{font-family:var(--disp);font-size:22px;font-weight:700;padding:10px 12px}
@@ -195,7 +227,7 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .need{margin:14px 0;padding:12px 14px;border-radius:11px;background:var(--night);border:1px solid var(--rim);font-size:13.5px;color:var(--fog)}
 .need b{font-family:var(--disp);color:var(--chalk);font-size:18px}
 .opt{padding:18px 20px;margin-bottom:12px}
-.opt.best{border-color:rgba(38,224,184,.55);box-shadow:0 0 40px -18px rgba(38,224,184,.6)}
+.opt.best{border-color:color-mix(in srgb,var(--sp) 55%,transparent);box-shadow:0 0 40px -18px var(--sp)}
 .opt .oh{display:flex;align-items:flex-start;gap:12px;margin-bottom:10px}
 .opt .oh b{font-size:16px;display:block}
 .opt .oh small{color:var(--fog);font-size:13px}
@@ -1212,27 +1244,36 @@ function vGoal(){
         Pour trouver des tickets : coche d'autres bookmakers dans Mon compte (Bet365 publie le plus de cotes), coche plus de jours, de championnats ou de types de paris, ou laisse le nombre de matchs libre.
         <div style="margin-top:12px"><button class="btn sm" id="gl-reset">Remettre tous les filtres</button> <button class="btn sm" data-go="compte">Mes bookmakers</button></div></div>`; }
     else out = goalList(r);
-  } else out = `<div class="panel empty"><b>Donne ta mise et ce que tu veux gagner</b>Cotescope cherche parmi tous les paris de tous les matchs les tickets qui ont le plus de chances d'y arriver, avec leurs risques.</div>`;
-  return `<h1 class="t">Objectif · ${esc(SPORT_NAME[SPORT])}</h1><p class="lead">Tu donnes ta mise et ce que tu veux gagner. Cotescope passe en revue tous les paris de tous les matchs et te sort des centaines de tickets qui y arrivent, classés par leurs vraies chances de passer.</p>
-    <div class="goal">
-      <div class="panel goalf">
-        <div class="gsport"><span class="d"></span>${esc(SPORT_NAME[SPORT])}<small>change de sport en haut de l'écran</small></div>
-        <div class="need" style="margin:0 0 14px"><b style="font-size:14px">⚡ Combiné express</b><div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap"><span class="note">cote</span><input class="sel2" id="ex-o" inputmode="decimal" placeholder="3,50" style="width:70px"><span class="note">en</span><input class="sel2" id="ex-n" inputmode="numeric" placeholder="3" style="width:52px"><span class="note">matchs</span><button class="btn sm go" id="ex-go">Go</button></div></div>
-        <label class="f" for="gl-s">Je mise</label><div class="money"><input class="in" id="gl-s" inputmode="decimal" value="${esc(GOAL.stake)}"><span>€</span></div>
-        <label class="f" for="gl-t" style="margin-top:14px">Je veux gagner</label><div class="money"><input class="in" id="gl-t" inputmode="decimal" value="${esc(GOAL.target)}"><span>€</span></div>
-        <div class="need">Cote à atteindre : <b>${isFinite(need)?fr(need):"–"}</b></div>
-        <label class="f">Nombre de matchs</label>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px"><input class="in" id="gl-min" inputmode="numeric" placeholder="min" value="${esc(GOAL.min)}" style="width:70px"><span class="note">à</span><input class="in" id="gl-max" inputmode="numeric" placeholder="max" value="${esc(GOAL.max)}" style="width:70px"><span class="note">vide = libre</span></div>
-        <label class="f">Jours des matchs</label>
-        <div class="tgl" id="gl-dy" style="margin-bottom:12px">${(() => { const D = goalDays(), keep = (GOAL.days||[]).filter(d => D.some(x => x[0] === d)); return D.map(([k,l]) => `<button class="chip ${!keep.length||keep.includes(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join(""); })()}</div>
-        <label class="f">${LGLAB}</label>
-        <div class="tgl" id="gl-lg">${leagues.map(([k,l]) => `<button class="chip ${selL.has(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("") || '<span class="note">Aucun match à venir pour ce sport.</span>'}</div>
-        <label class="f" style="margin-top:12px">Types de paris · ${esc(SPORT_NAME[SPORT])}</label>
-        <div class="tgl" id="gl-ty">${SC.map(([k,l]) => okCats.includes(k) ? `<button class="chip ${selT.has(k)?"on":""}" data-k="${k}">${l}</button>` : `<button class="chip lk" data-plans title="Inclus dans Pro">🔒 ${l}</button>`).join("")}</div>
-        <button class="btn go" id="gl-go" style="width:100%;margin-top:16px">Trouver les meilleurs tickets</button>
+  } else out = `<div class="panel empty"><b>Tes tickets s'afficheront ici</b>Classés par leurs vraies chances de passer, avec les risques de chacun. Uniquement de vraies cotes de bookmakers.</div>`;
+  const D = goalDays(), keepD = (GOAL.days || []).filter(d => D.some(x => x[0] === d));
+  const sumOf = (all, on, labAll, labs) => !on.length || on.length === all.length ? labAll : on.length === 1 ? labs[on[0]] : `${on.length} sur ${all.length}`;
+  const lgLabs = Object.fromEntries(leagues), tyLabs = Object.fromEntries(SC), dyLabs = Object.fromEntries(D);
+  const sum = [
+    ["Jours", sumOf(D.map(x => x[0]), keepD, "Tous", dyLabs)],
+    [LGLAB, sumOf(leagues.map(x => x[0]), leagues.map(x => x[0]).filter(k => selL.has(k)), "Toutes", lgLabs)],
+    ["Paris", sumOf(okCats, okCats.filter(k => selT.has(k)), "Tous", tyLabs)],
+    ["Matchs", GOAL.min || GOAL.max ? `${GOAL.min || 1} à ${GOAL.max || "∞"}` : "Libre"]];
+  const gain = num(GOAL.stake) * need;
+  return `<div class="gx">
+      <div class="gx-top"><span class="gx-tag"><span class="d"></span>Objectif · ${esc(SPORT_NAME[SPORT])}</span><span class="note">Cotescope cherche parmi tous les paris de tous les matchs les tickets qui ont le plus de chances d'y arriver.</span></div>
+      <div class="gx-sent">
+        <span>Je mise</span><label class="gx-in"><input id="gl-s" inputmode="decimal" value="${esc(GOAL.stake)}" aria-label="Ma mise"><i>€</i></label>
+        <span>pour gagner</span><label class="gx-in"><input id="gl-t" inputmode="decimal" value="${esc(GOAL.target)}" aria-label="Ce que je veux gagner"><i>€</i></label>
+        <button class="btn go gx-go" id="gl-go">Trouver mes tickets</button>
       </div>
-      <div id="g-out">${out}</div>
-    </div>`;
+      <div class="gx-need">Cote à atteindre <b>${isFinite(need)?fr(need):"–"}</b>${isFinite(gain) ? ` · un ticket gagnant te rend <b>${eur(gain)}</b>` : ""}</div>
+      <details class="gx-f" ${GOAL.fopen ? "open" : ""}>
+        <summary>${sum.map(([k, v]) => `<span><small>${esc(k)}</small>${esc(v)}</span>`).join("")}<em>Affiner</em></summary>
+        <div class="gx-rows">
+          <div class="gx-row"><label>Jours</label><div class="tgl" id="gl-dy">${D.map(([k,l]) => `<button class="chip ${!keepD.length||keepD.includes(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("")}</div></div>
+          <div class="gx-row"><label>${LGLAB}</label><div class="tgl" id="gl-lg">${leagues.map(([k,l]) => `<button class="chip ${selL.has(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("") || '<span class="note">Aucun match à venir pour ce sport.</span>'}</div></div>
+          <div class="gx-row"><label>Paris</label><div class="tgl" id="gl-ty">${SC.map(([k,l]) => okCats.includes(k) ? `<button class="chip ${selT.has(k)?"on":""}" data-k="${k}">${l}</button>` : `<button class="chip lk" data-plans title="Inclus dans Essentiel">🔒 ${l}</button>`).join("")}</div></div>
+          <div class="gx-row"><label>Matchs par ticket</label><div class="gx-mm"><input class="in" id="gl-min" inputmode="numeric" placeholder="min" value="${esc(GOAL.min)}"><span class="note">à</span><input class="in" id="gl-max" inputmode="numeric" placeholder="max" value="${esc(GOAL.max)}"><span class="note">vide = libre</span></div></div>
+          <div class="gx-row"><label>⚡ Express</label><div class="gx-mm"><span class="note">une cote de</span><input class="in" id="ex-o" inputmode="decimal" placeholder="3,50"><span class="note">en</span><input class="in" id="ex-n" inputmode="numeric" placeholder="3"><span class="note">matchs</span><button class="btn sm" id="ex-go">Go</button></div></div>
+        </div>
+      </details>
+    </div>
+    <div id="g-out">${out}</div>`;
 }
 let GSORT = "p", GLEGS = "all", GLG = "", GCAT = "", GOPEN = new Set([0]), GMORE = 20;
 // une sélection d'un ticket : clic = page du match avec toutes les analyses
@@ -1264,15 +1305,15 @@ function goalList(r){
   const top = r.options[0];
   const head = (r.closest ? `<div class="warn">Ton objectif demande une cote de <b>${fr(r.need_odds)}</b>, impossible à atteindre avec les matchs actuels. Voici les tickets qui s'en approchent le plus : cote ${fr(r.closest.odds)}, gain d'environ ${eur(r.closest.gain)}.</div>` : "")
     + (r.note ? `<div class="warn">${esc(r.note)}</div>` : "")
-    + `<div class="gsum"><span><b>${r.n_found || r.options.length}</b> <span class="note">tickets trouvés pour une cote ≥ ${fr(r.closest ? r.closest.odds : r.need_odds)}</span></span>
+    + `<div class="gsum"><span><b>${r.n_found || r.options.length}</b> <span class="note">tickets trouvés pour une cote ≥ ${fr(r.closest ? r.closest.odds : r.need_odds)}${(r.n_found || 0) > r.options.length ? ` · les ${r.options.length} meilleurs affichés` : ""}</span></span>
        <span class="note">Le meilleur : <b style="font-size:16px;color:var(--home)">${pc(top.p_hit, top.p_hit < .1 ? 1 : 0)}</b> de chances</span></div>
-      <div class="gfair">${SPORT === "foot" ? `Classement objectif : les chances de chaque pari viennent de nos analyses (forme, absents, classement, face-à-face, modèle de buts) croisées avec les cotes des bookmakers professionnels, sans leur marge. Plus les données d'un match sont complètes, plus nos analyses pèsent. Uniquement de vraies cotes de bookmakers (jamais d'estimation), avec le bookmaker et l'heure du relevé : vérifie la cote chez toi avant de jouer, elle a pu bouger. Jamais d'équipe en mauvaise série (3 défaites sur les 5 derniers matchs) ni de pari contre une équipe qui gagne tout. Ordre : d'abord les tickets avec de vraies cotes (pas d'estimation ≈) et dont chaque pari a au moins 1 chance sur 2, puis les plus probables, en favorisant les matchs les mieux analysés (la note « analyse » indique la part des données trouvées : forme, absents, classement, face-à-face). Touche un match pour voir toute son analyse.` : "Classement objectif : les chances de chaque pari viennent des cotes des bookmakers (marge retirée)" + (SPORT === "nba" ? "." : ", croisées avec le classement et la forme des 10 derniers matchs.") + " Aucune préférence pour un joueur ou une équipe : seule la probabilité compte."}</div>
-      <div class="gbar">${[["p","Plus de chances"],["legs","Moins de matchs"],["soon","Fini le plus tôt"],["gain","Plus gros gain"]].map(([k,l]) => `<button class="chip ${GSORT===k?"on":""}" data-gsort="${k}">${l}</button>`).join("")}</div>
-      <div class="gbar" style="margin-bottom:14px"><button class="chip ${GLEGS==="all"?"on":""}" data-glegs="all">Tous</button>${counts.map(c => `<button class="chip ${GLEGS===String(c)?"on":""}" data-glegs="${c}">${c} match${c>1?"s":""}</button>`).join("")}</div>
-      <div class="gbar" style="margin-bottom:14px;gap:8px">
-        ${lgs.length > 1 ? `<select class="sel2" id="g-flg" style="max-width:230px"><option value="">${SPORT === "foot" ? "Toutes les compétitions" : "Tous les tournois"}</option>${lgs.map(x => `<option value="${esc(x)}" ${GLG===x?"selected":""}>Uniquement ${esc(x)}</option>`).join("")}</select>` : ""}
-        <select class="sel2" id="g-fcat" style="max-width:230px"><option value="">Tous les types de paris</option>${cats.map(x => `<option value="${esc(x)}" ${GCAT===x?"selected":""}>Avec ${esc(CATN[x]||x)}</option>`).join("")}</select>
-        <span class="note">${opts.length} ticket${opts.length>1?"s":""} avec ces filtres</span></div>`;
+      <details class="gfair"><summary>Comment les tickets sont classés ?</summary>${SPORT === "foot" ? `Classement objectif : les chances de chaque pari viennent de nos analyses (forme, absents, classement, face-à-face, modèle de buts) croisées avec les cotes des bookmakers professionnels, sans leur marge. Plus les données d'un match sont complètes, plus nos analyses pèsent. Uniquement de vraies cotes de bookmakers (jamais d'estimation), avec le bookmaker et l'heure du relevé : vérifie la cote chez toi avant de jouer, elle a pu bouger. Jamais d'équipe en mauvaise série (3 défaites sur les 5 derniers matchs) ni de pari contre une équipe qui gagne tout. Ordre : d'abord les tickets avec de vraies cotes (pas d'estimation ≈) et dont chaque pari a au moins 1 chance sur 2, puis les plus probables, en favorisant les matchs les mieux analysés (la note « analyse » indique la part des données trouvées : forme, absents, classement, face-à-face). Touche un match pour voir toute son analyse.` : "Classement objectif : les chances de chaque pari viennent des cotes des bookmakers (marge retirée)" + (SPORT === "nba" ? "." : ", croisées avec le classement et la forme des 10 derniers matchs.") + " Aucune préférence pour un joueur ou une équipe : seule la probabilité compte."}</details>
+      <div class="gtool">
+        <label><small>Trier</small><select class="sel2" id="g-sort">${[["p","Plus de chances"],["legs","Moins de matchs"],["soon","Fini le plus tôt"],["gain","Plus gros gain"]].map(([k,l]) => `<option value="${k}" ${GSORT===k?"selected":""}>${l}</option>`).join("")}</select></label>
+        <label><small>Matchs</small><select class="sel2" id="g-legs"><option value="all">Tous</option>${counts.map(c => `<option value="${c}" ${GLEGS===String(c)?"selected":""}>${c} match${c>1?"s":""}</option>`).join("")}</select></label>
+        ${lgs.length > 1 ? `<label><small>${SPORT === "foot" ? "Compétition" : "Tournoi"}</small><select class="sel2" id="g-flg"><option value="">Toutes</option>${lgs.map(x => `<option value="${esc(x)}" ${GLG===x?"selected":""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
+        ${cats.length > 1 ? `<label><small>Avec</small><select class="sel2" id="g-fcat"><option value="">Tous les paris</option>${cats.map(x => `<option value="${esc(x)}" ${GCAT===x?"selected":""}>${esc(CATN[x]||x)}</option>`).join("")}</select></label>` : ""}
+        <span class="note gcount">${opts.length} ticket${opts.length>1?"s":""}</span></div>`;
   const card = o => {
     const open = GOPEN.has(o.rank - 1);
     return `<div class="panel opt sm ${o.rank===1?"best":""}">
@@ -1298,6 +1339,8 @@ document.addEventListener("click", e => {
 document.addEventListener("change", e => {
   if (e.target.id === "g-flg") { GLG = e.target.value; GMORE = 20; render(); }
   if (e.target.id === "g-fcat") { GCAT = e.target.value; GMORE = 20; render(); }
+  if (e.target.id === "g-sort") { GSORT = e.target.value; GMORE = 20; render(); }
+  if (e.target.id === "g-legs") { GLEGS = e.target.value; GMORE = 20; render(); }
 });
 document.addEventListener("click", e => {
   const s = e.target.closest("[data-gsort]"); if (s) { GSORT = s.dataset.gsort; GMORE = 15; render(); return; }
@@ -1309,6 +1352,7 @@ document.addEventListener("click", e => {
   const c = e.target.closest(".tgl .chip:not(.lk)"); if (!c) return;
   c.classList.toggle("on");
 });
+document.addEventListener("toggle", e => { if (e.target.classList && e.target.classList.contains("gx-f")) GOAL.fopen = e.target.open; }, true);
 const readGoal = () => {
   GOAL.stake = $("#gl-s").value; GOAL.target = $("#gl-t").value; GOAL.min = $("#gl-min").value.trim(); GOAL.max = $("#gl-max").value.trim();
   GOAL.leagues = $$("#gl-lg .chip.on").map(x => x.dataset.k); GOAL.types = $$("#gl-ty .chip.on").map(x => x.dataset.k);

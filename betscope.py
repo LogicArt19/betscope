@@ -819,6 +819,67 @@ def form_proxy(st, side, mkey, name, point):
     return None
 
 
+def _phi(x):
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def nba_projection(st):
+    """Score attendu d'un match NBA à partir des 10 derniers matchs de chaque franchise (points marqués et encaissés)."""
+    n = (st or {}).get("nba") or {}
+    h, a = n.get("home"), n.get("away")
+    if not (h and a) or h.get("gp", 0) < 3 or a.get("gp", 0) < 3:
+        return None
+    mu_h = (h["ppg10"] + a["oppg10"]) / 2 + 1.2   # avantage du terrain
+    mu_a = (a["ppg10"] + h["oppg10"]) / 2 - 1.2
+    return {"home": round(mu_h, 1), "away": round(mu_a, 1), "total": round(mu_h + mu_a, 1), "sd_total": 17.0, "sd_margin": 12.5}
+
+
+def tennis_projection(st):
+    """Nombre de jeux attendu : moyenne des jeux par match des deux joueurs sur leurs 10 derniers matchs."""
+    T = (st or {}).get("tennis") or {}
+    vals = []
+    for side in ("home", "away"):
+        g = [x for x in ((T.get(side) or {}).get("last") or []) if x.get("score")]
+        tot = []
+        for x in g:
+            try:
+                tot.append(sum(int(a) + int(b) for a, b in (s_.split("-") for s_ in x["score"].split())))
+            except ValueError:
+                continue
+        if len(tot) >= 4:
+            vals.append(sum(tot) / len(tot))
+    if len(vals) < 2:
+        return None
+    return {"games": round(sum(vals) / 2, 1), "sd": 4.2}
+
+
+def sport_model(sport_key, st, mkey, side, a):
+    """Probabilité « maison » pour la NBA et le tennis (None si pas assez de données). Renvoie (p, poids)."""
+    if not st:
+        return None
+    if sport_key.startswith("basketball"):
+        pj = nba_projection(st)
+        if not pj:
+            return None
+        if mkey == "h2h" and side in ("home", "away"):
+            ph = _phi((pj["home"] - pj["away"]) / pj["sd_margin"])
+            return (ph if side == "home" else 1 - ph), 0.30
+        if mkey == "totals" and a.get("point") is not None:
+            po = 1 - _phi((float(a["point"]) - pj["total"]) / pj["sd_total"])
+            return (po if a["name"] == "Over" else 1 - po), 0.30
+        return None
+    if sport_key.startswith("tennis"):
+        T = st.get("tennis") or {}
+        if mkey == "h2h" and side in ("home", "away") and T.get("model"):
+            return T["model"][side], 0.25
+        if mkey == "totals" and a.get("point") is not None:
+            pj = tennis_projection(st)
+            if pj:
+                po = 1 - _phi((float(a["point"]) - pj["games"]) / pj["sd"])
+                return (po if a["name"] == "Over" else 1 - po), 0.25
+    return None
+
+
 def neutral_view_2way(st, sel, sport_key):
     """NBA et tennis : pas de nul. Cotes, lecture des stats, arguments de chaque côté, risques propres au sport."""
     tennis = sport_key.startswith("tennis")
@@ -833,6 +894,17 @@ def neutral_view_2way(st, sel, sport_key):
     T = st.get("tennis") or {}
     if tennis and T.get("model"):
         rows.append({"src": "Classement + forme des 10 derniers matchs", "p": [T["model"]["home"], None, T["model"]["away"]]})
+    proj = None
+    if not tennis:
+        pj = nba_projection(st)
+        if pj:
+            ph_ = _phi((pj["home"] - pj["away"]) / pj["sd_margin"])
+            rows.append({"src": "Points des 10 derniers matchs (Cotescope)", "p": [ph_, None, 1 - ph_]})
+            proj = {"kind": "nba", "home": pj["home"], "away": pj["away"], "total": pj["total"]}
+    else:
+        pj = tennis_projection(st)
+        if pj:
+            proj = {"kind": "tennis", "games": pj["games"]}
     if ph and pa:
         rows.append({"src": "Cotescope (final)", "p": [ph["p"], None, pa["p"]], "final": True})
     fh, fa = st.get("form_home") or {}, st.get("form_away") or {}
@@ -882,7 +954,7 @@ def neutral_view_2way(st, sel, sport_key):
         risks.insert(0, "Match très serré : pas de vrai favori")
     srcs = st.get("sources") or []
     rel = (40 if rows else 20) + (25 if (fh and fa) or (T.get("home") and T.get("away")) else 0) + (10 if T.get("model") or st.get("inj_home") is not None else 0)
-    return {"rows": rows, "labels": [home_o, "", away_o], "two_way": True, "adv_home": adv_h, "adv_away": adv_a,
+    return {"rows": rows, "labels": [home_o, "", away_o], "two_way": True, "adv_home": adv_h, "adv_away": adv_a, "proj": proj,
             "reliability": max(10, min(100, rel)), "risks": risks}
 
 
@@ -906,7 +978,7 @@ def neutral_view(st, sel):
     rows = []
     mk_ = trio("p_market")
     if mk_:
-        rows.append({"src": "Marché (Pinnacle + 9 bookmakers)", "p": mk_})
+        rows.append({"src": "Cotes des bookmakers (marge retirée)", "p": mk_})
     mdl = st.get("model")
     if mdl:
         rows.append({"src": "Modèle forme (saison, récent pondéré)", "p": [mdl["home"], mdl["draw"], mdl["away"]]})
@@ -1024,9 +1096,9 @@ def analyze(events, cfg, now=None, info=None):
                         po = modelmod.p_over(mdl, float(a["point"]))
                         p_model = po if a["name"] == "Over" else (1 - po if po is not None else None)
                 w_eff = analysis_weight(w_stats, st)
-                if sport_key.startswith("tennis") and mkey == "h2h" and side in ("home", "away") \
-                        and ((st or {}).get("tennis") or {}).get("model"):
-                    p_model, w_eff = st["tennis"]["model"][side], 0.25  # classement + forme des 10 derniers matchs
+                sm = sport_model(sport_key, st, mkey, side, a)
+                if sm is not None:
+                    p_model, w_eff = sm  # nos propres analyses (NBA : points des derniers matchs ; tennis : classement, forme, jeux)
                 elif not sport_key.startswith("soccer"):  # pas de modèle de buts ni de nul : la proba vient des cotes
                     p_model, w_eff = None, 0.0
                 elif p_model is None and st:
@@ -2921,6 +2993,19 @@ class Api:
             return ser_bet(x, self._cfg) if x else None
 
     # ---- appli web : liste des matchs et page d'un match ----
+    def get_tables(self):
+        """Classements du sport choisi : groupes [{name, rows}] par compétition."""
+        tables = (getattr(self._stats, "data", {}) or {}).get("tables") or {}
+        mode = self._sport_mode()
+        out = []
+        for sk, groups in tables.items():
+            if sport_family(sk) != mode:
+                continue
+            out.append({"sport_key": sk, "name": SPORTS.get(sk, sk), "groups": groups})
+        order = list(SPORTS)
+        out.sort(key=lambda x: order.index(x["sport_key"]) if x["sport_key"] in order else 99)
+        return out
+
     def _sport_mode(self):
         return getattr(self, "_sport", "foot")
 

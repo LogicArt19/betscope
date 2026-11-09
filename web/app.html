@@ -211,6 +211,18 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .gx-row>label{padding-top:7px;font-size:13px;font-weight:600;color:var(--fog)}
 .gx-row .tgl{display:flex;flex-wrap:wrap;gap:6px}
 .gx-mm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.gx-mm .in{width:76px;padding:8px 10px}
+.ourcall{margin-bottom:14px;border-color:color-mix(in srgb,var(--sp) 40%,var(--rim));background:radial-gradient(120% 140% at 0% 0%,var(--spbg),transparent 60%),var(--deck)}
+.oc-score{display:flex;gap:12px;flex-wrap:wrap}.oc-score>div{flex:1 1 200px;padding:12px 14px;border-radius:12px;background:rgba(0,0,0,.2);border:1px solid var(--rim)}
+.oc-score small{display:block;color:var(--fog);font-size:12px;margin-bottom:3px}.oc-score b{color:var(--chalk);font-size:16px}
+.oc-list{display:grid;gap:6px}.oc-row{display:grid;grid-template-columns:12px minmax(0,1fr) 120px 48px;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--rim)}
+.oc-row:last-child{border-bottom:0}.oc-row small{display:block;color:var(--fog);font-size:12px}.oc-row .num{text-align:right;color:var(--sp)}
+.oc-bar{height:6px;border-radius:3px;background:rgba(255,255,255,.06);overflow:hidden}.oc-bar i{display:block;height:100%;background:var(--sp)}
+.tsw+.tsw{margin-left:8px}
+.tblw{margin-bottom:14px}.tscroll{overflow-x:auto}
+table.stand{width:100%;border-collapse:collapse;font-size:13.5px}table.stand th{text-align:left;color:var(--fog);font-weight:600;font-size:12px;padding:8px 6px;border-bottom:1px solid var(--rim)}
+table.stand td{padding:8px 6px;border-bottom:1px solid var(--rim);white-space:nowrap;text-align:center}table.stand td:nth-child(2),table.stand th:nth-child(2){text-align:left}table.stand th{text-align:center}table.stand td.tn{font-weight:600;color:var(--chalk);width:40%}
+table.stand tr.hl td{background:var(--spbg)}table.stand td.up{color:var(--home)}table.stand td.down{color:var(--bad)}
+table.cmpt td.num{text-align:right;font-weight:700;color:var(--chalk)}
 .gkind{color:var(--sp);font-weight:600}
 .gtool{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:6px 0 16px;padding:12px 14px;border-radius:14px;border:1px solid var(--rim);background:var(--deck)}
 .gtool label{display:flex;flex-direction:column;gap:4px}.gtool label small{font-size:11.5px;color:var(--fog);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
@@ -613,7 +625,7 @@ function setSport(m){
   document.body.dataset.sfam = SFAM();
 }
 const SFAM = () => (SPORT === "atp" || SPORT === "wta") ? "tennis" : SPORT;
-const SPORT_VIEWS = ["matchs", "picks", "goal", "lab"];
+const SPORT_VIEWS = ["matchs", "tables", "picks", "goal", "lab"];
 const SPORT_TABS = [["foot", "Football", "Ligue 1, Premier League, Liga, Serie A…"], ["nba", "Basket · NBA", "Toutes les franchises"], ["tennis", "Tennis", "ATP · WTA"]];
 const SPORT_NAME = {foot: "Football", nba: "Basket · NBA", atp: "Tennis · Hommes (ATP)", wta: "Tennis · Femmes (WTA)"};
 const SPORT_SVG = {
@@ -651,7 +663,7 @@ document.addEventListener("click", e => { if (e.target.closest("[data-back]")) h
 
 function chrome(){
   const r = route().v, n = BSET.size;
-  const tab = ([k, l]) => `<button class="${r===k||(r==="match"&&k==="matchs")?"on":""}" data-go="${k}" title="${l}">${ICON[k]}<span class="lb">${l}</span>${k==="ticket"&&n?`<span class="badge">${n}</span>`:""}</button>`;
+  const tab = ([k, l]) => `<button class="${r===k||((r==="match"||r==="tables")&&k==="matchs")?"on":""}" data-go="${k}" title="${l}">${ICON[k]}<span class="lb">${l}</span>${k==="ticket"&&n?`<span class="badge">${n}</span>`:""}</button>`;
   $("#tabs").innerHTML = VIEWS.map(tab).join("");
   $("#bottom").innerHTML = VIEWS.map(tab).join("");
   const p = $("#plan"); p.hidden = !tier(); p.textContent = PLAN_NAME[tier()] || ""; p.className = "plan p-" + tier();
@@ -691,6 +703,28 @@ document.addEventListener("click", e => { const a = e.target.closest("[data-add]
    Vue : Matchs
    ====================================================================== */
 const JOURS = ["dim.","lun.","mar.","mer.","jeu.","ven.","sam."];
+let TSEL = {};
+function vTables(){
+  const T = call("get_tables") || [];
+  if (!T.length) return `<h1 class="t">Classements</h1><div class="panel empty"><b>Classements pas encore disponibles</b>Ils arrivent à la prochaine collecte.</div>`;
+  const cur = T.find(t => t.sport_key === TSEL[SPORT]) || T[0];
+  const foot = SPORT === "foot", nba = SPORT === "nba";
+  const mine = new Set(MATCHES.flatMap(m => [m.home, m.away]));
+  const head = foot ? "<th>#</th><th>Équipe</th><th>J</th><th>G</th><th>N</th><th>P</th><th>Buts</th><th>Diff.</th><th>Pts</th>"
+    : nba ? "<th>#</th><th>Franchise</th><th>V</th><th>D</th><th>%</th><th>Écart</th><th>Dom.</th><th>Ext.</th><th>10 der.</th><th>Série</th>"
+    : "<th>#</th><th>Joueur</th><th>Points</th><th>Évol.</th>";
+  const row = r => foot ? `<td>${r.rank || ""}</td><td class="tn">${esc(r.team)}</td><td>${r.gp}</td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${r.gf}:${r.ga}</td><td>${r.gf - r.ga > 0 ? "+" : ""}${r.gf - r.ga}</td><td><b>${r.pts}</b></td>`
+    : nba ? `<td>${r.rank || ""}</td><td class="tn">${esc(r.team)}</td><td>${r.w}</td><td>${r.l}</td><td>${esc(r.pct || "")}</td><td>${esc(r.gb || "")}</td><td>${esc(r.home || "")}</td><td>${esc(r.away || "")}</td><td>${esc(r.l10 || "")}</td><td>${esc(r.streak || "")}</td>`
+    : `<td>${r.rank}</td><td class="tn">${esc(r.team)}</td><td>${(r.pts || 0).toLocaleString("fr-FR")}</td><td class="${String(r.trend||"").startsWith("+") ? "up" : String(r.trend||"").startsWith("-") ? "down" : ""}">${esc(r.trend && r.trend !== "-" ? r.trend : "=")}</td>`;
+  return `<h1 class="t">Classements · ${esc(SPORT_NAME[SPORT])}</h1>
+    ${T.length > 1 ? `<div class="chips" style="margin-bottom:14px">${T.map(t => `<button class="chip ${t === cur ? "on" : ""}" data-tsel="${esc(t.sport_key)}">${esc(t.name)}</button>`).join("")}</div>` : ""}
+    ${cur.groups.map(g => `<div class="panel box tblw">${cur.groups.length > 1 || !foot ? `<h3>${esc(g.name)}</h3>` : ""}<div class="tscroll"><table class="stand"><tr>${head}</tr>${g.rows.map(r => `<tr class="${mine.has(r.team) ? "hl" : ""}">${row(r)}</tr>`).join("")}</table></div></div>`).join("")}
+    <p class="note">Les équipes surlignées jouent dans les prochains jours. Source : ESPN, mis à jour plusieurs fois par jour.</p>`;
+}
+document.addEventListener("click", e => { const t = e.target.closest("[data-tsel]"); if (t) { TSEL[SPORT] = t.dataset.tsel; render(); } });
+function matchTabs(v){
+  return `<div class="tsw mt">${[["matchs", "Matchs"], ["tables", "Classements"]].map(([k, l]) => `<button class="${v === k ? "on" : ""}" data-go="${k}">${l}</button>`).join("")}</div>`;
+}
 function vMatchs(){
   const days = {};
   MATCHES.forEach(m => { days[m.day] = (days[m.day] || 0) + 1; });
@@ -751,7 +785,7 @@ function vMatch(id){
   const tennis = String(e.sport_key || m.sport_key || "").startsWith("tennis");
   const t = [["analyse","Analyse"],["paris","Tous les paris"],["equipes", tennis ? "Joueurs" : "Équipes"],["h2h","Face-à-face"],["infos","Infos du match"]];
   let body = "";
-  if (MTAB === "analyse") body = voteBox(e) + tabAnalyse(e, nv);
+  if (MTAB === "analyse") body = ourCall(e, nv, info) + tabAnalyse(e, nv) + voteBox(e);
   else if (MTAB === "paris") body = tabParis(e);
   else if (MTAB === "equipes") body = tennis ? tabJoueurs(e, info) : tabEquipes(e, info);
   else if (MTAB === "h2h") body = tennis ? tabTennisH2H(e, info) : tabH2H(e, info);
@@ -803,6 +837,42 @@ document.addEventListener("click", async e => {
   const eid = b.dataset.eid, r = await server("/api/vote", "POST", {eid, pick: b.dataset.vote});
   if (r.ok) { VOTES[eid] = {counts: r.counts, mine: r.mine, t: Date.now(), loaded: true}; toast("Vote enregistré"); render(); } else toast(errMsg(r.reason));
 });
+/* ---------- nos propres pronostics (calculés par Cotescope, sans recopier personne) ---------- */
+function scorerProbs(e, i){
+  const P = i.players || {}, M = i.model;
+  const out = [];
+  for (const [side, xgKey] of [["home", "xg_home"], ["away", "xg_away"]]) {
+    const p = P[side]; if (!p || !(p.scorers || []).length) continue;
+    const teamGoals = Math.max(1, p.goals || p.scorers.reduce((s, x) => s + x.g, 0));
+    const xg = M && M[xgKey] ? M[xgKey] : 1.35;
+    for (const x of p.scorers) {
+      if (x.inj) continue;
+      const share = x.g / teamGoals, regular = x.m ? Math.min(1, x.m / Math.max(4, Math.max(...p.scorers.map(y => y.m || 0)))) : .7;
+      const lam = share * xg * (0.55 + 0.45 * regular);
+      out.push({n: x.n, team: side === "home" ? e.home : e.away, side, p: 1 - Math.exp(-lam), g: x.g, m: x.m});
+    }
+  }
+  return out.sort((a, b) => b.p - a.p).slice(0, 8);
+}
+function ourCall(e, nv, i){
+  const sport = String(e.sport_key || "");
+  if (sport.startsWith("soccer")) {
+    const sc = scorerProbs(e, i), M = i.model;
+    if (!sc.length && !M) return "";
+    return `<div class="panel box ourcall"><h3>🎯 Le pronostic Cotescope <small class="note">calculé par nos analyses</small></h3>
+      ${M ? `<div class="oc-score"><div><small>Buts attendus</small><b>${esc(e.home)} ${fr(M.xg_home, 1)} – ${fr(M.xg_away, 1)} ${esc(e.away)}</b></div><div><small>Total attendu</small><b>${fr(M.xg_home + M.xg_away, 1)} buts</b></div></div>` : ""}
+      ${sc.length ? `<p class="note" style="margin:12px 0 6px"><b>Buteurs les plus probables</b> (chances de marquer au moins un but, d'après ses buts de la saison, son temps de jeu et les buts attendus de son équipe)</p>
+        <div class="oc-list">${sc.map(x => `<div class="oc-row"><span class="dot ${x.side === "home" ? "h" : "a"}"></span><div><b>${esc(x.n)}</b><small>${esc(x.team)} · ${x.g} but${x.g > 1 ? "s" : ""}${x.m ? ` en ${x.m} matchs` : ""}</small></div><div class="oc-bar"><i style="width:${Math.round(x.p * 100)}%"></i></div><b class="num">${pc(x.p)}</b></div>`).join("")}</div>` : ""}
+    </div>`;
+  }
+  const pj = nv.proj;
+  if (!pj) return "";
+  if (pj.kind === "nba") return `<div class="panel box ourcall"><h3>🎯 Le pronostic Cotescope <small class="note">d'après les 10 derniers matchs de chaque franchise</small></h3>
+      <div class="oc-score"><div><small>Score attendu</small><b>${esc(e.home)} ${Math.round(pj.home)} – ${Math.round(pj.away)} ${esc(e.away)}</b></div><div><small>Total de points attendu</small><b>${fr(pj.total, 1)} pts</b></div><div><small>Écart attendu</small><b>${pj.home >= pj.away ? esc(e.home) : esc(e.away)} de ${fr(Math.abs(pj.home - pj.away), 1)}</b></div></div></div>`;
+  if (pj.kind === "tennis") return `<div class="panel box ourcall"><h3>🎯 Le pronostic Cotescope <small class="note">d'après les 10 derniers matchs des deux joueurs</small></h3>
+      <div class="oc-score"><div><small>Nombre de jeux attendu</small><b>${fr(pj.games, 1)} jeux</b></div></div></div>`;
+  return "";
+}
 function tabAnalyse(e, nv){
   const rows = nv.rows || [], lab = nv.labels || [e.home, "Nul", e.away];
   const rel = nv.reliability ?? 25, rc = rel >= 70 ? "var(--home)" : rel >= 45 ? "var(--draw)" : "var(--bad)";
@@ -963,6 +1033,17 @@ function tabEquipes(e, i){
     <h2 class="s">Forme récente</h2><div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}</div>
     ${String(e.sport_key||"").startsWith("soccer") ? `<h2 class="s">Buteurs et passeurs décisifs (saison)</h2><div class="grid2">${playersBox(e.home, (i.players||{}).home)}${playersBox(e.away, (i.players||{}).away)}</div>` : ""}`;
   if (rank() < 2) return top + lockBox("pro", "Absents et compositions sur le terrain", "Les blessés et suspendus pondérés par leur importance, et les compos placées sur un mini terrain.");
+  if (String(e.sport_key||"").startsWith("basketball")) {
+    const n = i.nba || {}, h = n.home, a = n.away, rh = i.rec_home || {}, ra = i.rec_away || {};
+    const rows = h && a ? [["Bilan de la saison", `${h.w}-${h.l}`, `${a.w}-${a.l}`], ["Classement (conférence)", rh.rank ? rh.rank + "e" : "–", ra.rank ? ra.rank + "e" : "–"],
+      ["Points marqués par match", fr(h.ppg, 1), fr(a.ppg, 1)], ["Points encaissés par match", fr(h.oppg, 1), fr(a.oppg, 1)],
+      ["Points marqués (10 derniers)", fr(h.ppg10, 1), fr(a.ppg10, 1)], ["Points encaissés (10 derniers)", fr(h.oppg10, 1), fr(a.oppg10, 1)],
+      ["Victoires sur les 10 derniers", h.w10 + "/10", a.w10 + "/10"], ["À domicile", h.home_rec, a.home_rec], ["À l'extérieur", h.away_rec, a.away_rec],
+      ["Total de points moyen (10 derniers)", fr(h.tot10, 1), fr(a.tot10, 1)]] : [];
+    return `${rows.length ? `<h2 class="s">Statistiques comparées</h2><div class="panel box"><table class="tbl cmpt"><tr><th></th><th>${esc(e.home)}</th><th>${esc(e.away)}</th></tr>${rows.map(r => `<tr><td>${r[0]}</td><td class="num">${esc(String(r[1]))}</td><td class="num">${esc(String(r[2]))}</td></tr>`).join("")}</table></div>` : ""}
+      <h2 class="s">Derniers matchs</h2><div class="grid2">${formBox(e.home, i.form_home, i.table_home)}${formBox(e.away, i.form_away, i.table_away)}</div>
+      <h2 class="s">Blessés</h2><div class="grid2"><div class="panel box"><h3>${esc(e.home)}</h3>${injList(i.inj_home)}</div><div class="panel box"><h3>${esc(e.away)}</h3>${injList(i.inj_away)}</div></div>`;
+  }
   if (!String(e.sport_key||"").startsWith("soccer")) return top + `<h2 class="s">Blessés</h2><div class="grid2"><div class="panel box"><h3>${esc(e.home)}</h3>${injList(i.inj_home)}</div><div class="panel box"><h3>${esc(e.away)}</h3>${injList(i.inj_away)}</div></div>`;
   return top + `<h2 class="s">Compositions</h2>${lineupsBlock(e, i)}
     <h2 class="s">Absents</h2><div class="grid2">
@@ -1020,9 +1101,9 @@ function tabH2H(e, i){
   if (rank() < 2) return lockBox("pro", "Face-à-face", "Les dernières confrontations en championnat, leurs scores et la moyenne de buts.");
   const h = i.h2h || [], s = i.h2h_sum;
   if (!h.length) return `<div class="panel empty"><b>Pas de confrontation récente trouvée</b>Les deux équipes ne se sont pas affrontées ces dernières saisons.</div>`;
-  return `${s?`<div class="stats" style="margin-bottom:14px"><div class="panel stat"><small>Victoires ${esc(e.home)}</small><b>${s.w}</b></div><div class="panel stat"><small>Nuls</small><b>${s.d}</b></div><div class="panel stat"><small>Victoires ${esc(e.away)}</small><b>${s.l}</b></div><div class="panel stat"><small>Buts par match</small><b>${fr(s.avg_goals,1)}</b></div></div>`:""}
+  return `${s?`<div class="stats" style="margin-bottom:14px"><div class="panel stat"><small>Victoires ${esc(e.home)}</small><b>${s.w}</b></div>${String(e.sport_key||"").startsWith("basketball") ? "" : `<div class="panel stat"><small>Nuls</small><b>${s.d}</b></div>`}<div class="panel stat"><small>Victoires ${esc(e.away)}</small><b>${s.l}</b></div><div class="panel stat"><small>${String(e.sport_key||"").startsWith("basketball") ? "Points par match" : "Buts par match"}</small><b>${fr(s.avg_goals,1)}</b></div></div>`:""}
     <div class="panel">${h.slice(0, 10).map(g => `<div class="bet" style="grid-template-columns:96px minmax(0,1fr) auto"><span class="note">${esc(String(g.date||"").split("-").reverse().join("/"))}</span><div class="sel">${esc(g.home)} – ${esc(g.away)}<small>${esc(g.comp||"")}</small></div><b class="num">${g.gh} – ${g.ga}</b></div>`).join("")}</div>
-    <p class="note" style="margin-top:8px">Confrontations en championnat depuis 2020 (source : football-data.co.uk).</p>`;
+    <p class="note" style="margin-top:8px">${i.h2h_src === "espn" ? "Toutes les confrontations des 6 dernières saisons, toutes compétitions." : "Confrontations en championnat depuis 2020."}</p>`;
 }
 let CARD_ODDS = {};
 function cardsBox(e, i){
@@ -1870,7 +1951,7 @@ function render(){
   if (!web && !window.__BRIDGE__) return;
   refreshState();
   const r = route();
-  const V = {matchs:vMatchs, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, lab:vLab, ticket:vTicket, bilan:vBilan, compte:vCompte};
+  const V = {matchs:vMatchs, tables:vTables, match:() => vMatch(r.a), picks:vPicks, goal:vGoal, lab:vLab, ticket:vTicket, bilan:vBilan, compte:vCompte};
   const paused = ACCOUNT && ACCOUNT.pause && ACCOUNT.pause > Date.now();
   const locked = SPORT !== "foot" && !SPINFO.n_events && rank() < 2;
   const TEN = "Les vraies cotes de Betclic, Winamax, Unibet et Bet365 (vainqueur, nombre de jeux), le classement, les 10 derniers matchs, la série en cours, la fatigue, les tie-breaks et le face-à-face.";
@@ -1879,7 +1960,7 @@ function render(){
   const body = paused && ["picks","goal","ticket","lab"].includes(r.v) ? vPaused()
     : locked && SPORT_VIEWS.includes(r.v) ? `<h1 class="t">${SPORT_NAME[SPORT]}</h1>${lockBox("essentiel", `${SPORT_NAME[SPORT]} : inclus dans Essentiel et Pro`, LOCK_TXT[SPORT])}`
     : (V[r.v] || vMatchs)();
-  $("#view").innerHTML = verifyBanner() + (SPORT_VIEWS.includes(r.v) ? tennisSwitch() : "") + body;
+  $("#view").innerHTML = verifyBanner() + (SPORT_VIEWS.includes(r.v) ? tennisSwitch() : "") + (["matchs", "tables"].includes(r.v) ? matchTabs(r.v) : "") + body;
   window.__czEmail = (ACCOUNT && ACCOUNT.email) || "";
   sportTabs();
   chrome();

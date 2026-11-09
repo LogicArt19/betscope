@@ -958,6 +958,188 @@ def tennis_stats(events, st, state):
     return n_ok
 
 
+
+# ---------------------------------------------------------------------------
+# Classements de toutes les compétitions, face-à-face sur plusieurs saisons (toutes compétitions) et
+# stats d'équipes NBA (points marqués / encaissés), depuis ESPN (gratuit). Les saisons passées sont gardées.
+ESPN_SITE = "https://site.api.espn.com/apis/site/v2/sports"
+TABLE_SLUGS = {"soccer_france_ligue_one": "soccer/fra.1", "soccer_epl": "soccer/eng.1", "soccer_spain_la_liga": "soccer/esp.1",
+               "soccer_italy_serie_a": "soccer/ita.1", "soccer_germany_bundesliga": "soccer/ger.1",
+               "soccer_uefa_champs_league": "soccer/uefa.champions", "soccer_uefa_europa_league": "soccer/uefa.europa",
+               "soccer_uefa_europa_conference_league": "soccer/uefa.europa.conf", "soccer_uefa_nations_league": "soccer/uefa.nations",
+               "basketball_nba": "basketball/nba"}
+
+
+def _num(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def espn_tables(st, state):
+    tc = state.setdefault("tables", {})
+    now = time.time()
+    for sk, path in TABLE_SLUGS.items():
+        c = tc.get(sk)
+        if c and now - c["ts"] < 6 * 3600:
+            continue
+        try:
+            j = _espn_json(f"https://site.api.espn.com/apis/v2/sports/{path}/standings")
+        except Exception as e:
+            log(f"classement {sk} :", str(e)[:60])
+            continue
+        groups = []
+        for ch in (j.get("children") or ([j] if j.get("standings") else [])):
+            rows = []
+            for e in (ch.get("standings") or {}).get("entries") or []:
+                stt = {x.get("name"): x.get("value") if x.get("value") is not None else x.get("displayValue") for x in e.get("stats") or []}
+                disp = {x.get("name"): x.get("displayValue") for x in e.get("stats") or []}
+                t = e.get("team") or {}
+                rows.append({"id": str(t.get("id")), "team": t.get("displayName") or t.get("name") or "", "short": t.get("abbreviation") or "",
+                             "rank": int(_num(stt.get("rank")) or 0) or None, "gp": int(_num(stt.get("gamesPlayed")) or 0),
+                             "w": int(_num(stt.get("wins")) or 0), "d": int(_num(stt.get("ties")) or 0), "l": int(_num(stt.get("losses")) or 0),
+                             "gf": int(_num(stt.get("pointsFor")) or 0), "ga": int(_num(stt.get("pointsAgainst")) or 0),
+                             "pts": int(_num(stt.get("points")) or 0), "pct": disp.get("winPercent"), "gb": disp.get("gamesBehind"),
+                             "streak": disp.get("streak"), "home": disp.get("Home") or disp.get("home"), "away": disp.get("Road") or disp.get("away"),
+                             "l10": disp.get("Last Ten Games") or disp.get("lasttengames")})
+            if sk.startswith("basketball"):
+                rows.sort(key=lambda r: -(_num(r["pct"]) or 0))
+                for i, r in enumerate(rows):
+                    r["rank"] = i + 1
+            else:
+                rows.sort(key=lambda r: (r["rank"] or 99))
+            if rows:
+                groups.append({"name": ch.get("name") or ch.get("abbreviation") or "", "rows": rows})
+        if groups:
+            tc[sk] = {"ts": now, "groups": groups}
+        time.sleep(0.3)
+    st.data["tables"] = {k: v["groups"] for k, v in tc.items() if k in TABLE_SLUGS}
+    for lg in ("atp", "wta"):  # tennis : classement mondial (top 150)
+        r = ((state.get("tennis") or {}).get("rank") or {}).get(lg)
+        if r and r.get("r"):
+            rows = sorted(({"id": pid, "team": x["name"], "rank": x["rank"], "pts": int(x["pts"] or 0), "trend": x.get("trend")}
+                           for pid, x in r["r"].items() if x.get("rank")), key=lambda x: x["rank"])[:150]
+            st.data["tables"][f"tennis_{lg}"] = [{"name": "Classement mondial " + lg.upper(), "rows": rows}]
+    return st.data["tables"]
+
+
+def _sched(state, kind, tid, season, current):
+    """Matchs joués d'une équipe sur une saison (ESPN), mis en cache (saisons passées : définitif)."""
+    sc = state.setdefault("sched", {})
+    key = f"{kind}:{tid}:{season}"
+    c = sc.get(key)
+    if c and (not current or time.time() - c["ts"] < 12 * 3600):
+        return c["g"], False
+    url = (f"{ESPN_SITE}/soccer/all/teams/{tid}/schedule?season={season}" if kind == "foot"
+           else f"{ESPN_SITE}/basketball/nba/teams/{tid}/schedule?season={season}")
+    j = _espn_json(url)
+    games = []
+    for e in j.get("events") or []:
+        try:
+            cp = e["competitions"][0]
+            if not (((cp.get("status") or {}).get("type") or {}).get("completed")):
+                continue
+            h = next(x for x in cp["competitors"] if x.get("homeAway") == "home")
+            a = next(x for x in cp["competitors"] if x.get("homeAway") == "away")
+            sc_ = lambda x: int(float((x.get("score") or {}).get("value") if isinstance(x.get("score"), dict) else x.get("score")))
+            games.append({"date": str(e.get("date") or "")[:10], "comp": ((e.get("season") or {}).get("displayName") or (e.get("league") or {}).get("name") or "").replace(str(season) + "-", "").strip(),
+                          "hid": str(h.get("id")), "aid": str(a.get("id")), "home": (h.get("team") or {}).get("displayName", ""),
+                          "away": (a.get("team") or {}).get("displayName", ""), "hs": sc_(h), "as": sc_(a)})
+        except (KeyError, StopIteration, TypeError, ValueError):
+            continue
+    sc[key] = {"ts": time.time(), "g": games}
+    return games, True
+
+
+def espn_h2h_and_nba(events, st, state, budget=260):
+    web = st.data.setdefault("web", {})
+    now = datetime.now(timezone.utc)
+    year = now.year if now.month >= 7 else now.year - 1      # saison de foot en cours (ex. 2026 = 2026-27)
+    nba_season = year + 1                                     # NBA : année de fin (2026-27 = 2027)
+    used, n_h2h, n_nba = 0, 0, 0
+    tables = st.data.get("tables") or {}
+    for e in sorted(events, key=lambda e: e["commence_time"]):
+        sk = str(e.get("sport_key", ""))
+        if not (sk.startswith("soccer") or sk.startswith("basketball")):
+            continue
+        w = web.get(e["id"]) or {}
+        v = w.get("v") or {}
+        tids = v.get("team_ids") or {}
+        hid, aid = str(tids.get("home") or ""), str(tids.get("away") or "")
+        if not (hid and aid):
+            continue
+        kind = "foot" if sk.startswith("soccer") else "nba"
+        seasons = [year - k for k in range(0, 6)] if kind == "foot" else [nba_season - k for k in range(0, 4)]
+        games = []
+        for i, sn in enumerate(seasons):
+            if used >= budget:
+                break
+            try:
+                g, fetched = _sched(state, kind, hid, sn, i == 0)
+            except Exception:
+                continue
+            used += fetched
+            if fetched:
+                time.sleep(0.25)
+            games += g
+        h2h = [g for g in games if {g["hid"], g["aid"]} == {hid, aid}]
+        seen, uniq = set(), []
+        for g in sorted(h2h, key=lambda g: g["date"], reverse=True):
+            if g["date"] in seen:
+                continue
+            seen.add(g["date"])
+            uniq.append({"date": g["date"], "home": g["home"], "away": g["away"], "gh": g["hs"], "ga": g["as"], "comp": g["comp"]})
+        if uniq:
+            v["h2h_espn"] = uniq[:12]
+            hs = [(g["hs"], g["as"]) if g["hid"] == hid else (g["as"], g["hs"]) for g in sorted(h2h, key=lambda g: g["date"], reverse=True)[:12]]
+            v["h2h_sum_espn"] = {"w": sum(a > b for a, b in hs), "d": sum(a == b for a, b in hs), "l": sum(a < b for a, b in hs),
+                                 "n": len(hs), "avg_goals": round(sum(a + b for a, b in hs) / len(hs), 2)}
+            n_h2h += 1
+        # classement des deux équipes dans la compétition du match
+        for grp in tables.get(sk) or []:
+            for r in grp["rows"]:
+                for side, tid in (("home", hid), ("away", aid)):
+                    if r["id"] == tid:
+                        v.setdefault("table_espn", {})[side] = {"rank": r["rank"], "points": r["pts"], "played": r["gp"],
+                                                                 "league": grp["name"] if len(tables.get(sk) or []) > 1 else "",
+                                                                 "w": r["w"], "d": r["d"], "l": r["l"], "gf": r["gf"], "ga": r["ga"], "pct": r["pct"],
+                                                                 "home_rec": r["home"], "away_rec": r["away"], "l10": r["l10"], "streak": r["streak"]}
+        if kind == "nba":  # points marqués / encaissés (saison et 10 derniers matchs) de chaque franchise
+            stats = {}
+            for side, tid in (("home", hid), ("away", aid)):
+                try:
+                    g, fetched = _sched(state, "nba", tid, nba_season, True)
+                    used += fetched
+                except Exception:
+                    continue
+                pf = [(x["hs"], x["as"]) if x["hid"] == tid else (x["as"], x["hs"]) for x in sorted(g, key=lambda x: x["date"])]
+                if not pf:
+                    continue
+                l10 = pf[-10:]
+                hh = [x for x in g if x["hid"] == tid]
+                aa = [x for x in g if x["aid"] == tid]
+                stats[side] = {"gp": len(pf), "ppg": round(sum(a for a, b in pf) / len(pf), 1), "oppg": round(sum(b for a, b in pf) / len(pf), 1),
+                               "ppg10": round(sum(a for a, b in l10) / len(l10), 1), "oppg10": round(sum(b for a, b in l10) / len(l10), 1),
+                               "w": sum(1 for a, b in pf if a > b), "l": sum(1 for a, b in pf if a < b),
+                               "w10": sum(1 for a, b in l10 if a > b),
+                               "home_rec": f"{sum(1 for x in hh if x['hs'] > x['as'])}-{sum(1 for x in hh if x['hs'] < x['as'])}",
+                               "away_rec": f"{sum(1 for x in aa if x['as'] > x['hs'])}-{sum(1 for x in aa if x['as'] < x['hs'])}",
+                               "tot10": round(sum(a + b for a, b in l10) / len(l10), 1)}
+            if stats:
+                v["nba"] = stats
+                n_nba += 1
+        w["v"] = v
+        web[e["id"]] = w
+    # on ne garde en cache que les équipes des matchs à venir (la mémoire reste petite)
+    live = set()
+    for e in events:
+        tids = ((web.get(e["id"]) or {}).get("v") or {}).get("team_ids") or {}
+        live |= {str(x) for x in tids.values() if x}
+    state["sched"] = {k: v for k, v in (state.get("sched") or {}).items() if k.split(":")[1] in live}
+    log(f"ESPN : face-à-face trouvés pour {n_h2h} matchs, stats NBA pour {n_nba} matchs, {used} requêtes")
+
+
 def self_test(snap):
     """Auto-test : fait tourner le vrai moteur sur les vraies données (comme l'appli d'un abonné Pro) et écrit
     dans le journal ce qu'un client verrait, bookmaker par bookmaker."""
@@ -1566,6 +1748,11 @@ def main():
     except Exception as e:
         log("Tennis (ESPN) :", e)
     try:
+        espn_tables(st, state)
+        espn_h2h_and_nba(events, st, state)
+    except Exception as e:
+        log("ESPN classements / face-à-face :", e)
+    try:
         n = publish_lineup_watch(events, st)
         log("surveillance des compos :", n, "matchs dans les 36 h")
     except Exception as e:
@@ -1588,7 +1775,7 @@ def main():
 
     # foot : seulement le top 5 européen et les grandes compétitions (UEFA, Ligue des nations)
     events[:] = [e for e in events if not str(e.get("sport_key", "")).startswith("soccer") or e["sport_key"] in FOOT_KEPT]
-    keep = ("fixtures", "results", "standings", "scorers", "h2h", "web", "inj_day", "pred", "lineups")
+    keep = ("fixtures", "results", "standings", "scorers", "h2h", "web", "inj_day", "pred", "lineups", "tables")
     snap = {
         "ts": state.get("odds_ts", 0), "built": time.time(), "sports": sorted(set(SPORTS) | {e["sport_key"] for e in events}),
         "events": events, "quota": state.get("quota"), "stats": {k: st.data.get(k, {}) for k in keep},

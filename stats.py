@@ -1254,6 +1254,18 @@ class Stats:
         if not r.get("h2h") and w.get("h2h"):
             r["h2h"] = w["h2h"][:10]
             r["h2h_sum"] = model.h2h_summary(r["h2h"], r["home"], r["away"])
+        if w.get("h2h_espn") and len(w["h2h_espn"]) > len(r.get("h2h") or []):  # toutes compétitions, 6 saisons
+            r["h2h"] = w["h2h_espn"][:12]
+            r["h2h_sum"] = w.get("h2h_sum_espn")
+            r["h2h_src"] = "espn"
+        te = w.get("table_espn") or {}
+        for side in ("home", "away"):
+            if not r.get("table_" + side) and te.get(side):
+                r["table_" + side] = te[side]
+            if te.get(side):
+                r["rec_" + side] = te[side]
+        if w.get("nba"):
+            r["nba"] = w["nba"]
         t = w.get("table") or {}
         if not r.get("table_home") and t.get("home"):
             r["table_home"] = t["home"]

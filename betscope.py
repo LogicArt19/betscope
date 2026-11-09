@@ -1244,7 +1244,7 @@ def analyze(events, cfg, now=None, info=None):
                     "n_books": a["n"],
                     "playable": playable,          # {book_key: (cote, nom)}
                     "all_prices": a["prices"],
-                    "suspect": p_market * odds - 1 > float(cfg["max_ev"]),
+                    "suspect": p_market * odds - 1 > float(cfg["max_ev"]) or abs(p - p_market) > 0.25,  # écart énorme = nos données du match sont sûrement incomplètes
                 })
         add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, allowed)
     return out
@@ -1331,7 +1331,7 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
             "kelly": ev_ / (odds - 1) if odds > 1 else 0, "n_books": ref["n_books"],
             "playable": {(real[1] if is_real else bkey): (odds, real[2] if is_real else btitle)},
             "all_prices": {(real[1] if is_real else bkey): (odds, real[2] if is_real else btitle)},
-            "suspect": False,
+            "suspect": abs(p - p_market) > 0.25,
         })
 
 
@@ -2886,7 +2886,7 @@ class Api:
             s["all_prices"] = dict(s["all_prices"], **{s["book_key"]: (float(o), s["book"])})
             s["ev"] = s["p"] * s["odds"] - 1
             s["kelly"] = s["ev"] / (s["odds"] - 1) if s["odds"] > 1 else 0
-            s["suspect"] = s.get("p_market", s["p"]) * s["odds"] - 1 > float(cfg["max_ev"])
+            s["suspect"] = s.get("p_market", s["p"]) * s["odds"] - 1 > float(cfg["max_ev"]) or abs(s["p"] - s.get("p_market", s["p"])) > 0.25
 
     def _save_overrides(self):
         try:

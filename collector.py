@@ -646,6 +646,25 @@ def collect_sportytrader(events, state, max_pages=190):
     la = datetime.now(ZoneInfo("America/Los_Angeles")).utcoffset().total_seconds() / -3600
     med = offs[len(offs) // 2] if offs else None
     off = la  # l'écart mesuré n'est affiché que pour contrôle
+    # garde-fou : une page de championnat peut afficher des matchs d'autres compétitions (Serie B, Norvège…).
+    # On garde un match seulement si au moins une des deux équipes est dans le classement ESPN de la compétition.
+    teams_of = {}
+    for sk_, c_ in (state.get("tables") or {}).items():
+        if sk_.startswith("soccer"):
+            names = [r["team"] for g in c_.get("groups") or [] for r in g.get("rows") or [] if r.get("team")]
+            if len(names) >= 10:
+                teams_of[sk_] = names
+    n_out, kept = 0, []
+    for x in listing:
+        sk, link, h, a, t = x
+        tl = teams_of.get(sk)
+        if tl and not (_best_team(h, tl, 0.5) or _best_team(a, tl, 0.5)):
+            n_out += 1
+            continue
+        kept.append(x)
+    listing = kept
+    if n_out:
+        log(f"SportyTrader : {n_out} matchs écartés (hors compétitions suivies)")
     known_ids = {e["id"] for e in events}
     new_events, n_hit = [], 0
     for sk, link, h, a, t in sorted(listing, key=lambda x: x[4]):

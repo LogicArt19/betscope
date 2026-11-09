@@ -1161,7 +1161,7 @@ def self_test(snap):
             log(f"AUTO-TEST {'+'.join(books)} : {real} paris à vraie cote ; tickets (10 € ->) " + ", ".join(res))
         api.set_books(["betclic_fr", "winamax_fr", "parionssport_fr", "unibet_fr", "bet365"])
         r = api.compute_objective(10, 40)
-        for o in (r.get("options") or [])[:2]:
+        for o in (r.get("options") or [])[:8]:
             t = o["tickets"][0]
             log(f"   #{r['options'].index(o) + 1} {round(o['p_hit'] * 100, 1)} % : " + " | ".join(
                 f"{l['selection']} @{l['odds']} ({round(l['p'] * 100)} %, {l.get('book')}) [{l.get('form_h') or '?'} / {l.get('form_a') or '?'}]"

@@ -853,6 +853,99 @@ def tennis_projection(st):
     return {"games": round(sum(vals) / 2, 1), "sd": 4.2}
 
 
+def _pois_p(k, lam):
+    return math.exp(-lam) * lam ** k / math.factorial(k)
+
+
+def our_markets(sk, st, it):
+    """Nos probabilités pour tous les types de paris d'un match, calculées par nos modèles (aucune cote utilisée).
+    Chaque pari : type, libellé, probabilité, cote juste (au-dessus de laquelle le pari devient intéressant)."""
+    h, a = it["home"], it["away"]
+    out = []
+    add = lambda typ, lab, p: out.append({"type": typ, "label": lab, "p": round(p, 3), "fair": round(1 / p, 2)}) if 0.02 < p < 0.995 else None
+    if sk.startswith("soccer"):
+        m = st.get("model")
+        if not m:
+            return out
+        lh, la = m["xg_home"], m["xg_away"]
+        grid = [[_pois_p(i, lh) * _pois_p(j, la) for j in range(9)] for i in range(9)]
+        P = lambda f: sum(grid[i][j] for i in range(9) for j in range(9) if f(i, j))
+        ph, pd, pa = m["home"], m["draw"], m["away"]
+        add("res", f"Victoire {h}", ph); add("res", "Match nul", pd); add("res", f"Victoire {a}", pa)
+        add("res", f"{h} ou nul", ph + pd); add("res", f"{a} ou nul", pa + pd); add("res", f"{h} ou {a}", ph + pa)
+        if ph + pa > 0:
+            add("res", f"{h} (remboursé si nul)", ph / (ph + pa)); add("res", f"{a} (remboursé si nul)", pa / (ph + pa))
+        for ln in (0.5, 1.5, 2.5, 3.5, 4.5):
+            po = P(lambda i, j, ln=ln: i + j > ln)
+            u = "but" if ln < 1 else "buts"
+            add("goals", f"Plus de {ln:g} {u}".replace(".", ","), po); add("goals", f"Moins de {ln:g} {u}".replace(".", ","), 1 - po)
+        bt = P(lambda i, j: i > 0 and j > 0)
+        add("goals", "Les 2 équipes marquent", bt); add("goals", "Les 2 équipes ne marquent pas toutes les deux", 1 - bt)
+        for name, lam in ((h, lh), (a, la)):
+            p0 = math.exp(-lam)
+            add("team", f"{name} marque", 1 - p0); add("team", f"{name} marque 2 buts ou plus", 1 - p0 - lam * p0)
+            add("team", f"{name} ne prend pas de but", math.exp(-(la if name == h else lh)))
+        add("hcp", f"{h} gagne par 2 buts ou plus (-1,5)", P(lambda i, j: i - j >= 2))
+        add("hcp", f"{a} gagne par 2 buts ou plus (-1,5)", P(lambda i, j: j - i >= 2))
+        add("hcp", f"{h} ne perd pas par 2 buts ou plus (+1,5)", 1 - P(lambda i, j: j - i >= 2))
+        add("hcp", f"{a} ne perd pas par 2 buts ou plus (+1,5)", 1 - P(lambda i, j: i - j >= 2))
+        hh, ha = lh * 0.45, la * 0.45  # mi-temps : environ 45 % des buts
+        g1 = [[_pois_p(i, hh) * _pois_p(j, ha) for j in range(7)] for i in range(7)]
+        add("half", "Nul à la mi-temps", sum(g1[i][i] for i in range(7)))
+        add("half", f"{h} mène à la mi-temps", sum(g1[i][j] for i in range(7) for j in range(7) if i > j))
+        add("half", "Plus de 0,5 but en 1re mi-temps", 1 - g1[0][0])
+        sc = sorted(((grid[i][j], i, j) for i in range(6) for j in range(6)), reverse=True)[:4]
+        for p_, i, j in sc:
+            add("exact", f"Score exact {i}-{j}", p_)
+        for x in it.get("scorers") or []:
+            add("scorer", f"{x['n']} marque", x["p"])
+    elif sk.startswith("basketball"):
+        pj = nba_projection(st)
+        if not pj:
+            return out
+        mg, sdm, tot, sdt = pj["home"] - pj["away"], pj["sd_margin"], pj["total"], pj["sd_total"]
+        ph = _phi(mg / sdm)
+        add("res", f"Victoire {h}", ph); add("res", f"Victoire {a}", 1 - ph)
+        fav, dog, sgn = (h, a, 1) if mg >= 0 else (a, h, -1)
+        for ln in (1.5, 3.5, 5.5, 7.5, 9.5, 12.5):
+            pc_ = _phi((abs(mg) - ln) / sdm)
+            add("hcp", f"{fav} gagne de {int(ln + .5)} points ou plus (-{ln:g})".replace(".", ","), pc_)
+            add("hcp", f"{dog} perd de moins de {int(ln + .5)} points ou gagne (+{ln:g})".replace(".", ","), 1 - pc_)
+        base = round(tot / 5) * 5
+        for ln in (base - 10.5, base - 5.5, base - 0.5, base + 4.5, base + 9.5):
+            po = 1 - _phi((ln - tot) / sdt)
+            add("total", f"Plus de {ln:g} points".replace(".", ","), po); add("total", f"Moins de {ln:g} points".replace(".", ","), 1 - po)
+        for name, mu in ((h, pj["home"]), (a, pj["away"])):
+            b_ = round(mu / 5) * 5
+            for ln in (b_ - 5.5, b_ - 0.5, b_ + 4.5):
+                po = 1 - _phi((ln - mu) / 11.0)
+                add("team", f"{name} marque plus de {ln:g} points".replace(".", ","), po)
+    else:
+        T = st.get("tennis") or {}
+        md = T.get("model")
+        if md:
+            pm = md["home"]
+            add("res", f"Victoire {h}", pm); add("res", f"Victoire {a}", 1 - pm)
+            lo, hi = 0.01, 0.99  # chances de gagner un set, déduites des chances de gagner le match (2 sets gagnants)
+            for _ in range(40):
+                mid = (lo + hi) / 2
+                if mid * mid * (3 - 2 * mid) < pm:
+                    lo = mid
+                else:
+                    hi = mid
+            ps = (lo + hi) / 2
+            add("sets", f"{h} gagne 2 sets à 0", ps * ps); add("sets", f"{a} gagne 2 sets à 0", (1 - ps) ** 2)
+            add("sets", "Le match va en 3 sets", 2 * ps * (1 - ps)); add("sets", "Le match se joue en 2 sets", ps * ps + (1 - ps) ** 2)
+            add("sets", f"{h} gagne au moins un set", 1 - (1 - ps) ** 2); add("sets", f"{a} gagne au moins un set", 1 - ps * ps)
+        pj = tennis_projection(st)
+        if pj:
+            b_ = math.floor(pj["games"]) + 0.5
+            for ln in (b_ - 3, b_ - 1, b_, b_ + 2):
+                po = 1 - _phi((ln - pj["games"]) / pj["sd"])
+                add("games", f"Plus de {ln:g} jeux".replace(".", ","), po); add("games", f"Moins de {ln:g} jeux".replace(".", ","), 1 - po)
+    return out
+
+
 def sport_model(sport_key, st, mkey, side, a):
     """Probabilité « maison » pour la NBA et le tennis (None si pas assez de données). Renvoie (p, poids)."""
     if not st:
@@ -2993,6 +3086,14 @@ class Api:
             return ser_bet(x, self._cfg) if x else None
 
     # ---- appli web : liste des matchs et page d'un match ----
+    def get_our_markets(self):
+        """Tous nos pronostics par type de pari (calculés par nos stats, sans cote), pour le sport choisi."""
+        out = []
+        for it in self.get_our_calls():
+            for m in it.get("markets") or []:
+                out.append({**m, "id": it["id"], "match": f"{it['home']} - {it['away']}", "league": it["league"], "date": it["date"]})
+        return sorted(out, key=lambda m: -m["p"])
+
     def get_our_calls(self):
         """Nos propres pronostics pour chaque match du sport choisi (sans cotes) : score attendu, buteurs probables,
         points NBA, jeux au tennis, et le favori selon nos analyses."""
@@ -3049,6 +3150,7 @@ class Api:
                 if pj:
                     item["games"] = pj["games"]
                 item["ranks"] = [(T.get("home") or {}).get("rank"), (T.get("away") or {}).get("rank")]
+            item["markets"] = our_markets(sk, st, item)
             out.append(item)
         return out
 
@@ -3170,6 +3272,12 @@ class Api:
             return None
         st = dict(st or {})
         sk = next((e.get("sport_key", "") for e in self._events if e.get("id") == event_id), "")
+        try:
+            ev_ = next(e for e in self._events if e.get("id") == event_id)
+            it_ = next((x for x in self.get_our_calls() if x["id"] == event_id), None)
+            st["our_markets"] = (it_ or {}).get("markets") or our_markets(sk, st, {"home": ev_["home_team"], "away": ev_["away_team"]})
+        except StopIteration:
+            pass
         st["neutral"] = neutral_view(st, sel) if not sk or sk.startswith("soccer") else neutral_view_2way(st, sel, sk)
         return st
 

@@ -230,6 +230,8 @@ table.cmpt td.num{text-align:right;font-weight:700;color:var(--chalk)}
 .or-s small{display:block;font-size:11px;color:var(--fog)}.or-s b{color:var(--chalk)}
 .or-sc{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;font-size:13px}.or-sc>small{color:var(--fog)}
 .or-sc span{display:inline-flex;align-items:center;gap:6px}.or-sc b{color:var(--sp)}.or-sc .dot{display:inline-block}
+details.omg{border-top:1px solid var(--rim);padding:10px 0}details.omg summary{cursor:pointer;font-weight:700;color:var(--chalk);list-style:none}details.omg summary::-webkit-details-marker{display:none}details.omg summary::before{content:"▸ ";color:var(--sp)}details.omg[open] summary::before{content:"▾ "}
+.omk{grid-template-columns:minmax(0,1fr) 170px}@media (max-width:900px){.omk{grid-template-columns:1fr}.omk .pc{max-width:220px}}.omk[data-go]{cursor:pointer}
 .gkind{color:var(--sp);font-weight:600}
 .gtool{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:6px 0 16px;padding:12px 14px;border-radius:14px;border:1px solid var(--rim);background:var(--deck)}
 .gtool label{display:flex;flex-direction:column;gap:4px}.gtool label small{font-size:11.5px;color:var(--fog);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
@@ -861,7 +863,19 @@ function scorerProbs(e, i){
   }
   return out.sort((a, b) => b.p - a.p).slice(0, 8);
 }
+function ourMarketsBox(i){
+  const L = (i.our_markets || []).slice().sort((a, b) => b.p - a.p);
+  if (!L.length) return "";
+  const groups = {};
+  L.forEach(m => (groups[m.type] = groups[m.type] || []).push(m));
+  const names = Object.fromEntries((OTYPES[SPORT] || OTYPES.foot).filter(x => x[0]));
+  return `<div class="panel box" style="margin-bottom:14px"><h3>Tous nos pronostics pour ce match <small class="note">probabilités calculées par nos stats · cote juste = prix réel</small></h3>
+    ${Object.entries(groups).map(([k, ms], n) => `<details class="omg" ${n < 2 ? "open" : ""}><summary>${esc(names[k] || k)} <span class="note">· ${ms.length} pari${ms.length > 1 ? "s" : ""} · le plus sûr ${pc(ms[0].p)}</span></summary>${ms.map(m => ourMarketRow(m, false)).join("")}</details>`).join("")}</div>`;
+}
 function ourCall(e, nv, i){
+  return ourCall0(e, nv, i) + ourMarketsBox(i);
+}
+function ourCall0(e, nv, i){
   const sport = String(e.sport_key || "");
   if (sport.startsWith("soccer")) {
     const sc = scorerProbs(e, i), M = i.model;
@@ -1185,21 +1199,55 @@ function pickRow(b){
     <button class="add ${BSET.has(b.uid)?"in":""}" data-add="${esc(b.uid)}">${BSET.has(b.uid)?"✓":"+"}</button></div>`;
 }
 let PTAB = "ours";
+const OTYPES = {foot: [["", "Tout"], ["res", "Résultat"], ["goals", "Buts"], ["team", "Une équipe"], ["hcp", "Handicap"], ["half", "Mi-temps"], ["exact", "Score exact"], ["scorer", "Buteurs"]],
+  nba: [["", "Tout"], ["res", "Vainqueur"], ["hcp", "Handicap"], ["total", "Total de points"], ["team", "Points d'une équipe"]],
+  atp: [["", "Tout"], ["res", "Vainqueur"], ["sets", "Sets"], ["games", "Jeux"]], wta: [["", "Tout"], ["res", "Vainqueur"], ["sets", "Sets"], ["games", "Jeux"]]};
+let OMODE = "type", OTYPE = "", OMIN = 0.55;
+function ourMarketRow(m, withMatch){
+  return `<div class="bet omk" ${withMatch ? `data-go="match" data-arg="${esc(m.id)}"` : ""}>
+    <div class="sel">${esc(m.label)}<small>${withMatch ? `${esc(m.match)} · ${esc(m.league)} · ${esc(m.date)} · ` : ""}cote juste ${fr(m.fair)} · <b>joue si ta cote ≥ ${fr(m.fair * 1.03)}</b></small></div>
+    <div class="pc"><span class="num" style="font-size:13px">${pc(m.p)} de chances</span><div class="pbar"><i style="width:${m.p*100}%"></i></div></div></div>`;
+}
 function oursList(){
+  const types = OTYPES[SPORT] || OTYPES.foot;
+  const head = `<p class="note" style="margin:0 0 12px">Calculés uniquement par nos analyses (forme, buts, points, classement, joueurs), sans regarder les cotes : ce sont nos pronostics à nous. La « cote juste » est le prix réel de chaque pari : s'il est mieux payé chez ton bookmaker, il vaut le coup.</p>
+    <div class="gtool" style="margin-top:0"><div class="tsw" style="margin:0">${[["type","Par type de pari"],["match","Par match"]].map(([k,l]) => `<button class="${OMODE===k?"on":""}" data-omode="${k}">${l}</button>`).join("")}</div>
+      ${OMODE === "type" ? `<label><small>Chances minimum</small><select class="sel2" id="o-min">${[[0,"Toutes"],[.5,"50 % et plus"],[.55,"55 % et plus"],[.65,"65 % et plus"],[.75,"75 % et plus"]].map(([v,l]) => `<option value="${v}" ${OMIN==v?"selected":""}>${l}</option>`).join("")}</select></label>` : ""}</div>
+    ${OMODE === "type" ? `<div class="chips" style="margin:0 0 12px">${types.map(([k,l]) => `<button class="chip ${OTYPE===k?"on":""}" data-otype="${k}">${l}</button>`).join("")}</div>` : ""}`;
+  if (OMODE === "type") {
+    // « Tout » : on retire les paris quasi certains (cote juste sous 1,15, sans intérêt) et on varie les matchs
+    let L = (call("get_our_markets") || []).filter(m => (!OTYPE || m.type === OTYPE) && m.p >= OMIN && (OTYPE || m.p <= .87));
+    if (!OTYPE) {
+      const per = {}; L = L.filter(m => (per[m.id] = (per[m.id] || 0) + 1) <= 2);
+      const by = {}; L.forEach(m => (by[m.type] = by[m.type] || []).push(m));  // on alterne les types de paris
+      const qs = Object.values(by), mix = [];
+      for (let i = 0; mix.length < L.length; i++) qs.forEach(q => { if (q[i]) mix.push(q[i]); });
+      L = mix;
+    }
+    if (!L.length) return head + `<div class="panel empty"><b>Rien avec ces filtres</b>Baisse les chances minimum ou choisis un autre type de pari.</div>`;
+    return head + `<div class="panel">${L.slice(0, 80).map(m => ourMarketRow(m, true)).join("")}</div>`;
+  }
   const L = call("get_our_calls") || [];
-  if (!L.length) return `<div class="panel empty"><b>Pas encore assez de données</b>Nos pronostics s'affichent dès que la forme et les stats des deux camps sont collectées.</div>`;
+  if (!L.length) return head + `<div class="panel empty"><b>Pas encore assez de données</b>Nos pronostics s'affichent dès que la forme et les stats des deux camps sont collectées.</div>`;
   const fav = x => { const p = x.probs || [0,0,0]; const k = p[0] >= p[2] ? 0 : 2; return p[1] > Math.max(p[0], p[2]) ? ["Match nul", p[1]] : [k === 0 ? x.home : x.away, p[k]]; };
-  return `<p class="note" style="margin:0 0 12px">Calculés uniquement par nos analyses (forme, buts, points, classement), sans regarder les cotes : ce sont nos pronostics à nous.</p>` + L.map(x => {
+  return head + L.map(x => {
     const [fn, fp] = x.probs ? fav(x) : [null, null];
     const extra = SPORT === "foot" ? `<span><small>Score attendu</small><b>${fr(x.xg[0],1)} – ${fr(x.xg[1],1)}</b></span><span><small>+2,5 buts</small><b>${pc(x.over25)}</b></span><span><small>Les 2 marquent</small><b>${pc(x.btts)}</b></span>`
       : SPORT === "nba" ? `<span><small>Score attendu</small><b>${Math.round(x.score[0])} – ${Math.round(x.score[1])}</b></span><span><small>Total de points</small><b>${fr(x.total,1)}</b></span>`
       : `${x.games ? `<span><small>Jeux attendus</small><b>${fr(x.games,1)}</b></span>` : ""}${x.ranks && x.ranks[0] ? `<span><small>Classements</small><b>${x.ranks[0] || "–"}e / ${x.ranks[1] || "–"}e</b></span>` : ""}`;
+    const best = (x.markets || []).filter(m => m.p >= .6 && m.p <= .9).sort((a, b) => b.p - a.p).slice(0, 3);
     return `<div class="panel ourrow" data-go="match" data-arg="${esc(x.id)}">
       <div class="or-h"><div><b>${esc(x.home)} – ${esc(x.away)}</b><small>${esc(x.league)} · ${esc(x.date)}</small></div>${fn ? `<div class="or-f"><small>Notre favori</small><b>${esc(fn)}</b><em>${pc(fp)}</em></div>` : ""}</div>
       <div class="or-s">${extra}</div>
       ${(x.scorers || []).length ? `<div class="or-sc"><small>Buteurs probables</small>${x.scorers.map(y => `<span><i class="dot ${y.side === "home" ? "h" : "a"}"></i>${esc(y.n)} <b>${pc(y.p)}</b></span>`).join("")}</div>` : ""}
+      ${best.length ? `<div class="or-sc"><small>Nos paris les plus solides</small>${best.map(m => `<span>${esc(m.label)} <b>${pc(m.p)}</b></span>`).join("")}</div>` : ""}
     </div>`; }).join("");
 }
+document.addEventListener("click", e => {
+  const m = e.target.closest("[data-omode]"); if (m) { OMODE = m.dataset.omode; render(); return; }
+  const t = e.target.closest("[data-otype]"); if (t) { OTYPE = t.dataset.otype; render(); }
+});
+document.addEventListener("change", e => { if (e.target.id === "o-min") { OMIN = +e.target.value; render(); } });
 /* ---------- optimiseur de grille Loto Foot ---------- */
 let LOTO = {sel: [], unit: "1", budget: "8", res: null};
 // Pour chaque match on peut cocher 1, 2 ou 3 issues. Coût = prix unitaire × 2^doubles × 3^triples.
@@ -1298,13 +1346,13 @@ function vPicks(){
   if (PTAB === "loto" && SPORT !== "foot") PTAB = "sure";
   let body;
   if (PTAB === "ours") body = oursList();
-  if (PTAB === "boost") body = boostBox();
+  else if (PTAB === "boost") body = boostBox();
   else if (PTAB === "loto") body = lotoBox();
   else if (PTAB === "sure") body = DATA.probable.filter(x => !x.estimated).slice(0, 40).map(pickRow).join("");
   else if (PTAB === "best") body = (rank() < 3 ? lockBox("elite", "Paris value et sélection de Cotescope", "Les paris où la cote est au-dessus du juste prix, et ceux que Cotescope jouerait avec son propre argent.") : "") + DATA.picks.filter(x => !x.estimated).slice(0, 40).map(pickRow).join("");
   else body = DATA.combos.filter(c => !c.legs.some(l => l.estimated)).slice(0, 20).map(c => `<div class="panel opt"><div class="oh"><div style="flex:1"><b>Combiné ×${c.legs.length}</b><small>cote ${fr(c.odds)}${c.value?` · <span class="pill v">value</span>`:""}</small></div><div class="ring"><b>${pc(c.p)}</b><small>de chances</small></div></div>
       ${c.legs.map(l => `<div class="leg"><div>${esc(l.selection)} <small>· ${esc(l.match)}</small></div><span class="o">${l.estimated?"≈":""}${fr(l.odds)}</span><button class="add ${BSET.has(l.uid)?"in":""}" data-add="${esc(l.uid)}">${BSET.has(l.uid)?"✓":"+"}</button></div>`).join("")}</div>`).join("");
-  return `<h1 class="t">Pronostics · ${esc(SPORT_NAME[SPORT])}</h1><p class="lead">Les paris les plus solides de tous les matchs à venir, triés par leurs vraies chances. Uniquement de vraies cotes, avec le bookmaker.</p>
+  return `<h1 class="t">Pronostics · ${esc(SPORT_NAME[SPORT])}</h1><p class="lead">${PTAB === "ours" ? "Nos pronostics, calculés par nos propres analyses, pour tous les types de paris." : "Les paris les plus solides de tous les matchs à venir, triés par leurs vraies chances. Uniquement de vraies cotes, avec le bookmaker."}</p>
     <div class="chips" style="margin-bottom:16px">${t.map(([k,l]) => `<button class="chip ${PTAB===k?"on":""}" data-ptab="${k}">${l}</button>`).join("")}</div>
     ${body || `<div class="panel empty"><b>Rien pour l'instant</b>Reviens quand les cotes des prochains matchs seront publiées.</div>`}`;
 }

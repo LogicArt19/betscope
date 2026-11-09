@@ -223,6 +223,13 @@ table.stand{width:100%;border-collapse:collapse;font-size:13.5px}table.stand th{
 table.stand td{padding:8px 6px;border-bottom:1px solid var(--rim);white-space:nowrap;text-align:center}table.stand td:nth-child(2),table.stand th:nth-child(2){text-align:left}table.stand th{text-align:center}table.stand td.tn{font-weight:600;color:var(--chalk);width:40%}
 table.stand tr.hl td{background:var(--spbg)}table.stand td.up{color:var(--home)}table.stand td.down{color:var(--bad)}
 table.cmpt td.num{text-align:right;font-weight:700;color:var(--chalk)}
+.ourrow{padding:14px 16px;margin-bottom:10px;cursor:pointer}.ourrow:hover{border-color:var(--rim2)}
+.or-h{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.or-h small{display:block;color:var(--fog);font-size:12px;margin-top:2px}
+.or-f{text-align:right}.or-f b{display:block;color:var(--chalk)}.or-f em{font-style:normal;color:var(--sp);font-weight:800}
+.or-s{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.or-s span{padding:6px 10px;border-radius:9px;background:rgba(255,255,255,.03);border:1px solid var(--rim)}
+.or-s small{display:block;font-size:11px;color:var(--fog)}.or-s b{color:var(--chalk)}
+.or-sc{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px;font-size:13px}.or-sc>small{color:var(--fog)}
+.or-sc span{display:inline-flex;align-items:center;gap:6px}.or-sc b{color:var(--sp)}.or-sc .dot{display:inline-block}
 .gkind{color:var(--sp);font-weight:600}
 .gtool{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:6px 0 16px;padding:12px 14px;border-radius:14px;border:1px solid var(--rim);background:var(--deck)}
 .gtool label{display:flex;flex-direction:column;gap:4px}.gtool label small{font-size:11.5px;color:var(--fog);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
@@ -1177,7 +1184,22 @@ function pickRow(b){
     <div class="o num" style="font-size:18px;font-weight:700;text-align:right">${b.estimated?"≈":""}${fr(b.odds)}</div>
     <button class="add ${BSET.has(b.uid)?"in":""}" data-add="${esc(b.uid)}">${BSET.has(b.uid)?"✓":"+"}</button></div>`;
 }
-let PTAB = "sure";
+let PTAB = "ours";
+function oursList(){
+  const L = call("get_our_calls") || [];
+  if (!L.length) return `<div class="panel empty"><b>Pas encore assez de données</b>Nos pronostics s'affichent dès que la forme et les stats des deux camps sont collectées.</div>`;
+  const fav = x => { const p = x.probs || [0,0,0]; const k = p[0] >= p[2] ? 0 : 2; return p[1] > Math.max(p[0], p[2]) ? ["Match nul", p[1]] : [k === 0 ? x.home : x.away, p[k]]; };
+  return `<p class="note" style="margin:0 0 12px">Calculés uniquement par nos analyses (forme, buts, points, classement), sans regarder les cotes : ce sont nos pronostics à nous.</p>` + L.map(x => {
+    const [fn, fp] = x.probs ? fav(x) : [null, null];
+    const extra = SPORT === "foot" ? `<span><small>Score attendu</small><b>${fr(x.xg[0],1)} – ${fr(x.xg[1],1)}</b></span><span><small>+2,5 buts</small><b>${pc(x.over25)}</b></span><span><small>Les 2 marquent</small><b>${pc(x.btts)}</b></span>`
+      : SPORT === "nba" ? `<span><small>Score attendu</small><b>${Math.round(x.score[0])} – ${Math.round(x.score[1])}</b></span><span><small>Total de points</small><b>${fr(x.total,1)}</b></span>`
+      : `${x.games ? `<span><small>Jeux attendus</small><b>${fr(x.games,1)}</b></span>` : ""}${x.ranks && x.ranks[0] ? `<span><small>Classements</small><b>${x.ranks[0] || "–"}e / ${x.ranks[1] || "–"}e</b></span>` : ""}`;
+    return `<div class="panel ourrow" data-go="match" data-arg="${esc(x.id)}">
+      <div class="or-h"><div><b>${esc(x.home)} – ${esc(x.away)}</b><small>${esc(x.league)} · ${esc(x.date)}</small></div>${fn ? `<div class="or-f"><small>Notre favori</small><b>${esc(fn)}</b><em>${pc(fp)}</em></div>` : ""}</div>
+      <div class="or-s">${extra}</div>
+      ${(x.scorers || []).length ? `<div class="or-sc"><small>Buteurs probables</small>${x.scorers.map(y => `<span><i class="dot ${y.side === "home" ? "h" : "a"}"></i>${esc(y.n)} <b>${pc(y.p)}</b></span>`).join("")}</div>` : ""}
+    </div>`; }).join("");
+}
 /* ---------- optimiseur de grille Loto Foot ---------- */
 let LOTO = {sel: [], unit: "1", budget: "8", res: null};
 // Pour chaque match on peut cocher 1, 2 ou 3 issues. Coût = prix unitaire × 2^doubles × 3^triples.
@@ -1272,9 +1294,10 @@ document.addEventListener("change", e => {
 document.addEventListener("click", e => { if (e.target.closest("#bs-go")) { BST.o = $("#bs-o").value; render(); } });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "bs-o") { BST.o = e.target.value; render(); } });
 function vPicks(){
-  const t = [["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"],["boost","Cote boostée"]].concat(SPORT === "foot" ? [["loto","Loto Foot"]] : []);
+  const t = [["ours","Nos pronos"],["sure","Les plus sûrs"],["best","Meilleurs paris"],["combos","Combinés"],["boost","Cote boostée"]].concat(SPORT === "foot" ? [["loto","Loto Foot"]] : []);
   if (PTAB === "loto" && SPORT !== "foot") PTAB = "sure";
   let body;
+  if (PTAB === "ours") body = oursList();
   if (PTAB === "boost") body = boostBox();
   else if (PTAB === "loto") body = lotoBox();
   else if (PTAB === "sure") body = DATA.probable.filter(x => !x.estimated).slice(0, 40).map(pickRow).join("");

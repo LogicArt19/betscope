@@ -2993,6 +2993,65 @@ class Api:
             return ser_bet(x, self._cfg) if x else None
 
     # ---- appli web : liste des matchs et page d'un match ----
+    def get_our_calls(self):
+        """Nos propres pronostics pour chaque match du sport choisi (sans cotes) : score attendu, buteurs probables,
+        points NBA, jeux au tennis, et le favori selon nos analyses."""
+        out = []
+        now = datetime.now(timezone.utc)
+        mode = self._sport_mode()
+        with self._lock:
+            info = dict(self._info)
+        for ev in sorted(self._events, key=lambda e: e.get("commence_time", "")):
+            sk = ev.get("sport_key", "")
+            if sport_family(sk) != mode:
+                continue
+            try:
+                t = parse_time(ev["commence_time"])
+            except (KeyError, ValueError):
+                continue
+            if t <= now or t > now + timedelta(days=4):
+                continue
+            st = info.get(ev["id"]) or {}
+            item = {"id": ev["id"], "home": ev["home_team"], "away": ev["away_team"], "league": SPORTS.get(sk, ev.get("sport_title", "")),
+                    "date": t.astimezone().strftime("%d/%m %H:%M")}
+            if sk.startswith("soccer"):
+                m = st.get("model")
+                if not m:
+                    continue
+                item["xg"] = [round(m["xg_home"], 2), round(m["xg_away"], 2)]
+                item["probs"] = [round(m["home"], 3), round(m["draw"], 3), round(m["away"], 3)]
+                item["over25"] = round(modelmod.p_over(m, 2.5) or 0, 3)
+                item["btts"] = round((1 - math.exp(-m["xg_home"])) * (1 - math.exp(-m["xg_away"])), 3)
+                sc = []
+                for side, xg in (("home", m["xg_home"]), ("away", m["xg_away"])):
+                    p_ = (st.get("players") or {}).get(side) or {}
+                    tg = max(1, p_.get("goals") or sum(x["g"] for x in p_.get("scorers") or []))
+                    mx = max([x.get("m") or 0 for x in p_.get("scorers") or []] + [4])
+                    for x in p_.get("scorers") or []:
+                        if x.get("inj"):
+                            continue
+                        lam = x["g"] / tg * xg * (0.55 + 0.45 * min(1, (x.get("m") or mx * .7) / mx))
+                        sc.append({"n": x["n"], "side": side, "p": round(1 - math.exp(-lam), 3)})
+                item["scorers"] = sorted(sc, key=lambda x: -x["p"])[:3]
+            elif sk.startswith("basketball"):
+                pj = nba_projection(st)
+                if not pj:
+                    continue
+                ph = _phi((pj["home"] - pj["away"]) / pj["sd_margin"])
+                item.update(score=[pj["home"], pj["away"]], total=pj["total"], probs=[round(ph, 3), 0, round(1 - ph, 3)])
+            else:
+                T = st.get("tennis") or {}
+                pj = tennis_projection(st)
+                if not (T.get("model") or pj):
+                    continue
+                if T.get("model"):
+                    item["probs"] = [T["model"]["home"], 0, T["model"]["away"]]
+                if pj:
+                    item["games"] = pj["games"]
+                item["ranks"] = [(T.get("home") or {}).get("rank"), (T.get("away") or {}).get("rank")]
+            out.append(item)
+        return out
+
     def get_tables(self):
         """Classements du sport choisi : groupes [{name, rows}] par compétition."""
         tables = (getattr(self._stats, "data", {}) or {}).get("tables") or {}

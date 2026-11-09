@@ -1820,6 +1820,12 @@ def main():
         f"{sum(1 for e in ten if len(e.get('bookmakers') or []) >= 2)} avec au moins 2 bookmakers")
     for tier in TIERS:
         cf_put("snapshot_" + tier, tier_snapshot(snap, tier))
+    try:  # surveillance : le serveur prévient les propriétaires sur Telegram si ce relevé vieillit ou se vide
+        foot = sum(1 for e in events if e["sport_key"].startswith("soccer"))
+        cf_put("collect_health", {"built": time.time(), "events": len(events), "foot": foot,
+                                  "with_odds": sum(1 for e in events if e.get("bookmakers"))}, gz=False)
+    except Exception as e:
+        log("surveillance :", e)
     try:
         self_test(snap)
     except Exception as e:

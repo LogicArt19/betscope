@@ -462,6 +462,7 @@ nav.tabs button{white-space:nowrap}
 @media (max-width:900px){header.top .logo span{display:none}header.top .plan{display:none!important}header.top{gap:10px;padding:0 12px}.hsports{margin:0 auto}.hs{height:32px;padding:0 11px;font-size:13.5px}}
 @media (max-width:380px){.hs span{display:none}.hs{padding:0 12px}}
 .odds3.two .ob{flex:1}
+.respline{max-width:1100px;margin:28px auto 18px;padding:0 18px;text-align:center;font-size:11.5px;line-height:1.5;color:var(--dim,#8792a5)}
 </style>
 </head>
 <body>
@@ -475,6 +476,7 @@ nav.tabs button{white-space:nowrap}
     <button class="me" id="me" title="Mon compte">?</button>
   </header>
   <main id="view"></main>
+  <div class="respline">18+ · Interdit aux mineurs · Jouer comporte des risques : endettement, isolement, dépendance. Pour être aidé, appelez le 09 74 75 13 13 (appel non surtaxé). · Nos pronostics sont des probabilités, jamais des certitudes.</div>
   <nav class="bottom" id="bottom"></nav>
 </div>
 <button class="tfab" id="tfab" hidden></button>
@@ -2076,6 +2078,7 @@ function gate(v, x){
         <h3>${p.name}</h3><div class="pr">${p.price} €<small> / mois</small></div>
         <ul>${p.feats.map(f => `<li class="${/^Tout /.test(f)?"inc":""}">${esc(f)}</li>`).join("")}</ul>
         ${cur===p.id ? `<button class="btn" disabled>Ton forfait actuel</button>` : `<button class="btn ${p.hot?"go":""}" data-buy="${p.id}">Choisir ${p.name}</button>`}</div>`).join("")}</div>
+      <label class="chk" style="justify-content:center;margin-top:16px"><input type="checkbox" id="g-retr"><span>J'ai 18 ans ou plus, j'accepte les <a href="../cgv.html" target="_blank">conditions de vente</a>, je demande l'accès immédiat au service et je renonce à mon droit de rétractation de 14 jours.</span></label>
       <div class="msg" id="g-msg" style="text-align:center;color:var(--bad);margin-top:14px"></div>
       <p class="note" style="text-align:center;margin-top:8px">Paiement sécurisé par Whop : Cotescope ne voit jamais tes coordonnées bancaires.${cur?" Pour changer de forfait, annule d'abord l'actuel dans « Gérer mon abonnement ».":""}</p>
       <div style="text-align:center;margin-top:14px">${web || window.__BRIDGE__ ? `<button class="btn" data-gv="close">Retour</button>` : `<button class="btn" id="g-out">Se déconnecter</button>`}</div>`;
@@ -2111,6 +2114,7 @@ document.addEventListener("click", async e => {
   const v = e.target.closest("[data-gv]");
   if (v) { if (v.dataset.gv === "close") gate(null); else gate(v.dataset.gv); }
   const b = e.target.closest("[data-buy]");
+  if (b && $("#g-retr") && !$("#g-retr").checked) { const m = $("#g-msg"); if (m) m.textContent = "Coche la case au-dessus pour continuer."; return; }
   if (b) { b.disabled = true; const r = await Auth.checkout(b.dataset.buy); b.disabled = false;
     if (!r.ok) { const m = $("#g-msg"); if (m) m.textContent = r.reason === "whop_error" ? `Le paiement a été refusé par Whop (code ${r.status}). Détail : ${String(r.detail || "").slice(0, 160)}` : errMsg(r.reason); } }
 });

@@ -374,6 +374,33 @@ async function tgBroadcast(env, minTier, text) {
 const escH = (s) => String(s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
 // alertes préparées par la collecte horaire (paris value, cotes qui chutent) : envoyées une seule fois aux abonnés Elite
+// Surveillance : toutes les 15 min, si la dernière collecte a plus de 3 h ou ne contient presque plus de matchs,
+// les propriétaires reçoivent un message Telegram (au plus un toutes les 6 h), puis un message quand tout repart.
+async function watchCollect(env) {
+  if (new Date().getUTCMinutes() % 15 !== 0) return;
+  const h = await env.KV.get("collect_health", "json");
+  const st = (await env.KV.get("collect_watch", "json")) || {};
+  const now = Date.now();
+  const age = h && h.built ? (now - h.built * 1000) / 3600000 : 99;
+  let bad = null;
+  if (age > 3) bad = `la dernière collecte date de ${age >= 99 ? "?" : Math.round(age * 10) / 10} h`;
+  else if ((h.with_odds || 0) < 20) bad = `seulement ${h.with_odds || 0} matchs avec des cotes dans la dernière collecte`;
+  let text = null;
+  if (bad && (!st.alert || now - st.alert > 6 * 3600000)) {
+    text = `⚠️ <b>Cotescope : problème de données</b>\n${escH(bad)}.\nLes clients voient des cotes qui ne se mettent plus à jour. Regarde l'onglet Actions du dépôt betscope.`;
+    st.alert = now;
+  } else if (!bad && st.alert) {
+    text = `✅ <b>Cotescope : données de nouveau à jour</b>\n${h.events} matchs, dont ${h.with_odds} avec des cotes.`;
+    st.alert = 0;
+  }
+  if (!text) return;
+  await env.KV.put("collect_watch", JSON.stringify(st));
+  for (const o of owners(env)) {
+    const ou = await getUser(env, o);
+    if (ou && ou.tg) await tgSend(env, ou.tg, text);
+  }
+}
+
 async function sendQueuedAlerts(env) {
   if (!tgToken(env)) return 0;
   const q = await env.KV.get("alerts_out", "json");
@@ -471,7 +498,7 @@ const votesStub = (env) => env.VOTES.get(env.VOTES.idFromName("global"));
 /* ---------------- routes ---------------- */
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(Promise.all([checkLineups(env), sendQueuedAlerts(env)]));
+    ctx.waitUntil(Promise.all([checkLineups(env), sendQueuedAlerts(env), watchCollect(env)]));
   },
   async fetch(req, env) {
     const url = new URL(req.url);

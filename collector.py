@@ -1601,6 +1601,8 @@ def main():
     log(f"snapshot : {len(events)} matchs, {sum(1 for v in wv if v)} avec fiche web, 5 derniers matchs des 2 équipes : "
         f"{sum(1 for v in wv if (v.get('form') or {}).get('home') and (v.get('form') or {}).get('away'))}, "
         f"buteurs/passeurs des 2 équipes : {sum(1 for v in wv if len(v.get('players') or {}) == 2)}")
+    from collections import Counter as _C
+    log("matchs par compétition : " + ", ".join(f"{b.SPORTS.get(k, k)} {n}" for k, n in sorted(_C(e["sport_key"] for e in events).items(), key=lambda x: -x[1])))
     nba = [e for e in events if e["sport_key"].startswith("basketball")]
     nv = [(_web.get(e["id"]) or {}).get("v") or {} for e in nba]
     log(f"NBA : {len(nba)} matchs, {sum(1 for e in nba if len(e.get('bookmakers') or []) >= 2)} avec au moins 2 bookmakers, "

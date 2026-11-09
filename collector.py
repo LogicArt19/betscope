@@ -1052,7 +1052,7 @@ def _sched(state, kind, tid, season, current):
     return games, True
 
 
-def espn_h2h_and_nba(events, st, state, budget=260):
+def espn_h2h_and_nba(events, st, state, budget=420):
     web = st.data.setdefault("web", {})
     now = datetime.now(timezone.utc)
     year = now.year if now.month >= 7 else now.year - 1      # saison de foot en cours (ex. 2026 = 2026-27)

@@ -211,6 +211,7 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 .gx-row>label{padding-top:7px;font-size:13px;font-weight:600;color:var(--fog)}
 .gx-row .tgl{display:flex;flex-wrap:wrap;gap:6px}
 .gx-mm{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.gx-mm .in{width:76px;padding:8px 10px}
+.gkind{color:var(--sp);font-weight:600}
 .gtool{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin:6px 0 16px;padding:12px 14px;border-radius:14px;border:1px solid var(--rim);background:var(--deck)}
 .gtool label{display:flex;flex-direction:column;gap:4px}.gtool label small{font-size:11.5px;color:var(--fog);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 .gtool .sel2{min-width:150px}.gtool .gcount{margin-left:auto;padding-bottom:9px}
@@ -607,7 +608,7 @@ let ST = {}, MATCHES = [], DATA = {picks:[], probable:[], combos:[]}, BSET = new
 let SPORT = (() => { try { const v = localStorage.getItem("cotescope_sport"); return v === "tennis" ? "atp" : (["nba", "atp", "wta"].includes(v) ? v : "foot"); } catch (e) { return "foot"; } })(), SPINFO = {};
 function setSport(m){
   SPORT = m; try { localStorage.setItem("cotescope_sport", m); } catch (e) {}
-  SPINFO = call("set_sport", m) || {}; DAY = null; LEAGUE = "all"; GLG = ""; GCAT = ""; GMORE = 20;
+  SPINFO = call("set_sport", m) || {}; DAY = null; LEAGUE = "all"; GLG = ""; GCAT = ""; GSTYLE = ""; GMORE = 20;
   if (typeof GOAL !== "undefined") { GOAL.res = null; GOAL.leagues = null; GOAL.types = null; }
   document.body.dataset.sfam = SFAM();
 }
@@ -1275,7 +1276,8 @@ function vGoal(){
     </div>
     <div id="g-out">${out}</div>`;
 }
-let GSORT = "p", GLEGS = "all", GLG = "", GCAT = "", GOPEN = new Set([0]), GMORE = 20;
+const legLab = l => { const [h, a] = String(l.match || "").split(" - "); return h && a && !String(l.selection).includes(h) && !String(l.selection).includes(a) ? `${l.selection} (${h}-${a})` : l.selection; };
+let GSTYLE = "", GSORT = "reco", GLEGS = "all", GLG = "", GCAT = "", GOPEN = new Set([0]), GMORE = 20;
 // une sélection d'un ticket : clic = page du match avec toutes les analyses
 const formHtml = f => (f || "").split("").map(c => `<i class="ff ${c}">${c}</i>`).join("");
 const badF = f => { f = (f || "").slice(0, 5); return f.length >= 4 && ((f.match(/D/g) || []).length >= 3 || (!/V/.test(f) && (f.match(/D/g) || []).length >= 2)); };
@@ -1299,7 +1301,10 @@ function goalList(r){
   const cats = [...new Set(r.options.flatMap(o => legsOf(o).map(l => l.cat)))].filter(Boolean);
   if (GLG) opts = opts.filter(o => legsOf(o).every(l => l.sport === GLG));
   if (GCAT) opts = opts.filter(o => legsOf(o).some(l => l.cat === GCAT));
-  const by = {p: (a, b) => b.p_hit - a.p_hit, legs: (a, b) => a.n_legs - b.n_legs || b.p_hit - a.p_hit,
+  const FAM = c => ["1n2","dc","dnb"].includes(c) ? "res" : ["total","team","btts"].includes(c) ? "goals" : "autre";
+  const styleOf = o => { const f = new Set(legsOf(o).map(l => FAM(l.cat))); return f.size > 1 ? "mix" : [...f][0]; };
+  if (GSTYLE) opts = opts.filter(o => styleOf(o) === GSTYLE);
+  const by = {reco: (a, b) => a.rank - b.rank, p: (a, b) => b.p_hit - a.p_hit, legs: (a, b) => a.n_legs - b.n_legs || b.p_hit - a.p_hit,
               soon: (a, b) => a.ends_ts - b.ends_ts || b.p_hit - a.p_hit, gain: (a, b) => b.ret - a.ret || b.p_hit - a.p_hit};
   opts.sort(by[GSORT]);
   const top = r.options[0];
@@ -1309,16 +1314,17 @@ function goalList(r){
        <span class="note">Le meilleur : <b style="font-size:16px;color:var(--home)">${pc(top.p_hit, top.p_hit < .1 ? 1 : 0)}</b> de chances</span></div>
       <details class="gfair"><summary>Comment les tickets sont classés ?</summary>${SPORT === "foot" ? `Classement objectif : les chances de chaque pari viennent de nos analyses (forme, absents, classement, face-à-face, modèle de buts) croisées avec les cotes des bookmakers professionnels, sans leur marge. Plus les données d'un match sont complètes, plus nos analyses pèsent. Uniquement de vraies cotes de bookmakers (jamais d'estimation), avec le bookmaker et l'heure du relevé : vérifie la cote chez toi avant de jouer, elle a pu bouger. Jamais d'équipe en mauvaise série (3 défaites sur les 5 derniers matchs) ni de pari contre une équipe qui gagne tout. Ordre : d'abord les tickets avec de vraies cotes (pas d'estimation ≈) et dont chaque pari a au moins 1 chance sur 2, puis les plus probables, en favorisant les matchs les mieux analysés (la note « analyse » indique la part des données trouvées : forme, absents, classement, face-à-face). Touche un match pour voir toute son analyse.` : "Classement objectif : les chances de chaque pari viennent des cotes des bookmakers (marge retirée)" + (SPORT === "nba" ? "." : ", croisées avec le classement et la forme des 10 derniers matchs.") + " Aucune préférence pour un joueur ou une équipe : seule la probabilité compte."}</details>
       <div class="gtool">
-        <label><small>Trier</small><select class="sel2" id="g-sort">${[["p","Plus de chances"],["legs","Moins de matchs"],["soon","Fini le plus tôt"],["gain","Plus gros gain"]].map(([k,l]) => `<option value="${k}" ${GSORT===k?"selected":""}>${l}</option>`).join("")}</select></label>
+        <label><small>Trier</small><select class="sel2" id="g-sort">${[["reco","Recommandé (varié)"],["p","Plus de chances"],["legs","Moins de matchs"],["soon","Fini le plus tôt"],["gain","Plus gros gain"]].map(([k,l]) => `<option value="${k}" ${GSORT===k?"selected":""}>${l}</option>`).join("")}</select></label>
         <label><small>Matchs</small><select class="sel2" id="g-legs"><option value="all">Tous</option>${counts.map(c => `<option value="${c}" ${GLEGS===String(c)?"selected":""}>${c} match${c>1?"s":""}</option>`).join("")}</select></label>
         ${lgs.length > 1 ? `<label><small>${SPORT === "foot" ? "Compétition" : "Tournoi"}</small><select class="sel2" id="g-flg"><option value="">Toutes</option>${lgs.map(x => `<option value="${esc(x)}" ${GLG===x?"selected":""}>${esc(x)}</option>`).join("")}</select></label>` : ""}
+        ${SPORT === "foot" ? `<label><small>Style</small><select class="sel2" id="g-style"><option value="">Tous</option>${[["mix","Mélange résultats + buts"],["res","Que des résultats"],["goals","Que des buts"]].map(([k,l]) => `<option value="${k}" ${GSTYLE===k?"selected":""}>${l}</option>`).join("")}</select></label>` : ""}
         ${cats.length > 1 ? `<label><small>Avec</small><select class="sel2" id="g-fcat"><option value="">Tous les paris</option>${cats.map(x => `<option value="${esc(x)}" ${GCAT===x?"selected":""}>${esc(CATN[x]||x)}</option>`).join("")}</select></label>` : ""}
         <span class="note gcount">${opts.length} ticket${opts.length>1?"s":""}</span></div>`;
   const card = o => {
     const open = GOPEN.has(o.rank - 1);
     return `<div class="panel opt sm ${o.rank===1?"best":""}">
       <div class="orow" data-gopen="${o.rank - 1}"><span class="n">#${o.rank}</span>
-        <div class="t"><b>${o.rank===1?"Le plus de chances":esc(o.kind==="alt" ? o.tickets[0].legs.map(l => l.selection).join(" + ") : o.title)}</b><small>${esc(o.desc)} · fini ${esc(o.ends)}${o.tags && o.tags.length ? " · " + o.tags.map(esc).join(" · ") : ""}${o.unsafe?' · <span class="pill warn">contient un pari à moins de 50 %</span>':""}${o.badform?` · <span class="pill bad">${o.badform} équipe${o.badform>1?"s":""} en mauvaise série</span>`:""}${o.est?` · <span class="pill bad">${o.est} cote${o.est>1?"s":""} estimée${o.est>1?"s":""}</span>`:""}${SPORT === "foot" ? ` · <span class="pill ${o.fiab>=.67?"ok":o.fiab>=.34?"warn":"bad"}">analyse ${Math.round((o.fiab||0)*100)} %</span>` : ""}</small></div>
+        <div class="t"><b>${esc(o.tickets.length === 1 ? o.tickets[0].legs.map(legLab).join(" + ") : o.title)}</b><small>${o.rank===1 && GSORT === "reco" ? '<span class="pill ok">Le plus de chances</span> · ' : ""}${o.tickets.length === 1 && o.kind !== "alt" ? `<span class="gkind">${esc(o.title)}</span> · ` : ""}${esc(o.desc)} · fini ${esc(o.ends)}${o.tags && o.tags.length ? " · " + o.tags.map(esc).join(" · ") : ""}${o.unsafe?' · <span class="pill warn">contient un pari à moins de 50 %</span>':""}${o.badform?` · <span class="pill bad">${o.badform} équipe${o.badform>1?"s":""} en mauvaise série</span>`:""}${o.est?` · <span class="pill bad">${o.est} cote${o.est>1?"s":""} estimée${o.est>1?"s":""}</span>`:""}${SPORT === "foot" ? ` · <span class="pill ${o.fiab>=.67?"ok":o.fiab>=.34?"warn":"bad"}">analyse ${Math.round((o.fiab||0)*100)} %</span>` : ""}</small></div>
         <div class="k"><b>${pc(o.p_hit, o.p_hit < .1 ? 1 : 0)}</b><small>cote ${fr(o.odds)} · ${eur(o.ret)}</small></div></div>
       ${open ? `<div class="body">${o.tickets.map(t => `${t.legs.map(goalLeg).join("")}
           <div class="tot"><span class="note">Mise ${eur(t.stake)} · cote ${fr(t.odds)} · ${pc(t.p, t.p < .1 ? 1 : 0)}</span><div class="sp"></div><b>${eur(t.ret)}</b><button class="btn sm" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}">Je le joue</button></div>`).join("")}
@@ -1340,6 +1346,7 @@ document.addEventListener("change", e => {
   if (e.target.id === "g-flg") { GLG = e.target.value; GMORE = 20; render(); }
   if (e.target.id === "g-fcat") { GCAT = e.target.value; GMORE = 20; render(); }
   if (e.target.id === "g-sort") { GSORT = e.target.value; GMORE = 20; render(); }
+  if (e.target.id === "g-style") { GSTYLE = e.target.value; GMORE = 20; render(); }
   if (e.target.id === "g-legs") { GLEGS = e.target.value; GMORE = 20; render(); }
 });
 document.addEventListener("click", e => {
@@ -1366,7 +1373,7 @@ document.addEventListener("click", e => {
     if (!GOAL.leagues.length || !GOAL.types.length) { toast("Coche au moins un championnat et un type de pari"); return; }
     if ($$("#gl-dy .chip").length && !$$("#gl-dy .chip.on").length) { toast("Coche au moins un jour"); return; }
     $("#g-out").innerHTML = `<div class="panel loader" style="padding:40px"><div class="scan">${spec([.45,.27,.28])}</div>Recherche parmi tous les paris…</div>`;
-    GSORT = "p"; GLEGS = "all"; GOPEN = new Set([0]); GMORE = 15;
+    GSORT = "reco"; GLEGS = "all"; GOPEN = new Set([0]); GMORE = 15;
     setTimeout(() => { GOAL.res = call("compute_objective", GOAL.stake, GOAL.target, GOAL.types, GOAL.min || null, GOAL.max || null, null, GOAL.leagues, GOAL.days && GOAL.days.length ? GOAL.days : null); render(); }, 30);
   }
   const p = e.target.closest("[data-play]");

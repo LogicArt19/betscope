@@ -1634,6 +1634,40 @@ FAMILIES = {"res": ({"1n2", "dc", "dnb"}, "uniquement des résultats (1N2, doubl
             "goals": ({"total", "team", "btts"}, "uniquement des paris sur les buts")}
 
 
+def _diversify(options):
+    """Ordre « recommandé » : le meilleur ticket d'abord, puis on alterne les styles (résultats, buts, mélange)
+    et on évite d'enchaîner des tickets sur les mêmes matchs, tant que l'écart de chances reste faible."""
+    def sig(o):
+        fams = {f for t in o["tickets"] for l in t["legs"] for f, (cs, _) in FAMILIES.items() if l.get("cat") in cs}
+        return "mix" if len(fams) > 1 else (next(iter(fams)) if fams else "autre")
+    clean = [o for o in options if not (o["badform"] or o["est"] or o["unsafe"])]
+    rest = [o for o in options if o["badform"] or o["est"] or o["unsafe"]]
+    if len(clean) < 3:
+        return options
+    base = {id(o): o["p_hit"] * (0.7 + 0.3 * o["fiab"]) for o in clean}
+    picked, cnt, seen_ev = [clean[0]], {}, {}
+    cnt[sig(clean[0])] = 1
+    for l in (l for t in clean[0]["tickets"] for l in t["legs"]):
+        seen_ev[l["event_id"]] = seen_ev.get(l["event_id"], 0) + 1
+    pool = clean[1:400]
+    meta = {id(o): (sig(o), tuple({l["event_id"] for t in o["tickets"] for l in t["legs"]})) for o in pool}
+    while pool and len(picked) < 300:
+        best, bs = None, -1.0
+        for o in pool:
+            sg, evs = meta[id(o)]
+            rep = sum(min(seen_ev.get(e, 0), 6) for e in evs) / max(1, len(evs))
+            sc = base[id(o)] * (0.93 ** cnt.get(sg, 0)) * (0.97 ** rep) * (1.06 if sg == "mix" else 1.0)
+            if sc > bs:
+                best, bs = o, sc
+        pool.remove(best)
+        picked.append(best)
+        sg = sig(best)
+        cnt[sg] = cnt.get(sg, 0) + 1
+        for e in {l["event_id"] for t in best["tickets"] for l in t["legs"]}:
+            seen_ev[e] = seen_ev.get(e, 0) + 1
+    return picked + pool + clean[400:] + rest
+
+
 def _q(s):
     """0..1 : complétude des données d'analyse du match de cette sélection."""
     return float((s.get("stats") or {}).get("q") or 0)
@@ -1935,6 +1969,22 @@ def _objective_plan(stake, target, selections, cfg):
                 enumerate_combos(seeds, keep, 20, 36, kind, lambda t, title=title: title)
                 for v in sorted((v for t0 in seeds for v in _variants(t0, evs, L, 2, keep)), key=lambda v: -v["p"])[:12]:
                     add(kind, title, one(v), btitle, extra)
+            # 6 bis. tickets mélangés : on remplace un pari d'un ticket « résultats » par un pari sur les buts
+            #        (et l'inverse), pour proposer de vrais mélanges et pas seulement un seul type de pari
+            fam_of = lambda x: next((f for f, (cs, _) in FAMILIES.items() if x.get("cat") in cs), None)
+            singles = sorted((o["tickets"][0] for o in found.values() if len(o["tickets"]) == 1 and o.get("book") == btitle),
+                             key=lambda t: -t["p"])[:60]
+            mixes = []
+            for t0 in singles:
+                fams = {fam_of(l) for l in t0["legs"]}
+                if len(fams) != 1 or None in fams:
+                    continue
+                other = [cs for f, (cs, _) in FAMILIES.items() if f not in fams]
+                if not other:
+                    continue
+                mixes += _variants(t0, evs, L, 2, keep=lambda x, cs=other[0]: x.get("cat") in cs)
+            for v in sorted(mixes, key=lambda v: -v["p"])[:160]:
+                add("mix", "Mélange résultats + buts", one(v), btitle)
             # 7 bis. variantes des meilleurs tickets : un seul match change, la cote visée est toujours atteinte
             tops = sorted((o["tickets"][0] for o in found.values() if len(o["tickets"]) == 1 and o.get("book") == btitle),
                           key=lambda t: -t["p"])[:40]
@@ -1966,6 +2016,7 @@ def _objective_plan(stake, target, selections, cfg):
     #    (à chances égales, le ticket dont les matchs sont le mieux analysés passe devant)
     options = sorted(found.values(), key=lambda o: (o["badform"] > 0, o["est"] > 0, o["unsafe"], -o["p_hit"] * (0.7 + 0.3 * o["fiab"]),
                                                      sum(len(t["legs"]) for t in o["tickets"])))
+    options = _diversify(options)
     for o in options:
         o.pop("_odds", None)
         tags = o.pop("_tags")

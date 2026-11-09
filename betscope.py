@@ -1813,6 +1813,22 @@ def _kind(l):
     return f"{l.get('cat')}|{t}"
 
 
+def _grp(l):
+    """Famille grossière d'un pari : tous les « moins de X buts » ensemble, tous les « plus de X buts » ensemble, etc."""
+    t = str(l.get("selection") or "").lower()
+    if "moins de" in t or t.startswith("-"):
+        return "under"
+    if "plus de" in t or t.startswith("+"):
+        return "over"
+    if "marquent" in t:
+        return "bttsN" if "non" in t else "bttsY"
+    if "remboursé" in t:
+        return "dnb"
+    if " ou " in t:
+        return "dc"
+    return str(l.get("cat") or "autre")
+
+
 def _diversify(options):
     """Ordre « recommandé » : tickets variés d'abord. On pénalise les tickets faits du même pari répété
     (ex. 4 × « moins de 3,5 buts »), puis on alterne les types de paris, les styles et les matchs d'un ticket à l'autre,
@@ -1829,21 +1845,26 @@ def _diversify(options):
     for o in pool:
         legs = [l for t in o["tickets"] for l in t["legs"]]
         kinds = [_kind(l) for l in legs]
-        meta[id(o)] = (sig(o), tuple({l["event_id"] for l in legs}), tuple(set(kinds)), len(kinds) - len(set(kinds)),
-                       o["p_hit"] * (0.7 + 0.3 * o["fiab"]))
+        grps = [_grp(l) for l in legs]
+        dup = (len(kinds) - len(set(kinds))) + (len(grps) - len(set(grps)))  # 2 « moins de » dans un ticket = doublon
+        meta[id(o)] = (sig(o), tuple({l["event_id"] for l in legs}), tuple(set(kinds) | {"g:" + g for g in grps}), dup,
+                       o["p_hit"] * (0.7 + 0.3 * o["fiab"]), tuple(sorted(set(grps))))
     picked, cnt, seen_ev, seen_k = [], {}, {}, {}
     while pool and len(picked) < 300:
         best, bs = None, -1.0
         for o in pool:
-            sg, evs, ks, dup, base = meta[id(o)]
+            sg, evs, ks, dup, base, gs = meta[id(o)]
             rep = sum(min(seen_ev.get(e, 0), 6) for e in evs) / max(1, len(evs))
             krep = sum(min(seen_k.get(k, 0), 8) for k in ks) / max(1, len(ks))
-            sc = base * (0.72 ** dup) * (0.93 ** cnt.get(sg, 0)) * (0.97 ** rep) * (0.92 ** krep) * (1.06 if sg == "mix" else 1.0)
+            srep = seen_k.get("s:" + "|".join(gs), 0)  # même combinaison de familles qu'un ticket déjà montré
+            sc = base * (0.55 ** dup) * (0.93 ** cnt.get(sg, 0)) * (0.95 ** rep) * (0.86 ** krep) * (0.7 ** min(srep, 6)) \
+                * (1.0 + 0.05 * min(len(gs) - 1, 3))
             if sc > bs:
                 best, bs = o, sc
         pool.remove(best)
         picked.append(best)
-        sg, evs, ks, _, _ = meta[id(best)]
+        sg, evs, ks, _, _, gs = meta[id(best)]
+        seen_k["s:" + "|".join(gs)] = seen_k.get("s:" + "|".join(gs), 0) + 1
         cnt[sg] = cnt.get(sg, 0) + 1
         for e in evs:
             seen_ev[e] = seen_ev.get(e, 0) + 1
@@ -2169,27 +2190,33 @@ def _objective_plan(stake, target, selections, cfg):
                 mixes += _variants(t0, evs, L, 2, keep=lambda x, cs=other[0]: x.get("cat") in cs)
             for v in sorted(mixes, key=lambda v: -v["p"])[:160]:
                 add("mix", "Mélange résultats + buts", one(v), btitle)
-            # 6 ter. tickets « variés » : quand un ticket répète le même pari (ex. 3 × moins de 3,5 buts),
-            #        on remplace les doublons par d'autres types de paris, en gardant la cote visée
+            # 6 ter. tickets « variés » : quand un ticket répète la même famille de pari (ex. moins de 4,5 + moins de 3,5 buts),
+            #        on remplace les doublons par d'autres familles (résultat, double chance, les 2 marquent…), cote visée gardée
             cur = sorted((o["tickets"][0] for o in found.values() if len(o["tickets"]) == 1 and o.get("book") == btitle),
                          key=lambda t: -t["p"])[:70]
             varied = []
             for _ in range(3):
                 nxt = []
                 for t0 in cur:
-                    ks = [_kind(l) for l in t0["legs"]]
-                    if len(ks) == len(set(ks)):
+                    gs = [_grp(l) for l in t0["legs"]]
+                    if len(gs) == len(set(gs)):
                         continue
-                    have = set(ks)
-                    vv = _variants(t0, evs, L, 2, keep=lambda x, have=have: _kind(x) not in have)
-                    vv = [v for v in vv if len({_kind(l) for l in v["legs"]}) > len(have) - (len(ks) - len(have)) + 0 or True]
-                    nxt += vv
+                    nxt += _variants(t0, evs, L, 2, keep=lambda x, have=set(gs): _grp(x) not in have)
                 nxt.sort(key=lambda v: -v["p"])
                 varied += nxt[:120]
                 cur = nxt[:60]
-            for v in sorted(varied, key=lambda v: -v["p"])[:220]:
-                ks = [_kind(l) for l in v["legs"]]
-                add("var", "Ticket varié (types de paris différents)" if len(ks) == len(set(ks)) else "Ticket plus varié", one(v), btitle)
+            # tickets construits sans la famille dominante (ex. aucun « moins de X buts »), pour qu'il existe toujours
+            # de bons tickets d'un autre genre
+            for ex in ("under", "bttsN", "dc", "over"):
+                for k in (2, 3, 4):
+                    if lmin <= k <= lmax:
+                        t = solve(keep=lambda x, ex=ex: _grp(x) != ex, k=k)
+                        if t:
+                            varied.append(t)
+                            varied += _variants(t, evs, L, 2, keep=lambda x, ex=ex: _grp(x) != ex)[:6]
+            for v in sorted(varied, key=lambda v: -v["p"])[:260]:
+                gs = [_grp(l) for l in v["legs"]]
+                add("var", "Ticket varié (types de paris différents)" if len(gs) == len(set(gs)) else "Ticket plus varié", one(v), btitle)
             # 7 bis. variantes des meilleurs tickets : un seul match change, la cote visée est toujours atteinte
             tops = sorted((o["tickets"][0] for o in found.values() if len(o["tickets"]) == 1 and o.get("book") == btitle),
                           key=lambda t: -t["p"])[:40]

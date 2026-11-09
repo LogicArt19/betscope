@@ -4,18 +4,11 @@ def get(u):
         r = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"}), timeout=25); return json.loads(r.read())
     except Exception as e:
         return {"_err": str(e)}
-for slug in ("eng.1", "uefa.nations"):
-    sb = get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates=" + ("20261122" if slug == "eng.1" else "20261115"))
-    evs = sb.get("events") or []
-    print("SB", slug, len(evs), sb.get("_err", ""))
-    if evs:
-        s = get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/summary?event={evs[0]['id']}")
-        print("KEYS", slug, list(s))
-        h = s.get("headToHeadGames")
-        print("H2H", json.dumps(h)[:1200])
-    st = get(f"https://site.api.espn.com/apis/v2/sports/soccer/{slug}/standings")
-    ch = st.get("children") or []
-    print("ST", slug, st.get("_err", ""), len(ch), [c.get("name") for c in ch][:8])
-    if ch:
-        e = ch[0]["standings"]["entries"][0]
-        print("  ENTRY", e["team"]["displayName"], [(x.get("name"), x.get("displayValue")) for x in e["stats"]][:16])
+B = "https://site.api.espn.com/apis/site/v2/sports/soccer"
+for u in (f"{B}/eng.1/teams/359/schedule?season=2024", f"{B}/all/teams/359/schedule?season=2024", f"{B}/eng.1/teams/359/schedule?season=2024&fixture=false",
+          f"{B}/uefa.nations/teams/478/schedule?season=2024", f"{B}/all/teams/478/schedule?season=2024", f"{B}/fifa.friendly/teams/478/schedule?season=2024"):
+    j = get(u); ev = j.get("events") or []
+    print("U", u[len(B):], j.get("_err", ""), len(ev), sorted({(e.get("league") or {}).get("abbreviation") or (e.get("seasonType") or {}).get("name", "") for e in ev})[:8] if ev else "")
+    if ev: print("  E", json.dumps(ev[0])[:600])
+nb = get("https://site.api.espn.com/apis/v2/sports/basketball/nba/standings")
+print("NBA", nb.get("_err", ""), [c.get("name") for c in nb.get("children") or []])

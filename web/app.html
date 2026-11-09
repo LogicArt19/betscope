@@ -372,39 +372,54 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 body{--sp:#26e0b8;--sp2:#0f8f75;--spbg:rgba(38,224,184,.10)}
-body[data-sport="nba"]{--sp:#ff8a3d;--sp2:#c4531a;--spbg:rgba(255,138,61,.11)}
-body[data-sport="tennis"]{--sp:#d8f04a;--sp2:#8aa514;--spbg:rgba(216,240,74,.10)}
-nav.sports{position:sticky;top:64px;z-index:19;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;padding:8px 20px;background:rgba(6,10,18,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--rim)}
-.sp-seg{display:inline-flex;gap:2px;padding:3px;border-radius:12px;background:var(--deck);border:1px solid var(--rim)}
-.sp-seg button{display:flex;align-items:center;gap:7px;padding:6px 13px;border:0;border-radius:9px;background:transparent;color:var(--fog);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
-.sp-seg button i{display:flex;width:16px;height:16px;color:var(--c)}
-.sp-seg button i svg{width:16px;height:16px}
-.sp-seg button em{font-style:normal;font-size:11px;font-weight:700;color:var(--fog);opacity:.8}
-.sp-seg button:hover{color:var(--chalk)}
-.sp-seg button.on{background:color-mix(in srgb,var(--c) 16%,var(--deck));color:var(--chalk);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
-.sp-seg button.on em{color:var(--c);opacity:1}
-.sp-foot{--c:#26e0b8}.sp-nba{--c:#ff8a3d}.sp-tennis{--c:#d8f04a}
-.sp-mini{display:inline-flex;gap:2px;padding:3px;border-radius:10px;border:1px solid var(--rim)}
-.sp-mini button{padding:5px 11px;border:0;border-radius:7px;background:transparent;color:var(--fog);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
-.sp-mini button em{font-style:normal;font-size:11px;opacity:.75;margin-left:3px}
-.sp-mini button.on{background:var(--sp);color:#071017}
+body[data-sfam="nba"]{--sp:#ff8a3d;--sp2:#c4531a;--spbg:rgba(255,138,61,.11)}
+body[data-sfam="tennis"]{--sp:#d8f04a;--sp2:#8aa514;--spbg:rgba(216,240,74,.10)}
+.day.on{border-color:var(--sp)!important;background:var(--spbg)!important}.day.on .c{color:var(--sp)!important}
+.chip.on{border-color:var(--sp)!important;background:var(--spbg)!important}.chip.on b{color:var(--sp)!important}
+.tabs2 button.on{border-color:var(--sp)!important}
+nav.tabs button.on::after{background:var(--sp)!important;box-shadow:0 0 10px var(--sp)!important}
+nav.bottom button.on{color:var(--sp)!important}
+.lg{color:var(--sp)}
+.rk{display:inline-block;min-width:26px;margin-right:7px;padding:1px 6px;border-radius:6px;background:var(--spbg);color:var(--sp);font-size:11.5px;font-weight:800;text-align:center}
+.tcard .thead{display:flex;gap:14px;align-items:center;margin-bottom:12px}
+.tcard .trank{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;width:70px;height:70px;border-radius:16px;background:var(--spbg);border:1px solid var(--sp)}
+.tcard .trank small{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--fog)}
+.tcard .trank b{font-family:var(--disp);font-size:26px;color:var(--chalk);line-height:1}
+.tcard .trank em{font-style:normal;font-size:11px;font-weight:800}.tcard .trank em.up{color:var(--home)}.tcard .trank em.down{color:var(--bad)}
+.tcard .tchips{display:flex;flex-wrap:wrap;gap:8px}
+.tcard .tchips span{padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--rim);font-weight:800;color:var(--chalk)}
+.tcard .tchips small{font-weight:600;color:var(--fog)}
+.hsports{display:flex;gap:2px;padding:3px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid var(--rim);flex:none}
+.hs{display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:9px;color:var(--fog);font-weight:600;font-size:14px;transition:background .15s,color .15s}
+.hs i{display:flex;color:var(--fog);transition:color .15s}.hs i svg{width:17px;height:17px}
+.hs:hover{color:var(--chalk)}.hs:hover i{color:var(--c)}
+.hs.on{background:color-mix(in srgb,var(--c) 15%,transparent);color:var(--chalk)}
+.hs.on i{color:var(--c)}
+.hs-foot{--c:#26e0b8}.hs-nba{--c:#ff8a3d}.hs-tennis{--c:#d8f04a}
+.tsw{display:inline-flex;gap:2px;padding:3px;margin:0 0 18px;border-radius:11px;border:1px solid var(--rim);background:rgba(255,255,255,.02)}
+.tsw button{padding:7px 14px;border-radius:8px;color:var(--fog);font-weight:600;font-size:13.5px}
+.tsw button em{font-style:normal;font-size:11.5px;opacity:.7;margin-left:4px}
+.tsw button.on{background:var(--sp);color:#071017}.tsw button.on em{opacity:.8}
 .gsport{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px;padding:9px 12px;border-radius:10px;background:var(--spbg);border:1px solid color-mix(in srgb,var(--sp) 35%,transparent);font-weight:700;color:var(--chalk)}
 .gsport .d{width:8px;height:8px;border-radius:50%;background:var(--sp);box-shadow:0 0 8px var(--sp)}
 .gsport small{font-weight:500;color:var(--fog);margin-left:auto;font-size:12px}
-@media (max-width:900px){nav.sports{top:56px;padding:7px 10px;gap:6px}.sp-seg{width:100%}.sp-seg button{flex:1;justify-content:center;padding:7px 6px;font-size:13px}.sp-mini{width:100%}.sp-mini button{flex:1}}
+nav.tabs button{white-space:nowrap}
+@media (max-width:1440px) and (min-width:901px){nav.tabs button:not(.on) span.lb{display:none}nav.tabs button{padding:9px 11px}nav.tabs{margin-left:0}}
+@media (max-width:900px){header.top .logo span{display:none}header.top .plan{display:none!important}header.top{gap:10px;padding:0 12px}.hsports{margin:0 auto}.hs{height:32px;padding:0 11px;font-size:13.5px}}
+@media (max-width:380px){.hs span{display:none}.hs{padding:0 12px}}
 .odds3.two .ob{flex:1}
 </style>
 </head>
 <body>
 <div class="shell">
   <header class="top">
-    <a class="logo" href="../"><img src="../img/logo.svg" alt="">Cotescope</a>
+    <a class="logo" href="../"><img src="../img/logo.svg" alt=""><span>Cotescope</span></a>
+    <div class="hsports" id="sports" role="tablist" aria-label="Sport"></div>
     <nav class="tabs" id="tabs"></nav>
     <div class="sp"></div>
     <span class="plan" id="plan" hidden></span>
     <button class="me" id="me" title="Mon compte">?</button>
   </header>
-  <nav class="sports" id="sports" aria-label="Sport"></nav>
   <main id="view"></main>
   <nav class="bottom" id="bottom"></nav>
 </div>
@@ -562,7 +577,7 @@ function setSport(m){
   SPORT = m; try { localStorage.setItem("cotescope_sport", m); } catch (e) {}
   SPINFO = call("set_sport", m) || {}; DAY = null; LEAGUE = "all"; GLG = ""; GCAT = ""; GMORE = 20;
   if (typeof GOAL !== "undefined") { GOAL.res = null; GOAL.leagues = null; GOAL.types = null; }
-  document.body.dataset.sport = SFAM();
+  document.body.dataset.sfam = SFAM();
 }
 const SFAM = () => (SPORT === "atp" || SPORT === "wta") ? "tennis" : SPORT;
 const SPORT_VIEWS = ["matchs", "picks", "goal", "lab"];
@@ -576,10 +591,14 @@ function sportTabs(){
   const el = $("#sports"); if (!el) return;
   const c = SPINFO.counts || {}, fam = SFAM();
   const n = k => k === "tennis" ? (c.atp || 0) + (c.wta || 0) : (c[k] || 0);
-  const L = {foot: "Football", nba: "NBA", tennis: "Tennis"};
-  el.innerHTML = `<div class="sp-seg" role="tablist">${["foot", "nba", "tennis"].map(k => `<button role="tab" aria-selected="${fam===k}" class="sp-${k} ${fam===k?"on":""}" data-sport="${k === "tennis" ? (fam === "tennis" ? SPORT : "atp") : k}"><i>${SPORT_SVG[k]}</i>${L[k]}<em>${n(k)}</em></button>`).join("")}</div>
-    ${fam === "tennis" ? `<div class="sp-mini"><button class="${SPORT==="atp"?"on":""}" data-sport="atp">Hommes · ATP <em>${c.atp || 0}</em></button><button class="${SPORT==="wta"?"on":""}" data-sport="wta">Femmes · WTA <em>${c.wta || 0}</em></button></div>` : ""}`;
-  document.body.dataset.sport = fam;
+  const L = {foot: "Foot", nba: "NBA", tennis: "Tennis"};
+  el.innerHTML = ["foot", "nba", "tennis"].map(k => `<button role="tab" aria-selected="${fam===k}" title="${n(k)} matchs à venir" class="hs hs-${k} ${fam===k?"on":""}" data-sport="${k === "tennis" ? (fam === "tennis" ? SPORT : "atp") : k}"><i>${SPORT_SVG[k]}</i><span>${L[k]}</span></button>`).join("");
+  document.body.dataset.sfam = fam;
+}
+function tennisSwitch(){
+  if (SFAM() !== "tennis") return "";
+  const c = SPINFO.counts || {};
+  return `<div class="tsw"><button class="${SPORT==="atp"?"on":""}" data-sport="atp">Hommes · ATP <em>${c.atp || 0}</em></button><button class="${SPORT==="wta"?"on":""}" data-sport="wta">Femmes · WTA <em>${c.wta || 0}</em></button></div>`;
 }
 const tier = () => ST.tier || (ACCOUNT && ACCOUNT.tier) || "elite";
 const rank = () => RANK[tier()] ?? 3;
@@ -599,7 +618,7 @@ document.addEventListener("click", e => { if (e.target.closest("[data-back]")) h
 
 function chrome(){
   const r = route().v, n = BSET.size;
-  const tab = ([k, l]) => `<button class="${r===k||(r==="match"&&k==="matchs")?"on":""}" data-go="${k}">${ICON[k]}${l}${k==="ticket"&&n?`<span class="badge">${n}</span>`:""}</button>`;
+  const tab = ([k, l]) => `<button class="${r===k||(r==="match"&&k==="matchs")?"on":""}" data-go="${k}" title="${l}">${ICON[k]}<span class="lb">${l}</span>${k==="ticket"&&n?`<span class="badge">${n}</span>`:""}</button>`;
   $("#tabs").innerHTML = VIEWS.map(tab).join("");
   $("#bottom").innerHTML = VIEWS.map(tab).join("");
   const p = $("#plan"); p.hidden = !tier(); p.textContent = PLAN_NAME[tier()] || ""; p.className = "plan p-" + tier();
@@ -664,11 +683,8 @@ function vMatchs(){
   return `
     ${banner}
     <h1 class="t">${{foot: "Matchs de foot", nba: "Matchs NBA", atp: "Tennis · Hommes", wta: "Tennis · Femmes"}[SPORT]}</h1>
-    <p class="lead">${{nba: "Les vraies chances de victoire de chaque franchise, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365 (prolongations comprises, pas de match nul).",
-      atp: "Circuit ATP. Les vraies chances de chaque joueur, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365, du classement et des 10 derniers matchs.",
-      wta: "Circuit WTA. Les vraies chances de chaque joueuse, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365, du classement et des 10 derniers matchs.",
-      foot: "Les vraies chances de chaque issue, calculées à partir des cotes de Betclic, Winamax, Unibet et Bet365 (Pinnacle en référence), de la forme des équipes et d'un modèle de buts."}[SPORT]} Touche une cote pour l'ajouter à ton ticket.</p>
-    <p class="note fresh">Cotes mises à jour ${ago(Math.max(0, ...MATCHES.filter(m => m.day === DAY).map(m => m.odds_ts || 0)))}. Elles peuvent avoir bougé chez ton bookmaker : tape la vraie cote dans la page du match pour un verdict exact.</p>
+    <p class="lead">${{foot: "Les vraies chances de chaque issue, sans la marge des bookmakers.", nba: "Les vraies chances de victoire de chaque franchise, prolongations comprises.", atp: "Les vraies chances de chaque joueur, d'après les cotes, le classement et la forme.", wta: "Les vraies chances de chaque joueuse, d'après les cotes, le classement et la forme."}[SPORT]} Touche une cote pour l'ajouter à ton ticket.</p>
+    <p class="note fresh">Cotes mises à jour ${ago(Math.max(0, ...MATCHES.filter(m => m.day === DAY).map(m => m.odds_ts || 0)))}. Vérifie la cote chez ton bookmaker avant de parier.</p>
     <div class="days">${keys.map(dayChip).join("") || ""}</div>
     ${leagues.length > 1 ? `<div class="chips" style="margin-bottom:6px"><button class="chip ${LEAGUE==="all"?"on":""}" data-lg="all">Tous<b>${MATCHES.filter(m=>m.day===DAY).length}</b></button>${leagues.map(l => `<button class="chip ${LEAGUE===l?"on":""}" data-lg="${esc(l)}">${esc(l)}<b>${MATCHES.filter(m=>m.day===DAY&&m.league===l).length}</b></button>`).join("")}</div>` : ""}
     ${Object.entries(groups).map(([lg, ms]) => `<div class="lg">${esc(lg)}</div>${ms.map(row).join("")}`).join("") ||
@@ -696,7 +712,7 @@ function vMatch(id){
   const e = call("get_event", id);
   if (!e) return `<button class="back" data-go="matchs">← Matchs</button><div class="panel empty"><b>Match introuvable</b>Il a peut-être déjà commencé.</div>`;
   const info = e.info || {}, nv = info.neutral || {}, m = MATCHES.find(x => x.id === id) || {};
-  const fin = (nv.rows || []).find(r => r.final), p = fin ? fin.p : m.probs;
+  const fin = (nv.rows || []).find(r => r.final), p = fin ? fin.p.map(x => x ?? 0) : m.probs;
   const tennis = String(e.sport_key || m.sport_key || "").startsWith("tennis");
   const t = [["analyse","Analyse"],["paris","Tous les paris"],["equipes", tennis ? "Joueurs" : "Équipes"],["h2h","Face-à-face"],["infos","Infos du match"]];
   let body = "";
@@ -711,7 +727,7 @@ function vMatch(id){
       <div class="meta">${esc(e.league)} · ${esc(e.date)}${info.round_label?" · "+esc(info.round_label):""} · cotes ${ago(e.odds_ts)}</div>
       <div class="vs"><div class="tn">${esc(e.home)}</div><div class="x">contre</div><div class="tn r">${esc(e.away)}</div></div>
       ${spec(p, true)}
-      <div class="specl" style="font-size:15px"><span class="h">${esc(e.home)} ${pc(p&&p[0])}</span><span class="d">Nul ${pc(p&&p[1])}</span><span class="a">${pc(p&&p[2])} ${esc(e.away)}</span></div>
+      <div class="specl" style="font-size:15px"><span class="h">${esc(e.home)} ${pc(p&&p[0])}</span>${isNba(e) ? "" : `<span class="d">Nul ${pc(p&&p[1])}</span>`}<span class="a">${pc(p&&p[2])} ${esc(e.away)}</span></div>
     </section>
     <div class="tabs2">${t.map(([k,l]) => `<button class="${MTAB===k?"on":""}" data-mtab="${k}">${l}</button>`).join("")}</div>
     ${body}`;
@@ -731,16 +747,17 @@ function voteBox(e){
   const v = VOTES[e.id] || {}, c = v.counts || {"1":0,"N":0,"2":0}, n = c["1"] + c["N"] + c["2"];
   const started = e.ts * 1000 <= Date.now(), soon = e.ts * 1000 - Date.now() < 36 * 3600e3;
   const lab = {"1": e.home, "N": "Match nul", "2": e.away};
+  const KEYS = isNba(e) ? ["1","2"] : ["1","N","2"];
   const ours = (MATCHES.find(m => m.id === e.id) || {}).probs || [];
   let body;
   if (!v.mine && !started && soon) body = `<p class="note" style="margin-bottom:10px">Donne ton avis avant le match. Les résultats s'affichent après ton vote.</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">${["1","N","2"].map(k => `<button class="btn" data-vote="${k}" data-eid="${esc(e.id)}">${esc(lab[k])}</button>`).join("")}</div>`;
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${KEYS.map(k => `<button class="btn" data-vote="${k}" data-eid="${esc(e.id)}">${esc(lab[k])}</button>`).join("")}</div>`;
   else if (!v.mine && !started) body = `<p class="note">Le vote ouvre 36 h avant le coup d'envoi.</p>`;
   else if (n < 30) body = `<p class="note">${v.mine ? `Ton vote : <b>${esc(lab[v.mine])}</b>. ` : ""}${n} vote${n>1?"s":""} pour l'instant : les pourcentages s'affichent à partir de 30 votes, pour qu'ils veuillent dire quelque chose.</p>`;
   else {
     const pct = k => c[k] / n, idx = {"1":0,"N":1,"2":2};
-    const over = ["1","N","2"].filter(k => ours[idx[k]] != null && pct(k) - ours[idx[k]] >= .15);
-    body = `${["1","N","2"].map(k => `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>${esc(lab[k])}${v.mine===k?' <span class="pill ok">ton vote</span>':""}</span><span class="num">${pc(pct(k))}${ours[idx[k]] != null ? ` <span class="note">· nos chances ${pc(ours[idx[k]])}</span>` : ""}</span></div><div class="pbar"><i style="width:${pct(k)*100}%"></i></div></div>`).join("")}
+    const over = KEYS.filter(k => ours[idx[k]] != null && pct(k) - ours[idx[k]] >= .15);
+    body = `${KEYS.map(k => `<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:13.5px"><span>${esc(lab[k])}${v.mine===k?' <span class="pill ok">ton vote</span>':""}</span><span class="num">${pc(pct(k))}${ours[idx[k]] != null ? ` <span class="note">· nos chances ${pc(ours[idx[k]])}</span>` : ""}</span></div><div class="pbar"><i style="width:${pct(k)*100}%"></i></div></div>`).join("")}
       <p class="note">${n} votes de la communauté Cotescope.</p>
       ${over.length ? `<div class="warn" style="margin-top:8px">La communauté croit beaucoup plus à « ${esc(lab[over[0]])} » que nos analyses (${pc(pct(over[0]))} des votes contre ${pc(ours[idx[over[0]]])} de chances). Quand la foule surestime une équipe, la cote de l'autre côté peut avoir de la valeur : regarde aussi si la cote bouge.</div>` : ""}`;
   }
@@ -757,8 +774,8 @@ function tabAnalyse(e, nv){
   return `
     <div class="grid2">
       <div class="panel box"><h3>Ce que dit chaque source</h3>
-        <table class="src"><tr><th>Source</th><th>${esc(lab[0])}</th><th>Nul</th><th>${esc(lab[2])}</th></tr>
-        ${rows.map(r => `<tr class="${r.final?"fin":""}"><td>${esc(r.src)}</td>${r.p.map(x=>`<td class="num">${pc(x)}</td>`).join("")}</tr>`).join("")}</table>
+        <table class="src"><tr><th>Source</th><th>${esc(lab[0])}</th>${nv.two_way ? "" : "<th>Nul</th>"}<th>${esc(lab[2])}</th></tr>
+        ${rows.map(r => `<tr class="${r.final?"fin":""}"><td>${esc(r.src)}</td>${r.p.filter((x, i) => !(nv.two_way && i === 1)).map(x=>`<td class="num">${pc(x)}</td>`).join("")}</tr>`).join("")}</table>
         <div style="margin-top:16px;font-size:13.5px;display:flex;justify-content:space-between"><span class="note">Fiabilité de l'analyse</span><b class="num" style="color:${rc}">${rel}/100</b></div>
         <div class="rel"><i style="width:${rel}%;background:${rc}"></i></div>
       </div>
@@ -768,7 +785,7 @@ function tabAnalyse(e, nv){
       <div class="panel box"><h3>Pour ${esc(e.home)}</h3><ul class="args">${(nv.adv_home||[]).map(x=>`<li>${esc(x)}</li>`).join("") || '<li class="note">Pas d\'argument fort.</li>'}</ul></div>
       <div class="panel box"><h3>Pour ${esc(e.away)}</h3><ul class="args">${(nv.adv_away||[]).map(x=>`<li>${esc(x)}</li>`).join("") || '<li class="note">Pas d\'argument fort.</li>'}</ul></div>
     </div>
-    ${rank() < 2 ? lockBox("pro", "Analyse complète du match", "Absents pondérés, compos officielles, face-à-face, buteurs, météo et fatigue.") : ""}`;
+    ${rank() < 2 && !nv.two_way ? lockBox("pro", "Analyse complète du match", "Absents pondérés, compos officielles, face-à-face, buteurs, météo et fatigue.") : ""}`;
 }
 function verdict(b){
   if (!b.user_odds) return "";
@@ -1222,7 +1239,7 @@ const badF = f => { f = (f || "").slice(0, 5); return f.length >= 4 && ((f.match
 function goalLeg(l){
   const src = l.p_model != null
     ? `Nos analyses ${pc(l.p_model)} · cotes ${pc(l.p_market)}`
-    : `Cotes ${pc(l.p_market)} · analyses incomplètes`;
+    : SPORT === "foot" ? `Cotes ${pc(l.p_market)} · analyses incomplètes` : `D'après les cotes ${pc(l.p_market)}`;
   return `<div class="leg gleg" data-go="match" data-arg="${esc(l.event_id)}" title="Voir toutes les analyses du match">
     <div>${esc(l.selection)} <small>· ${esc(l.match)} · ${esc(l.date)}</small>
       ${(l.form_h || l.form_a) ? `<small class="why">Forme 5 derniers : <span class="${l.side==="home"?"fb":""}">${formHtml(l.form_h)}</span> / <span class="${l.side==="away"?"fb":""}">${formHtml(l.form_a)}</span>${(l.side==="home"&&badF(l.form_h))||(l.side==="away"&&badF(l.form_a)) ? ' <span class="pill bad">équipe en mauvaise série</span>' : ""}</small>` : ""}
@@ -1251,14 +1268,14 @@ function goalList(r){
       <div class="gbar">${[["p","Plus de chances"],["legs","Moins de matchs"],["soon","Fini le plus tôt"],["gain","Plus gros gain"]].map(([k,l]) => `<button class="chip ${GSORT===k?"on":""}" data-gsort="${k}">${l}</button>`).join("")}</div>
       <div class="gbar" style="margin-bottom:14px"><button class="chip ${GLEGS==="all"?"on":""}" data-glegs="all">Tous</button>${counts.map(c => `<button class="chip ${GLEGS===String(c)?"on":""}" data-glegs="${c}">${c} match${c>1?"s":""}</button>`).join("")}</div>
       <div class="gbar" style="margin-bottom:14px;gap:8px">
-        <select class="sel2" id="g-flg" style="max-width:230px"><option value="">Tous les championnats</option>${lgs.map(x => `<option value="${esc(x)}" ${GLG===x?"selected":""}>Uniquement ${esc(x)}</option>`).join("")}</select>
+        ${lgs.length > 1 ? `<select class="sel2" id="g-flg" style="max-width:230px"><option value="">${SPORT === "foot" ? "Toutes les compétitions" : "Tous les tournois"}</option>${lgs.map(x => `<option value="${esc(x)}" ${GLG===x?"selected":""}>Uniquement ${esc(x)}</option>`).join("")}</select>` : ""}
         <select class="sel2" id="g-fcat" style="max-width:230px"><option value="">Tous les types de paris</option>${cats.map(x => `<option value="${esc(x)}" ${GCAT===x?"selected":""}>Avec ${esc(CATN[x]||x)}</option>`).join("")}</select>
         <span class="note">${opts.length} ticket${opts.length>1?"s":""} avec ces filtres</span></div>`;
   const card = o => {
     const open = GOPEN.has(o.rank - 1);
     return `<div class="panel opt sm ${o.rank===1?"best":""}">
       <div class="orow" data-gopen="${o.rank - 1}"><span class="n">#${o.rank}</span>
-        <div class="t"><b>${o.rank===1?"Le plus de chances":esc(o.kind==="alt" ? o.tickets[0].legs.map(l => l.selection).join(" + ") : o.title)}</b><small>${esc(o.desc)} · fini ${esc(o.ends)}${o.tags && o.tags.length ? " · " + o.tags.map(esc).join(" · ") : ""}${o.unsafe?' · <span class="pill warn">contient un pari à moins de 50 %</span>':""}${o.badform?` · <span class="pill bad">${o.badform} équipe${o.badform>1?"s":""} en mauvaise série</span>`:""}${o.est?` · <span class="pill bad">${o.est} cote${o.est>1?"s":""} estimée${o.est>1?"s":""}</span>`:""} · <span class="pill ${o.fiab>=.67?"ok":o.fiab>=.34?"warn":"bad"}">analyse ${Math.round((o.fiab||0)*100)} %</span></small></div>
+        <div class="t"><b>${o.rank===1?"Le plus de chances":esc(o.kind==="alt" ? o.tickets[0].legs.map(l => l.selection).join(" + ") : o.title)}</b><small>${esc(o.desc)} · fini ${esc(o.ends)}${o.tags && o.tags.length ? " · " + o.tags.map(esc).join(" · ") : ""}${o.unsafe?' · <span class="pill warn">contient un pari à moins de 50 %</span>':""}${o.badform?` · <span class="pill bad">${o.badform} équipe${o.badform>1?"s":""} en mauvaise série</span>`:""}${o.est?` · <span class="pill bad">${o.est} cote${o.est>1?"s":""} estimée${o.est>1?"s":""}</span>`:""}${SPORT === "foot" ? ` · <span class="pill ${o.fiab>=.67?"ok":o.fiab>=.34?"warn":"bad"}">analyse ${Math.round((o.fiab||0)*100)} %</span>` : ""}</small></div>
         <div class="k"><b>${pc(o.p_hit, o.p_hit < .1 ? 1 : 0)}</b><small>cote ${fr(o.odds)} · ${eur(o.ret)}</small></div></div>
       ${open ? `<div class="body">${o.tickets.map(t => `${t.legs.map(goalLeg).join("")}
           <div class="tot"><span class="note">Mise ${eur(t.stake)} · cote ${fr(t.odds)} · ${pc(t.p, t.p < .1 ? 1 : 0)}</span><div class="sp"></div><b>${eur(t.ret)}</b><button class="btn sm" data-play="${t.legs.map(l=>esc(l.uid)).join("~")}" data-stake="${t.stake}">Je le joue</button></div>`).join("")}
@@ -1273,7 +1290,7 @@ function goalList(r){
     + (r.locked_more ? lockBox("pro", `${r.locked_more} autre${r.locked_more>1?"s":""} ticket${r.locked_more>1?"s":""} trouvé${r.locked_more>1?"s":""}`, "Toutes les combinaisons qui atteignent ton objectif, classées par chances, avec tri et filtres.") : "");
 }
 document.addEventListener("click", e => {
-  const b = e.target.closest("[data-sport]");
+  const b = e.target.closest("button[data-sport]");
   if (b && b.dataset.sport !== SPORT) { setSport(b.dataset.sport); if (!SPORT_VIEWS.includes(route().v)) go("matchs"); render(); window.scrollTo(0, 0); }
 });
 document.addEventListener("change", e => {
@@ -1809,7 +1826,7 @@ function render(){
   const body = paused && ["picks","goal","ticket","lab"].includes(r.v) ? vPaused()
     : locked && SPORT_VIEWS.includes(r.v) ? `<h1 class="t">${SPORT_NAME[SPORT]}</h1>${lockBox("essentiel", `${SPORT_NAME[SPORT]} : inclus dans Essentiel et Pro`, LOCK_TXT[SPORT])}`
     : (V[r.v] || vMatchs)();
-  $("#view").innerHTML = verifyBanner() + body;
+  $("#view").innerHTML = verifyBanner() + (SPORT_VIEWS.includes(r.v) ? tennisSwitch() : "") + body;
   window.__czEmail = (ACCOUNT && ACCOUNT.email) || "";
   sportTabs();
   chrome();
@@ -1906,6 +1923,7 @@ document.addEventListener("click", async e => {
 async function start(){
   try {
     if (!window.__BRIDGE__) await boot();
+    else SPINFO = call("set_sport", SPORT) || {};
     gate(null);
     if (!location.hash.startsWith("#/")) location.hash = "/matchs";
     render();

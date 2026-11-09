@@ -819,6 +819,73 @@ def form_proxy(st, side, mkey, name, point):
     return None
 
 
+def neutral_view_2way(st, sel, sport_key):
+    """NBA et tennis : pas de nul. Cotes, lecture des stats, arguments de chaque côté, risques propres au sport."""
+    tennis = sport_key.startswith("tennis")
+    h2h = [x for x in sel if x.get("cat") == "1n2" and not x.get("estimated")]
+    m = sel[0]["match"] if sel else ""
+    home_o, away_o = (m.split(" - ", 1) + [""])[:2] if " - " in m else (st.get("home") or "", st.get("away") or "")
+    ph = next((x for x in h2h if x["selection"] == f"Victoire {home_o}"), None)
+    pa = next((x for x in h2h if x["selection"] == f"Victoire {away_o}"), None)
+    rows, adv_h, adv_a, risks = [], [], [], []
+    if ph and pa:
+        rows.append({"src": "Cotes des bookmakers (marge retirée)", "p": [ph["p_market"], None, pa["p_market"]]})
+    T = st.get("tennis") or {}
+    if tennis and T.get("model"):
+        rows.append({"src": "Classement + forme des 10 derniers matchs", "p": [T["model"]["home"], None, T["model"]["away"]]})
+    if ph and pa:
+        rows.append({"src": "Cotescope (final)", "p": [ph["p"], None, pa["p"]], "final": True})
+    fh, fa = st.get("form_home") or {}, st.get("form_away") or {}
+    def form_pts(f, adv, other, name):
+        last = list(f.get("form") or "")
+        if len(last) >= 5:
+            w = last.count("V") / len(last)
+            if w >= .7:
+                adv.append(f"En forme : {last.count('V')} victoires sur ses {len(last)} derniers matchs")
+            elif w <= .3:
+                other.append(f"{name} est en difficulté : {last.count('V')} victoire{'s' if last.count('V') > 1 else ''} sur ses {len(last)} derniers matchs")
+    form_pts(fh, adv_h, adv_a, home_o)
+    form_pts(fa, adv_a, adv_h, away_o)
+    if tennis:
+        h, a = T.get("home") or {}, T.get("away") or {}
+        if h.get("rank") and a.get("rank"):
+            if h["rank"] < a["rank"]:
+                adv_h.append(f"Mieux classé : {h['rank']}e mondial contre {a['rank']}e")
+            elif a["rank"] < h["rank"]:
+                adv_a.append(f"Mieux classé : {a['rank']}e mondial contre {h['rank']}e")
+        for p_, adv, name in ((h, adv_h, home_o), (a, adv_a, away_o)):
+            if (p_.get("streak") or 0) >= 4:
+                adv.append(f"Série en cours : {p_['streak']} victoires d'affilée")
+            if (p_.get("m14") or 0) >= 5:
+                risks.append(f"Fatigue possible : {name} a joué {p_['m14']} matchs en 14 jours")
+            tb = p_.get("tb") or [0, 0]
+            if sum(tb) >= 4 and tb[0] / sum(tb) >= .7:
+                adv.append(f"Solide dans les tie-breaks : {tb[0]} gagnés sur {sum(tb)}")
+        hh = T.get("h2h") or []
+        if hh:
+            wh = sum(1 for x in hh if x.get("winner") == home_o)
+            (adv_h if wh > len(hh) - wh else adv_a).append(f"Mène le face-à-face récent ({max(wh, len(hh) - wh)}-{min(wh, len(hh) - wh)})")
+        if not (h and a):
+            risks.append("Stats incomplètes pour au moins un joueur : le pronostic s'appuie surtout sur les cotes")
+        risks.append("Un abandon ou une blessure en cours de match fait perdre le pari « vainqueur » chez la plupart des bookmakers")
+        risks.append("Le tennis reste imprévisible : même à 70 %, un favori perd 3 fois sur 10")
+    else:
+        for inj, adv_other, name in ((st.get("inj_home") or [], adv_a, home_o), (st.get("inj_away") or [], adv_h, away_o)):
+            out = [x for x in inj if "out" in str(x.get("status", "")).lower() or "absent" in str(x.get("status", "")).lower()]
+            if len(out) >= 2:
+                adv_other.append(f"{name} compte {len(out)} absents")
+        if not (fh and fa):
+            risks.append("Forme récente indisponible pour au moins une équipe")
+        risks.append("Les absences de dernière minute (repos, blessure) sont fréquentes en NBA : vérifie avant le match")
+        risks.append("Le basket reste imprévisible : même à 70 %, un favori perd 3 fois sur 10")
+    if ph and pa and max(ph["p_market"], pa["p_market"]) < .58:
+        risks.insert(0, "Match très serré : pas de vrai favori")
+    srcs = st.get("sources") or []
+    rel = (40 if rows else 20) + (25 if (fh and fa) or (T.get("home") and T.get("away")) else 0) + (10 if T.get("model") or st.get("inj_home") is not None else 0)
+    return {"rows": rows, "labels": [home_o, "", away_o], "two_way": True, "adv_home": adv_h, "adv_away": adv_a,
+            "reliability": max(10, min(100, rel)), "risks": risks}
+
+
 def neutral_view(st, sel):
     """Analyse objective du match : chaque source séparément, arguments des 2 équipes, fiabilité, risques."""
     h2h = {x["selection"]: x for x in sel if x.get("cat") == "1n2" and not x.get("estimated")}
@@ -1831,7 +1898,7 @@ def _objective_plan(stake, target, selections, cfg):
         if not few:
             # 3 à 6. pour chaque filtre (championnat, jour, famille de paris, niveau de sécurité) : plusieurs tickets
             themes = []
-            for lg in sorted({s["sport_key"] for s, o in items}):
+            for lg in (sorted({s["sport_key"] for s, o in items}) if len({s["sport_key"] for s, o in items}) > 1 else []):
                 name = next(s["sport"] for s, o in items if s["sport_key"] == lg)
                 themes.append(("league", f"Uniquement {name}", lambda s, lg=lg: s["sport_key"] == lg, {}))
             for d in sorted({s["start"].astimezone().date() for s, o in items})[:5]:
@@ -2907,7 +2974,8 @@ class Api:
         if not st and not sel:
             return None
         st = dict(st or {})
-        st["neutral"] = neutral_view(st, sel)
+        sk = next((e.get("sport_key", "") for e in self._events if e.get("id") == event_id), "")
+        st["neutral"] = neutral_view(st, sel) if not sk or sk.startswith("soccer") else neutral_view_2way(st, sel, sk)
         return st
 
     def refresh(self):

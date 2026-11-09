@@ -4,8 +4,8 @@ def get(u):
         r = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"}), timeout=25); return json.loads(r.read())
     except Exception as e:
         return {"_err": str(e)}
-for slug in ("fra.1", "uefa.champions", "uefa.nations"):
-    sb = get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates=20261121-20261128")
+for slug in ("eng.1", "uefa.nations"):
+    sb = get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates=" + ("20261122" if slug == "eng.1" else "20261115"))
     evs = sb.get("events") or []
     print("SB", slug, len(evs), sb.get("_err", ""))
     if evs:

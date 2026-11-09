@@ -663,14 +663,16 @@ function vMatchs(){
   MATCHES.forEach(m => { days[m.day] = (days[m.day] || 0) + 1; });
   const keys = Object.keys(days).sort();
   if (!DAY || !days[DAY]) DAY = keys[0] || null;
-  const leagues = [...new Set(MATCHES.filter(m => m.day === DAY).map(m => m.league))];
+  const LG_ORDER = ["Ligue 1", "Premier League", "Liga", "Serie A", "Bundesliga", "Ligue des champions", "Ligue Europa", "Conference League", "Ligue des nations"];
+  const lgRank = l => { const i = LG_ORDER.indexOf(l); return i < 0 ? 99 : i; };
+  const leagues = [...new Set(MATCHES.filter(m => m.day === DAY).map(m => m.league))].sort((a, b) => lgRank(a) - lgRank(b) || a.localeCompare(b));
   if (LEAGUE !== "all" && !leagues.includes(LEAGUE)) LEAGUE = "all";
   const today = new Date().toISOString().slice(0,10);
   const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0,10);
   const dayChip = k => { const d = new Date(k + "T12:00:00"); const w = k === today ? "Auj." : k === tomorrow ? "Demain" : JOURS[d.getDay()];
     return `<button class="day ${k===DAY?"on":""}" data-day="${k}"><div class="w">${w}</div><div class="n">${d.getDate()}</div><div class="c">${days[k]} match${days[k]>1?"s":""}</div></button>`; };
   const list = MATCHES.filter(m => m.day === DAY && (LEAGUE === "all" || m.league === LEAGUE));
-  const groups = {}; list.forEach(m => (groups[m.league] = groups[m.league] || []).push(m));
+  const groups = {}; leagues.forEach(l => { const ms = list.filter(m => m.league === l); if (ms.length) groups[l] = ms; });
   const row = m => `
     <div class="match" data-go="match" data-arg="${esc(m.id)}">
       <div class="tm">${esc(m.time)}<small>${esc(m.round || "")}</small></div>

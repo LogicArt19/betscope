@@ -1293,6 +1293,11 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
         real = (ev.get("_real") or {}).get(key)
         # plusieurs bookmakers possibles : la meilleure vraie cote parmi ceux où l'utilisateur joue
         cands = [(v[0], bk_, v[1]) for bk_, v in ((ev.get("_real_all") or {}).get(key) or {}).items() if not allowed or bk_ in allowed]
+        # garde-fou : une cote qui promettrait plus de 30 % de gain moyen face à notre probabilité est presque
+        # toujours une erreur de lecture (issue inversée, mauvaise ligne) -> on l'ignore
+        cands = [c for c in cands if p_market * float(c[0]) <= 1.30]
+        if real and p_market * float(real[0]) > 1.30:
+            real = None
         if cands:
             pr_, bk_, ti_ = max(cands)
             real = [pr_, bk_, ti_]

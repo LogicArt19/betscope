@@ -566,7 +566,8 @@ def st_match(link, basket=False, tennis=False):
         elif sec == "GOAL" and cols == ["Oui", "Non"] and "2 équipes" in mname and "mi-temps" not in mname:
             kind = "btts"
         elif sec == "UNDER_OVER" and len(cols) == 2 and re.fullmatch(r"-\d\.5", cols[0]) and cols[1] == "+" + cols[0][1:] \
-                and (not pk or pk[-1].startswith("UNDER_OVER_")):
+                and (not pk or pk[-1].startswith("UNDER_OVER_")) \
+                and not any(w in mname for w in ("carton", "corner", "mi-temps", "période", "équipe", "domicile", "extérieur", "asiat", "tir", "faute")):
             kind = "tot"
         if not kind:
             continue

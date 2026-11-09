@@ -282,7 +282,7 @@ function mailLayout(title, body, btnUrl, btnText) {
   <tr><td style="padding:14px 32px 0;font-size:15px;line-height:1.6;color:#C9D3E3">${body}</td></tr>
   ${btnUrl ? `<tr><td style="padding:22px 32px 6px"><a href="${btnUrl}" style="display:inline-block;background:#26E0B8;color:#06101A;font-weight:bold;text-decoration:none;padding:13px 22px;border-radius:10px">${btnText}</a></td></tr>
   <tr><td style="padding:8px 32px 0;font-size:12px;color:#7F8BA3">Si le bouton ne marche pas, copie ce lien : ${btnUrl}</td></tr>` : ""}
-  <tr><td style="padding:26px 32px 28px;font-size:12px;color:#7F8BA3">Les paris comportent des risques : endettement, dépendance… Appelle le 09 74 75 13 13 (appel non surtaxé). Réservé aux 18 ans et plus.</td></tr>
+  <tr><td style="padding:26px 32px 28px;font-size:12px;color:#7F8BA3">Une question ? Réponds simplement à cet e-mail ou écris à ${SUPPORT_EMAIL}.<br><br>Jouer comporte des risques : endettement, isolement, dépendance. Pour être aidé, appelez le 09 74 75 13 13 (appel non surtaxé). Réservé aux 18 ans et plus.</td></tr>
   </table></td></tr></table></body></html>`;
 }
 async function sendVerify(env, user, origin) {
@@ -296,7 +296,8 @@ async function sendVerify(env, user, origin) {
 // Envoi des e-mails : Resend (avec le domaine cotescope.fr) ou, sans toucher au domaine, un relais Gmail
 // (petit script Google Apps Script sur le compte Gmail du propriétaire, ~100 e-mails par jour, gratuit).
 const mailOn = (env) => !!(env.RESEND_KEY || (env.MAIL_RELAY_URL && env.MAIL_RELAY_KEY));
-async function sendMail(env, to, subject, html) {
+const SUPPORT_EMAIL = "cotescopeofficial@gmail.com";
+async function sendMail(env, to, subject, html, replyTo) {
   if (!env.RESEND_KEY && env.MAIL_RELAY_URL && env.MAIL_RELAY_KEY) {
     try {
       const r = await fetch(env.MAIL_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -309,7 +310,7 @@ async function sendMail(env, to, subject, html) {
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: "Bearer " + env.RESEND_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: env.MAIL_FROM || "Cotescope <compte@cotescope.fr>", to: [to], subject, html }),
+    body: JSON.stringify({ from: env.MAIL_FROM || "Cotescope <compte@cotescope.fr>", to: [to], subject, html, reply_to: replyTo || SUPPORT_EMAIL }),
   });
   return r.ok;
 }
@@ -599,10 +600,12 @@ export default {
       await env.KV.put("support", JSON.stringify(list.slice(0, 200)));
       const text = `🆘 <b>Message d'aide Cotescope</b>\nDe : ${escH(from)}${item.country ? " (" + escH(item.country) + ")" : ""}\nPage : ${escH(page)}\n\n${escH(msg)}`;
       let sent = 0;
+      if (mailOn(env)) await sendMail(env, SUPPORT_EMAIL, "Cotescope : message d'aide de " + from, mailLayout("Nouveau message d'aide",
+        `<b>De :</b> ${escH(from)}<br><b>Page :</b> ${escH(page)}<br><br>${escH(msg).replace(/\n/g, "<br>")}<br><br>Clique sur « Répondre » pour lui écrire directement.`), from);
       for (const o of owners(env)) {
         const ou = await getUser(env, o);
         if (ou && ou.tg && (await tgSend(env, ou.tg, text))) sent++;
-        if (mailOn(env)) await sendMail(env, o, "Cotescope : message d'aide de " + from, mailLayout("Nouveau message d'aide",
+        if (mailOn(env) && o !== SUPPORT_EMAIL) await sendMail(env, o, "Cotescope : message d'aide de " + from, mailLayout("Nouveau message d'aide",
           `<b>De :</b> ${escH(from)}<br><b>Page :</b> ${escH(page)}<br><br>${escH(msg).replace(/\n/g, "<br>")}`));
       }
       return json(req, { ok: true, delivered: sent });

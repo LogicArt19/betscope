@@ -135,6 +135,7 @@ SPORTS = {  # foot + NBA + tennis
     "soccer_uefa_champs_league": "Ligue des champions",
     "soccer_uefa_europa_league": "Ligue Europa",
     "soccer_uefa_europa_conference_league": "Conference League",
+    "soccer_uefa_nations_league": "Ligue des nations",
     "soccer_netherlands_eredivisie": "Eredivisie (Pays-Bas)",
     "soccer_portugal_primeira_liga": "Liga Portugal",
     "soccer_belgium_first_div": "Jupiler Pro League (Belgique)",
@@ -161,7 +162,7 @@ DEFAULT_CONFIG = {
     "min_odds": 1.30,
     "max_odds": 6.00,
     "min_books": 4,
-    "horizon_hours": 384,
+    "horizon_hours": 504,
     "max_legs": 3,
     "min_combo_prob": 0.15,
     "min_stake": 0.50,
@@ -271,7 +272,7 @@ def load_config():
     if float(cfg.get("min_books", 4)) > 5:
         cfg["min_books"] = 4
     if cfg.get("cfg_version", 0) < 4:  # 1.4.0 : on regarde les 7 prochains jours
-        cfg["horizon_hours"] = max(float(cfg.get("horizon_hours", 384)), 384)
+        cfg["horizon_hours"] = max(float(cfg.get("horizon_hours", 504)), 504)
         cfg["cfg_version"] = 4
     cfg["sports"] = [k for k in cfg.get("sports", []) if k.startswith("soccer")] or list(DEFAULT_CONFIG["sports"])
     return cfg

@@ -374,45 +374,24 @@ table.src tr.fin td{font-weight:700;color:var(--chalk);border-bottom:0}
 body{--sp:#26e0b8;--sp2:#0f8f75;--spbg:rgba(38,224,184,.10)}
 body[data-sport="nba"]{--sp:#ff8a3d;--sp2:#c4531a;--spbg:rgba(255,138,61,.11)}
 body[data-sport="tennis"]{--sp:#d8f04a;--sp2:#8aa514;--spbg:rgba(216,240,74,.10)}
-nav.sports{position:sticky;top:64px;z-index:19;padding:12px 28px 0;background:linear-gradient(180deg,rgba(6,10,18,.96),rgba(6,10,18,.88));backdrop-filter:blur(14px);border-bottom:1px solid var(--rim)}
-.sp-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:1100px;margin:0 auto;padding-bottom:12px}
-.sp-card{position:relative;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:16px;border:1px solid var(--rim);background:var(--deck);color:var(--fog);text-align:left;cursor:pointer;overflow:hidden;transition:transform .15s,border-color .15s,background .15s}
-.sp-card:hover{transform:translateY(-1px);border-color:var(--rim2)}
-.sp-card .sp-ico{flex:none;display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.04)}
-.sp-card .sp-ico svg{width:28px;height:28px}
-.sp-card .sp-txt{display:flex;flex-direction:column;min-width:0}
-.sp-card .sp-txt b{color:var(--chalk);font-family:var(--disp);font-size:17px;letter-spacing:.02em}
-.sp-card .sp-txt small{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sp-card .sp-n{margin-left:auto;font-weight:800;font-size:13px;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--fog)}
+nav.sports{position:sticky;top:64px;z-index:19;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;padding:8px 20px;background:rgba(6,10,18,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--rim)}
+.sp-seg{display:inline-flex;gap:2px;padding:3px;border-radius:12px;background:var(--deck);border:1px solid var(--rim)}
+.sp-seg button{display:flex;align-items:center;gap:7px;padding:6px 13px;border:0;border-radius:9px;background:transparent;color:var(--fog);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,color .15s}
+.sp-seg button i{display:flex;width:16px;height:16px;color:var(--c)}
+.sp-seg button i svg{width:16px;height:16px}
+.sp-seg button em{font-style:normal;font-size:11px;font-weight:700;color:var(--fog);opacity:.8}
+.sp-seg button:hover{color:var(--chalk)}
+.sp-seg button.on{background:color-mix(in srgb,var(--c) 16%,var(--deck));color:var(--chalk);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
+.sp-seg button.on em{color:var(--c);opacity:1}
 .sp-foot{--c:#26e0b8}.sp-nba{--c:#ff8a3d}.sp-tennis{--c:#d8f04a}
-.sp-card .sp-ico{color:var(--c)}
-.sp-card.on{border-color:var(--c);background:linear-gradient(135deg,color-mix(in srgb,var(--c) 22%,transparent),color-mix(in srgb,var(--c) 6%,transparent) 60%);box-shadow:0 0 0 1px var(--c) inset,0 8px 30px -12px var(--c)}
-.sp-card.on .sp-ico{background:var(--c);color:#071017}
-.sp-card.on .sp-n{background:var(--c);color:#071017}
-.sp-card.on::after{content:"";position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--c)}
-.sp-sub{display:flex;gap:8px;max-width:1100px;margin:0 auto;padding:0 0 12px}
-.sp-sub button{display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:999px;border:1px solid var(--rim);background:transparent;color:var(--fog);font-weight:700;font-size:14px;cursor:pointer}
-.sp-sub button .g{font-size:16px}
-.sp-sub button em{font-style:normal;font-size:12px;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,.07)}
-.sp-sub button.on{border-color:var(--sp);color:#071017;background:var(--sp)}
-.sp-sub button.on em{background:rgba(0,0,0,.15)}
-h1.t{display:flex;align-items:center;gap:12px}
-h1.t::before{content:"";width:6px;height:28px;border-radius:3px;background:var(--sp);box-shadow:0 0 14px var(--sp)}
-.day.on{border-color:var(--sp)!important;background:var(--spbg)!important}.day.on .c{color:var(--sp)!important}
-.chip.on{border-color:var(--sp)!important;background:var(--spbg)!important}.chip.on b{color:var(--sp)!important}
-.tabs2 button.on{border-color:var(--sp)!important}
-nav.tabs button.on::after{background:var(--sp)!important;box-shadow:0 0 10px var(--sp)!important}
-.lg{color:var(--sp)}
-.rk{display:inline-block;min-width:26px;margin-right:7px;padding:1px 6px;border-radius:6px;background:var(--spbg);color:var(--sp);font-size:11.5px;font-weight:800;text-align:center}
-.tcard .thead{display:flex;gap:14px;align-items:center;margin-bottom:12px}
-.tcard .trank{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;width:70px;height:70px;border-radius:16px;background:var(--spbg);border:1px solid var(--sp)}
-.tcard .trank small{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--fog)}
-.tcard .trank b{font-family:var(--disp);font-size:26px;color:var(--chalk);line-height:1}
-.tcard .trank em{font-style:normal;font-size:11px;font-weight:800}.tcard .trank em.up{color:var(--home)}.tcard .trank em.down{color:var(--bad)}
-.tcard .tchips{display:flex;flex-wrap:wrap;gap:8px}
-.tcard .tchips span{padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid var(--rim);font-weight:800;color:var(--chalk)}
-.tcard .tchips small{font-weight:600;color:var(--fog)}
-@media (max-width:900px){nav.sports{top:56px;padding:10px 10px 0}.sp-row{gap:6px;padding-bottom:10px}.sp-card{flex-direction:column;align-items:center;gap:6px;padding:10px 6px;text-align:center}.sp-card .sp-txt small{display:none}.sp-card .sp-txt b{font-size:13.5px}.sp-card .sp-ico{width:38px;height:38px}.sp-card .sp-ico svg{width:24px;height:24px}.sp-card .sp-n{position:absolute;top:6px;right:6px;font-size:11px;padding:2px 7px}.sp-sub{justify-content:center}.sp-sub button{flex:1;justify-content:center;padding:8px 10px;font-size:13px}}
+.sp-mini{display:inline-flex;gap:2px;padding:3px;border-radius:10px;border:1px solid var(--rim)}
+.sp-mini button{padding:5px 11px;border:0;border-radius:7px;background:transparent;color:var(--fog);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.sp-mini button em{font-style:normal;font-size:11px;opacity:.75;margin-left:3px}
+.sp-mini button.on{background:var(--sp);color:#071017}
+.gsport{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px;padding:9px 12px;border-radius:10px;background:var(--spbg);border:1px solid color-mix(in srgb,var(--sp) 35%,transparent);font-weight:700;color:var(--chalk)}
+.gsport .d{width:8px;height:8px;border-radius:50%;background:var(--sp);box-shadow:0 0 8px var(--sp)}
+.gsport small{font-weight:500;color:var(--fog);margin-left:auto;font-size:12px}
+@media (max-width:900px){nav.sports{top:56px;padding:7px 10px;gap:6px}.sp-seg{width:100%}.sp-seg button{flex:1;justify-content:center;padding:7px 6px;font-size:13px}.sp-mini{width:100%}.sp-mini button{flex:1}}
 .odds3.two .ob{flex:1}
 </style>
 </head>
@@ -582,7 +561,7 @@ let SPORT = (() => { try { const v = localStorage.getItem("cotescope_sport"); re
 function setSport(m){
   SPORT = m; try { localStorage.setItem("cotescope_sport", m); } catch (e) {}
   SPINFO = call("set_sport", m) || {}; DAY = null; LEAGUE = "all"; GLG = ""; GCAT = ""; GMORE = 20;
-  if (typeof GOAL !== "undefined") { GOAL.res = null; GOAL.leagues = null; }
+  if (typeof GOAL !== "undefined") { GOAL.res = null; GOAL.leagues = null; GOAL.types = null; }
   document.body.dataset.sport = SFAM();
 }
 const SFAM = () => (SPORT === "atp" || SPORT === "wta") ? "tennis" : SPORT;
@@ -597,9 +576,9 @@ function sportTabs(){
   const el = $("#sports"); if (!el) return;
   const c = SPINFO.counts || {}, fam = SFAM();
   const n = k => k === "tennis" ? (c.atp || 0) + (c.wta || 0) : (c[k] || 0);
-  el.innerHTML = `<div class="sp-row">${SPORT_TABS.map(([k, l, sub]) => `<button class="sp-card sp-${k} ${fam===k?"on":""}" data-sport="${k === "tennis" ? (fam === "tennis" ? SPORT : "atp") : k}">
-      <span class="sp-ico">${SPORT_SVG[k]}</span><span class="sp-txt"><b>${l}</b><small>${sub}</small></span><span class="sp-n">${n(k)}</span></button>`).join("")}</div>
-    ${fam === "tennis" ? `<div class="sp-sub"><button class="${SPORT==="atp"?"on":""}" data-sport="atp"><span class="g">♂</span>Hommes · ATP<em>${c.atp || 0}</em></button><button class="${SPORT==="wta"?"on":""}" data-sport="wta"><span class="g">♀</span>Femmes · WTA<em>${c.wta || 0}</em></button></div>` : ""}`;
+  const L = {foot: "Football", nba: "NBA", tennis: "Tennis"};
+  el.innerHTML = `<div class="sp-seg" role="tablist">${["foot", "nba", "tennis"].map(k => `<button role="tab" aria-selected="${fam===k}" class="sp-${k} ${fam===k?"on":""}" data-sport="${k === "tennis" ? (fam === "tennis" ? SPORT : "atp") : k}"><i>${SPORT_SVG[k]}</i>${L[k]}<em>${n(k)}</em></button>`).join("")}</div>
+    ${fam === "tennis" ? `<div class="sp-mini"><button class="${SPORT==="atp"?"on":""}" data-sport="atp">Hommes · ATP <em>${c.atp || 0}</em></button><button class="${SPORT==="wta"?"on":""}" data-sport="wta">Femmes · WTA <em>${c.wta || 0}</em></button></div>` : ""}`;
   document.body.dataset.sport = fam;
 }
 const tier = () => ST.tier || (ACCOUNT && ACCOUNT.tier) || "elite";
@@ -1184,6 +1163,9 @@ try { Object.assign(GOAL, JSON.parse(localStorage.getItem("cotescope_goal") || "
 const saveGoal = () => { try { const {res, ...keep} = GOAL; localStorage.setItem("cotescope_goal", JSON.stringify(keep)); } catch(e) {} };
 const CATS = [["1n2","Résultat"],["dc","Double chance"],["dnb","Remboursé si nul"],["total","Nombre de buts"],["team","Buts par équipe"],["btts","Les 2 marquent"],["hcp","Handicap"],["exact","Score exact"],["mtft","Mi-temps / fin"],["scorer","Buteurs"],["decisive","Joueurs décisifs"]];
 const CAT_TIER = {essentiel:["1n2","dc","total","btts"]};
+const CATS_BY = {foot: CATS, nba: [["1n2","Vainqueur (prolongations comprises)"],["total","Total de points"]],
+  atp: [["1n2","Vainqueur du match"],["total","Nombre de jeux"]], wta: [["1n2","Vainqueur du match"],["total","Nombre de jeux"]]};
+const sportCats = () => CATS_BY[SPORT] || CATS;
 // jours qui ont des matchs à venir : « Aujourd'hui », « Demain », puis « sam 08/11 »…
 function goalDays(){
   const today = new Date(), iso = d => d.toLocaleDateString("sv-SE");
@@ -1195,8 +1177,11 @@ function vGoal(){
   const num = v => parseFloat(String(v).replace(",", "."));
   const need = (num(GOAL.target) + num(GOAL.stake)) / num(GOAL.stake);
   const leagues = [...new Map(MATCHES.map(m => [m.sport_key, m.league])).entries()];
-  const okCats = rank() >= 2 ? CATS.map(c => c[0]) : ["1n2"];
-  const selL = new Set(GOAL.leagues || leagues.map(l => l[0])), selT = new Set(GOAL.types || okCats);
+  const SC = sportCats();
+  const okCats = rank() >= 2 ? SC.map(c => c[0]) : ["1n2"];
+  const selL = new Set(GOAL.leagues || leagues.map(l => l[0]));
+  const selT = new Set((GOAL.types || okCats).filter(k => SC.some(c => c[0] === k)).length ? (GOAL.types || okCats).filter(k => SC.some(c => c[0] === k)) : okCats);
+  const LGLAB = {foot: "Compétitions", nba: "Compétition", atp: "Tournois", wta: "Tournois"}[SPORT];
   const r = GOAL.res;
   let out = "";
   if (r) {
@@ -1212,6 +1197,7 @@ function vGoal(){
   return `<h1 class="t">Objectif · ${esc(SPORT_NAME[SPORT])}</h1><p class="lead">Tu donnes ta mise et ce que tu veux gagner. Cotescope passe en revue tous les paris de tous les matchs et te sort des centaines de tickets qui y arrivent, classés par leurs vraies chances de passer.</p>
     <div class="goal">
       <div class="panel goalf">
+        <div class="gsport"><span class="d"></span>${esc(SPORT_NAME[SPORT])}<small>change de sport en haut de l'écran</small></div>
         <div class="need" style="margin:0 0 14px"><b style="font-size:14px">⚡ Combiné express</b><div style="display:flex;gap:6px;align-items:center;margin-top:8px;flex-wrap:wrap"><span class="note">cote</span><input class="sel2" id="ex-o" inputmode="decimal" placeholder="3,50" style="width:70px"><span class="note">en</span><input class="sel2" id="ex-n" inputmode="numeric" placeholder="3" style="width:52px"><span class="note">matchs</span><button class="btn sm go" id="ex-go">Go</button></div></div>
         <label class="f" for="gl-s">Je mise</label><div class="money"><input class="in" id="gl-s" inputmode="decimal" value="${esc(GOAL.stake)}"><span>€</span></div>
         <label class="f" for="gl-t" style="margin-top:14px">Je veux gagner</label><div class="money"><input class="in" id="gl-t" inputmode="decimal" value="${esc(GOAL.target)}"><span>€</span></div>
@@ -1220,10 +1206,10 @@ function vGoal(){
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px"><input class="in" id="gl-min" inputmode="numeric" placeholder="min" value="${esc(GOAL.min)}" style="width:70px"><span class="note">à</span><input class="in" id="gl-max" inputmode="numeric" placeholder="max" value="${esc(GOAL.max)}" style="width:70px"><span class="note">vide = libre</span></div>
         <label class="f">Jours des matchs</label>
         <div class="tgl" id="gl-dy" style="margin-bottom:12px">${(() => { const D = goalDays(), keep = (GOAL.days||[]).filter(d => D.some(x => x[0] === d)); return D.map(([k,l]) => `<button class="chip ${!keep.length||keep.includes(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join(""); })()}</div>
-        <label class="f">Championnats</label>
-        <div class="tgl" id="gl-lg">${leagues.map(([k,l]) => `<button class="chip ${selL.has(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("")}</div>
-        <label class="f" style="margin-top:12px">Types de paris</label>
-        <div class="tgl" id="gl-ty">${CATS.map(([k,l]) => okCats.includes(k) ? `<button class="chip ${selT.has(k)?"on":""}" data-k="${k}">${l}</button>` : `<button class="chip lk" data-plans title="Inclus dans Pro">🔒 ${l}</button>`).join("")}</div>
+        <label class="f">${LGLAB}</label>
+        <div class="tgl" id="gl-lg">${leagues.map(([k,l]) => `<button class="chip ${selL.has(k)?"on":""}" data-k="${k}">${esc(l)}</button>`).join("") || '<span class="note">Aucun match à venir pour ce sport.</span>'}</div>
+        <label class="f" style="margin-top:12px">Types de paris · ${esc(SPORT_NAME[SPORT])}</label>
+        <div class="tgl" id="gl-ty">${SC.map(([k,l]) => okCats.includes(k) ? `<button class="chip ${selT.has(k)?"on":""}" data-k="${k}">${l}</button>` : `<button class="chip lk" data-plans title="Inclus dans Pro">🔒 ${l}</button>`).join("")}</div>
         <button class="btn go" id="gl-go" style="width:100%;margin-top:16px">Trouver les meilleurs tickets</button>
       </div>
       <div id="g-out">${out}</div>
@@ -1249,7 +1235,7 @@ function goalList(r){
   if (GLEGS !== "all") opts = opts.filter(o => String(o.n_legs) === GLEGS);
   const legsOf = o => o.tickets.flatMap(t => t.legs);
   const lgs = [...new Set(r.options.flatMap(o => legsOf(o).map(l => l.sport)))].filter(Boolean).sort();
-  const CATN = {"1n2":"Victoire / nul", dc:"Double chance", dnb:"Remboursé si nul", total:"Plus / moins de buts", team:"Buts d'une équipe", btts:"Les 2 marquent", exact:"Score exact", hcp:"Handicap", mtft:"Mi-temps / fin"};
+  const CATN = Object.fromEntries(sportCats());
   const cats = [...new Set(r.options.flatMap(o => legsOf(o).map(l => l.cat)))].filter(Boolean);
   if (GLG) opts = opts.filter(o => legsOf(o).every(l => l.sport === GLG));
   if (GCAT) opts = opts.filter(o => legsOf(o).some(l => l.cat === GCAT));

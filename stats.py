@@ -72,6 +72,7 @@ ESPN_SLUGS = {
     "soccer_efl_champ": "eng.2", "soccer_spain_la_liga": "esp.1", "soccer_italy_serie_a": "ita.1",
     "soccer_germany_bundesliga": "ger.1", "soccer_uefa_champs_league": "uefa.champions",
     "soccer_uefa_europa_league": "uefa.europa", "soccer_uefa_europa_conference_league": "uefa.europa.conf",
+    "soccer_uefa_nations_league": "uefa.nations",
     "soccer_netherlands_eredivisie": "ned.1", "soccer_portugal_primeira_liga": "por.1",
     "soccer_belgium_first_div": "bel.1", "soccer_turkey_super_league": "tur.1",
 }
@@ -470,7 +471,7 @@ class Stats:
                     t = datetime.fromisoformat(ev["commence_time"].replace("Z", "+00:00"))
                 except (KeyError, ValueError):
                     continue
-                if now - timedelta(hours=2) < t < now + timedelta(days=17):
+                if now - timedelta(hours=2) < t < now + timedelta(days=22):
                     by_sport.setdefault(ev.get("_sport_key") or ev.get("sport_key"), []).append((t, ev))
             for sk, lst in by_sport.items():
                 slug = ESPN_SLUGS.get(sk)

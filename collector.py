@@ -475,16 +475,16 @@ def collect_oddspapi(events, state):
 # types de paris utiles (1N2, double chance, remboursé si nul, plus/moins 0,5 à 4,5, les 2 marquent), lues
 # directement sur les pages publiques. Gratuit, sans clé, pour tous les championnats couverts.
 ST_BASE = "https://www.sportytrader.com"
-ST_LEAGUES = {
-    "soccer_france_ligue_one": "football/france/ligue-1-123", "soccer_france_ligue_two": "football/france/ligue-2-124",
-    "soccer_epl": "football/angleterre/premier-league-49", "soccer_spain_la_liga": "football/espagne/laliga-108",
-    "soccer_italy_serie_a": "football/italie/serie-a-79", "soccer_germany_bundesliga": "football/allemagne/bundesliga-65",
+ST_LEAGUES = {  # foot : le top 5 européen et les grandes compétitions
+    "soccer_france_ligue_one": "football/france/ligue-1-123", "soccer_epl": "football/angleterre/premier-league-49",
+    "soccer_spain_la_liga": "football/espagne/laliga-108", "soccer_italy_serie_a": "football/italie/serie-a-79",
+    "soccer_germany_bundesliga": "football/allemagne/bundesliga-65",
     "soccer_uefa_champs_league": "football/europe/ligue-des-champions-8", "soccer_uefa_europa_league": "football/europe/ligue-europa-481",
     "soccer_uefa_europa_conference_league": "football/europe/europa-conference-league-139206",
-    "soccer_netherlands_eredivisie": "football/pays-bas/eredivisie-72", "soccer_portugal_primeira_liga": "football/portugal/primeira-liga-101",
-    "soccer_belgium_first_div": "football/belgique/division-1a-32", "soccer_turkey_super_league": "football/turquie/super-lig-121",
+    "soccer_uefa_nations_league": "football/europe/ligue-des-nations-81218",
     "basketball_nba": "basket/usa/nba-306",
 }
+FOOT_KEPT = {k for k in ST_LEAGUES if k.startswith("soccer")}
 ST_BOOKS = {"betclic": ("betclic_fr", "Betclic"), "winamax": ("winamax_fr", "Winamax"),
             "unibet": ("unibet_fr", "Unibet (FDJ)"), "bet365": ("bet365", "Bet365")}
 ST_MONTHS = {"janv": 1, "févr": 2, "fevr": 2, "mars": 3, "avr": 4, "mai": 5, "juin": 6, "juil": 7, "août": 8, "aout": 8,
@@ -649,7 +649,7 @@ def collect_sportytrader(events, state, max_pages=190):
     new_events, n_hit = [], 0
     for sk, link, h, a, t in sorted(listing, key=lambda x: x[4]):
         start = (t + timedelta(hours=off)).replace(tzinfo=timezone.utc)
-        if not (now - timedelta(hours=2) < start < now + timedelta(days=16)):
+        if not (now - timedelta(hours=2) < start < now + timedelta(days=21)):
             continue
         c = cache.get(link)
         if (not c or time.time() - c.get("ts", 0) > 2.5 * 3600) and n_pages < max_pages:
@@ -1586,6 +1586,8 @@ def main():
     state["scores"] = collect_scores(state, sorted({S.ESPN_SLUGS[s] for s in SPORTS if s in S.ESPN_SLUGS}))
     save_state(state)
 
+    # foot : seulement le top 5 européen et les grandes compétitions (UEFA, Ligue des nations)
+    events[:] = [e for e in events if not str(e.get("sport_key", "")).startswith("soccer") or e["sport_key"] in FOOT_KEPT]
     keep = ("fixtures", "results", "standings", "scorers", "h2h", "web", "inj_day", "pred", "lineups")
     snap = {
         "ts": state.get("odds_ts", 0), "built": time.time(), "sports": sorted(set(SPORTS) | {e["sport_key"] for e in events}),

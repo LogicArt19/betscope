@@ -293,7 +293,18 @@ async function sendVerify(env, user, origin) {
       "Ton compte est créé. Il reste une étape : confirmer que cette adresse e-mail est bien la tienne. C'est elle qui te permettra de récupérer ton compte si tu oublies ton mot de passe.<br><br>Le lien est valable 7 jours.",
       `${origin}/api/verify?t=${t}`, "Confirmer mon adresse e-mail"));
 }
+// Envoi des e-mails : Resend (avec le domaine cotescope.fr) ou, sans toucher au domaine, un relais Gmail
+// (petit script Google Apps Script sur le compte Gmail du propriétaire, ~100 e-mails par jour, gratuit).
+const mailOn = (env) => !!(env.RESEND_KEY || (env.MAIL_RELAY_URL && env.MAIL_RELAY_KEY));
 async function sendMail(env, to, subject, html) {
+  if (!env.RESEND_KEY && env.MAIL_RELAY_URL && env.MAIL_RELAY_KEY) {
+    try {
+      const r = await fetch(env.MAIL_RELAY_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ key: env.MAIL_RELAY_KEY, to, subject, html }), redirect: "follow" });
+      const t = await r.text();
+      return r.ok && t.includes('"ok":true');
+    } catch (e) { return false; }
+  }
   if (!env.RESEND_KEY) return false;
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -564,7 +575,7 @@ export default {
       for (const o of owners(env)) {
         const ou = await getUser(env, o);
         if (ou && ou.tg && (await tgSend(env, ou.tg, text))) sent++;
-        if (env.RESEND_KEY) await sendMail(env, o, "Cotescope : message d'aide de " + from, mailLayout("Nouveau message d'aide",
+        if (mailOn(env)) await sendMail(env, o, "Cotescope : message d'aide de " + from, mailLayout("Nouveau message d'aide",
           `<b>De :</b> ${escH(from)}<br><b>Page :</b> ${escH(page)}<br><br>${escH(msg).replace(/\n/g, "<br>")}`));
       }
       return json(req, { ok: true, delivered: sent });
@@ -584,7 +595,7 @@ export default {
       const email = cleanEmail(body.email);
       if (await tooMany(req, "forgot")) return json(req, { ok: false, reason: "too_many" }, 429);
       const user = email && (await getUser(env, email));
-      if (!env.RESEND_KEY) return json(req, { ok: false, reason: "mail_not_configured" }, 503);
+      if (!mailOn(env)) return json(req, { ok: false, reason: "mail_not_configured" }, 503);
       if (user) {
         const code = rand(24);
         await env.KV.put("reset:" + code, email, { expirationTtl: 3600 });
@@ -625,7 +636,7 @@ export default {
       if (!user) return json(req, { ok: false, reason: "session" }, 401);
       if (user.verified !== false) return json(req, { ok: true, already: true });
       if (await tooMany(req, "verify:" + user.email)) return json(req, { ok: false, reason: "too_many" }, 429);
-      if (!env.RESEND_KEY) return json(req, { ok: false, reason: "mail_not_configured" }, 503);
+      if (!mailOn(env)) return json(req, { ok: false, reason: "mail_not_configured" }, 503);
       const ok = await sendVerify(env, user, url.origin);
       return json(req, { ok });
     }
@@ -671,7 +682,7 @@ export default {
         try { const r = await fetch(`https://api.telegram.org/bot${tgToken(env)}/getWebhookInfo`); const j = await r.json();
               bot = { ok: !!j.ok, webhook: !!(j.result && j.result.url), pending: (j.result || {}).pending_update_count || 0, error: (j.result || {}).last_error_message || null }; } catch (e) { bot = { ok: false }; }
       }
-      return json(req, { ok: true, mail: { configured: !!env.RESEND_KEY, from: env.MAIL_FROM || "Cotescope <compte@cotescope.fr>" }, telegram: { configured: !!tgToken(env), bot, subscribers: Object.keys(subs).length, by_tier: byTier,
+      return json(req, { ok: true, mail: { configured: mailOn(env), via: env.RESEND_KEY ? "resend" : (mailOn(env) ? "gmail" : null) }, telegram: { configured: !!tgToken(env), bot, subscribers: Object.keys(subs).length, by_tier: byTier,
         stats: (await env.KV.get("tg_stats", "json")) || { sent: 0, msgs: 0 }, queued: (q.items || []).length, queue_ts: q.built ? q.built * 1000 : null },
         lineups: { watched: (w.list || []).length, stored: lus.keys.length },
         support: ((await env.KV.get("support", "json")) || []).slice(0, 10) });

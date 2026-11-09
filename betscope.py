@@ -613,10 +613,10 @@ def analysis_weight(w_stats, st):
     Plus les données du match sont complètes, plus elles comptent : jusqu'à 55 %. Le reste vient du consensus
     des cotes, pondéré vers les bookmakers « sharp » (Pinnacle, bourses), qui reflètent l'argent des parieurs
     professionnels plutôt que celui des supporters."""
-    if w_stats <= 0:
-        return 0.0
-    q = data_quality(st)
-    return min(0.55, max(w_stats, 0.35) * (0.6 + 0.8 * q))
+    # Choix du site : nos pronostics viennent de NOS stats et analyses, pas des cotes.
+    # Les cotes ne servent qu'à calculer le gain (et à repérer une cote mal lue) ; elles ne prennent le relais
+    # que si nous n'avons aucune donnée sur le match.
+    return 1.0 if st else 0.0
 
 
 def analyse_points(st, side, name, point, mkey, p_market, p_model, home, away):
@@ -956,20 +956,20 @@ def sport_model(sport_key, st, mkey, side, a):
             return None
         if mkey == "h2h" and side in ("home", "away"):
             ph = _phi((pj["home"] - pj["away"]) / pj["sd_margin"])
-            return (ph if side == "home" else 1 - ph), 0.30
+            return (ph if side == "home" else 1 - ph), 1.0
         if mkey == "totals" and a.get("point") is not None:
             po = 1 - _phi((float(a["point"]) - pj["total"]) / pj["sd_total"])
-            return (po if a["name"] == "Over" else 1 - po), 0.30
+            return (po if a["name"] == "Over" else 1 - po), 1.0
         return None
     if sport_key.startswith("tennis"):
         T = st.get("tennis") or {}
         if mkey == "h2h" and side in ("home", "away") and T.get("model"):
-            return T["model"][side], 0.25
+            return T["model"][side], 1.0
         if mkey == "totals" and a.get("point") is not None:
             pj = tennis_projection(st)
             if pj:
                 po = 1 - _phi((float(a["point"]) - pj["games"]) / pj["sd"])
-                return (po if a["name"] == "Over" else 1 - po), 0.25
+                return (po if a["name"] == "Over" else 1 - po), 1.0
     return None
 
 
@@ -983,7 +983,7 @@ def neutral_view_2way(st, sel, sport_key):
     pa = next((x for x in h2h if x["selection"] == f"Victoire {away_o}"), None)
     rows, adv_h, adv_a, risks = [], [], [], []
     if ph and pa:
-        rows.append({"src": "Cotes des bookmakers (marge retirée)", "p": [ph["p_market"], None, pa["p_market"]]})
+        rows.append({"src": "Cotes des bookmakers (pour comparer seulement)", "p": [ph["p_market"], None, pa["p_market"]]})
     T = st.get("tennis") or {}
     if tennis and T.get("model"):
         rows.append({"src": "Classement + forme des 10 derniers matchs", "p": [T["model"]["home"], None, T["model"]["away"]]})
@@ -1071,7 +1071,7 @@ def neutral_view(st, sel):
     rows = []
     mk_ = trio("p_market")
     if mk_:
-        rows.append({"src": "Cotes des bookmakers (marge retirée)", "p": mk_})
+        rows.append({"src": "Cotes des bookmakers (pour comparer seulement)", "p": mk_})
     mdl = st.get("model")
     if mdl:
         rows.append({"src": "Modèle forme (saison, récent pondéré)", "p": [mdl["home"], mdl["draw"], mdl["away"]]})
@@ -1197,8 +1197,8 @@ def analyze(events, cfg, now=None, info=None):
                 elif p_model is None and st:
                     # pas de modèle saison (pas de clé) : on utilise quand même la forme récente + face-à-face
                     p_model = form_proxy(st, side, mkey, a["name"], a["point"])
-                    w_eff = analysis_weight(w_stats, st) * 0.6
-                if p_model is not None and 0 < w_eff <= 0.6:
+                    w_eff = analysis_weight(w_stats, st)
+                if p_model is not None and 0 < w_eff <= 1.0:
                     p = (1 - w_eff) * p_market + w_eff * p_model
                 stat_sum = analyse_points(st, side, a["name"], a["point"], mkey, p_market, p_model, home, away) \
                     if st and sport_key.startswith("soccer") else None
@@ -1264,7 +1264,7 @@ def add_derived(out, ev, start, match, home, away, sport_key, st, mdl, w_stats, 
     over = next((s for s in mine if s["cat"] == "total" and s["selection"].startswith("Plus de 2,5")), None)
     lh, la = mk.fit_lambdas(p1, pn, p2, over["p_market"] if over else None)
     lh_m, la_m = (mdl["xg_home"], mdl["xg_away"]) if mdl else (None, None)
-    w = analysis_weight(w_stats, st) if mdl and 0 < w_stats <= 0.6 else 0.0
+    w = analysis_weight(w_stats, st) if mdl else 0.0
     fh, fa = (1 - w) * lh + w * (lh_m or lh), (1 - w) * la + w * (la_m or la)
     ref = mine[0]
     # bookmaker où l'on parie (Betclic) : même nom que sur les vrais marchés

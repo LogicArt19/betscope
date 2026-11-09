@@ -1847,7 +1847,8 @@ def _diversify(options):
         kinds = [_kind(l) for l in legs]
         grps = [_grp(l) for l in legs]
         dup = (len(kinds) - len(set(kinds))) + (len(grps) - len(set(grps)))  # 2 « moins de » dans un ticket = doublon
-        meta[id(o)] = (sig(o), tuple({l["event_id"] for l in legs}), tuple(set(kinds) | {"g:" + g for g in grps}), dup,
+        legk = {"l:%s|%s" % (l["event_id"], l.get("selection")) for l in legs}  # le même pari exact d'un ticket à l'autre
+        meta[id(o)] = (sig(o), tuple({l["event_id"] for l in legs}), tuple(set(kinds) | {"g:" + g for g in grps} | legk), dup,
                        o["p_hit"] * (0.7 + 0.3 * o["fiab"]), tuple(sorted(set(grps))))
     picked, cnt, seen_ev, seen_k = [], {}, {}, {}
     while pool and len(picked) < 300:
@@ -1856,8 +1857,9 @@ def _diversify(options):
             sg, evs, ks, dup, base, gs = meta[id(o)]
             rep = sum(min(seen_ev.get(e, 0), 6) for e in evs) / max(1, len(evs))
             krep = sum(min(seen_k.get(k, 0), 8) for k in ks) / max(1, len(ks))
-            srep = seen_k.get("s:" + "|".join(gs), 0)  # même combinaison de familles qu'un ticket déjà montré
-            sc = base * (0.55 ** dup) * (0.93 ** cnt.get(sg, 0)) * (0.95 ** rep) * (0.86 ** krep) * (0.7 ** min(srep, 6)) \
+            srep = seen_k.get("s:" + "|".join(gs), 0)
+            lrep = sum(min(seen_k.get(k, 0), 6) for k in ks if k.startswith("l:"))  # même combinaison de familles qu'un ticket déjà montré
+            sc = base * (0.55 ** dup) * (0.93 ** cnt.get(sg, 0)) * (0.95 ** rep) * (0.86 ** krep) * (0.7 ** min(srep, 6)) * (0.8 ** lrep) \
                 * (1.0 + 0.05 * min(len(gs) - 1, 3))
             if sc > bs:
                 best, bs = o, sc
